@@ -14,7 +14,7 @@
 import { Router, type Request, type Response } from "express";
 import { and, eq, asc, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, heartbeatRuns, heartbeatRunEvents, agentRuntimeState, agentTaskSessions } from "@paperclipai/db";
+import { agents, heartbeatRuns, heartbeatRunEvents, agentRuntimeState, agentTaskSessions, issues } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "../services/live-events.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
@@ -409,6 +409,17 @@ export function runnerRoutes(db: Db) {
           updatedAt: new Date(),
         })
         .where(eq(heartbeatRuns.id, runId));
+
+      // Clear execution lock on any issues tied to this completed run
+      await db
+        .update(issues)
+        .set({
+          executionRunId: null,
+          executionAgentNameKey: null,
+          executionLockedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(issues.companyId, run.companyId), eq(issues.executionRunId, runId)));
 
       // Update agent status
       const agent = await db

@@ -151,7 +151,7 @@ async function executeRun(runId, agent, context, authToken) {
 
   // Build env note (same as real adapter)
   const envPairs = Object.entries(env)
-    .filter(([k]) => k.startsWith("PAPERCLIP_"))
+    .filter(([k]) => k.startsWith("PAPERCLIP_") && k !== "PAPERCLIP_RUNNER_TOKEN" && k !== "PAPERCLIP_SERVER_URL")
     .map(([k, v]) => `${k}=${k === "PAPERCLIP_API_KEY" ? "<redacted>" : v}`)
     .join("\n");
   const envNote = `The following PAPERCLIP_* environment variables are set in this run:\n\`\`\`\n${envPairs}\n\`\`\`\n\n`;
