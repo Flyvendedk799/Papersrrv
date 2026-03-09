@@ -42,7 +42,8 @@ ENV NODE_ENV=production \
   PAPERCLIP_INSTANCE_ID=default \
   PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
   PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=public \
+  PAPERCLIP_MIGRATION_AUTO_APPLY=true
 
 VOLUME ["/paperclip"]
 EXPOSE 3100

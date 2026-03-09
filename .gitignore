@@ -41,6 +41,9 @@ tmp/
 # Log files
 *.log
 
+# Agent temp directories
+agents/tmp-*/
+
 # Temp DB scripts
 tempdb/
 db-query.js
