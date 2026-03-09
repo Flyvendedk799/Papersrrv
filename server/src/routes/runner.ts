@@ -188,10 +188,10 @@ export function runnerRoutes(db: Db) {
         });
         runLogHandles.set(claimed.id, handle);
 
-        // Set logRef on the run immediately so the UI knows logs exist
+        // Set logRef + logStore on the run so the UI can read persisted logs
         await db
           .update(heartbeatRuns)
-          .set({ logRef: handle.logRef, updatedAt: new Date() })
+          .set({ logRef: handle.logRef, logStore: handle.store, updatedAt: new Date() })
           .where(eq(heartbeatRuns.id, claimed.id));
       } catch (logErr) {
         logger.warn({ err: logErr, runId: claimed.id }, "Failed to initialize run log store");
