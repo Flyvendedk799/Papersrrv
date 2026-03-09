@@ -512,12 +512,13 @@ export function runnerRoutes(db: Db) {
         updatedAt: new Date(),
       };
 
-      // If a reference config exists and the caller didn't provide one, copy it
+      // Copy only infrastructure settings from reference, not agent-specific ones
       const bodyConfig = (req.body as Record<string, unknown>)?.adapterConfig;
+      let templateConfig: Record<string, unknown> | null = null;
       if (bodyConfig && typeof bodyConfig === "object") {
-        patch.adapterConfig = bodyConfig;
-      } else if (reference?.adapterConfig) {
-        patch.adapterConfig = reference.adapterConfig;
+        templateConfig = bodyConfig as Record<string, unknown>;
+      } else if (reference?.adapterConfig && typeof reference.adapterConfig === "object") {
+        templateConfig = reference.adapterConfig as Record<string, unknown>;
       }
 
       // Match agents with null, empty, or specific "from" types (e.g. "process")
@@ -531,11 +532,32 @@ export function runnerRoutes(db: Db) {
         }
       }
 
-      const updated = await db
-        .update(agents)
-        .set(patch)
-        .where(or(...matchConditions))
-        .returning({ id: agents.id, name: agents.name });
+      // Find matching agents first so we can set per-agent instructionsFilePath
+      const toFix = await db
+        .select({ id: agents.id, name: agents.name, urlKey: agents.urlKey, adapterConfig: agents.adapterConfig })
+        .from(agents)
+        .where(or(...matchConditions));
+
+      const results: { id: string; name: string }[] = [];
+      for (const agent of toFix) {
+        const urlKey = agent.urlKey ?? agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+        // Build per-agent config: infrastructure from template, paths from agent identity
+        const agentConfig: Record<string, unknown> = {
+          ...(templateConfig ?? {}),
+          instructionsFilePath: `/app/agents/${urlKey}/AGENTS.md`,
+        };
+        // Remove promptTemplate so it falls back to the agent's own default
+        delete agentConfig.promptTemplate;
+
+        await db
+          .update(agents)
+          .set({ adapterType: targetType, adapterConfig: agentConfig, updatedAt: new Date() })
+          .where(eq(agents.id, agent.id));
+        results.push({ id: agent.id, name: agent.name });
+      }
+
+      logger.info({ count: results.length, targetType }, "fix-adapters: patched agents");
+      res.json({ ok: true, patched: results.length, agents: results });
 
       logger.info({ count: updated.length, targetType }, "fix-adapters: patched agents");
       res.json({ ok: true, patched: updated.length, agents: updated });
