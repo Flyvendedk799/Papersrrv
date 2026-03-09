@@ -6,8 +6,8 @@
  * executes the Cursor CLI locally (via WSL), and reports results back.
  *
  * Usage:
- *   PAPERCLIP_SERVER_URL=https://papersrrv-production.up.railway.app \
- *   PAPERCLIP_RUNNER_TOKEN=<your-token> \
+ *   $env:PAPERCLIP_SERVER_URL="https://papersrrv-production.up.railway.app"
+ *   $env:PAPERCLIP_RUNNER_TOKEN="<your-token>"
  *   node scripts/local-runner.mjs
  *
  * Environment variables:
@@ -18,7 +18,10 @@
  */
 
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 const SERVER_URL = process.env.PAPERCLIP_SERVER_URL;
 const RUNNER_TOKEN = process.env.PAPERCLIP_RUNNER_TOKEN;
@@ -29,6 +32,11 @@ if (!SERVER_URL || !RUNNER_TOKEN) {
   console.error("ERROR: PAPERCLIP_SERVER_URL and PAPERCLIP_RUNNER_TOKEN are required");
   process.exit(1);
 }
+
+// Resolve project root from script location
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PROJECT_ROOT = dirname(__dirname); // scripts/ -> project root
 
 const headers = {
   Authorization: `Bearer ${RUNNER_TOKEN}`,
@@ -53,31 +61,64 @@ async function sendLog(runId, stream, chunk) {
     });
   } catch (err) {
     // Non-fatal: log streaming failure shouldn't kill the run
-    console.error(`[log-send] ${err.message}`);
   }
 }
 
-async function executeRun(runId, agent, context) {
+// Map Railway paths back to local Windows paths
+const LOCAL_AGENTS_DIR = process.env.PAPERCLIP_LOCAL_AGENTS_DIR
+  || PROJECT_ROOT + "\\agents";
+
+function resolveLocalPath(remotePath) {
+  if (!remotePath) return null;
+  // Map /app/agents/... -> local agents dir
+  if (remotePath.startsWith("/app/agents")) {
+    return remotePath.replace("/app/agents", LOCAL_AGENTS_DIR).replace(/\//g, "\\");
+  }
+  if (remotePath === "/app") return PROJECT_ROOT;
+  return remotePath;
+}
+
+function resolveLocalCwd(remoteCwd) {
+  if (!remoteCwd || remoteCwd === "/app/agents" || remoteCwd.startsWith("/app/")) {
+    return LOCAL_AGENTS_DIR;
+  }
+  return remoteCwd;
+}
+
+async function loadInstructionsFile(filePath) {
+  const localPath = resolveLocalPath(filePath);
+  if (!localPath) return "";
+  try {
+    const contents = await readFile(localPath, "utf8");
+    const dir = dirname(localPath) + "/";
+    return (
+      `${contents}\n\n` +
+      `The above agent instructions were loaded from ${filePath}. ` +
+      `Resolve any relative file references from ${dir}\n\n`
+    );
+  } catch {
+    return "";
+  }
+}
+
+async function executeRun(runId, agent, context, authToken) {
   const config = typeof agent.adapterConfig === "string"
     ? JSON.parse(agent.adapterConfig)
     : agent.adapterConfig || {};
 
   const command = config.command || "wsl -d Ubuntu -- /root/.local/bin/agent";
-  const cwd = config.cwd || process.cwd();
-  const workspaceOverride = config.workspaceOverride || cwd;
+  const cwd = resolveLocalCwd(config.cwd);
+  const workspaceOverride = config.workspaceOverride || "/root/paperclip-agents";
   const model = config.model || "composer-1.5";
 
   console.log(`[run:${runId}] Agent: ${agent.name}`);
   console.log(`[run:${runId}] Command: ${command}`);
   console.log(`[run:${runId}] CWD: ${cwd}`);
-  console.log(`[run:${runId}] Context: ${JSON.stringify(context).slice(0, 200)}`);
 
-  // Build the prompt from context
+  // Build context env vars (matching the real adapter)
   const issueId = context.issueId || "";
   const wakeReason = context.wakeReason || context.reason || "heartbeat_timer";
-  const prompt = config.promptTemplate || `Heartbeat run for ${agent.name}. Wake reason: ${wakeReason}`;
 
-  // Build environment variables for the agent
   const env = {
     ...process.env,
     PAPERCLIP_API_URL: SERVER_URL + "/api",
@@ -87,28 +128,52 @@ async function executeRun(runId, agent, context) {
     PAPERCLIP_WAKE_REASON: wakeReason,
   };
 
-  if (issueId) {
-    env.PAPERCLIP_TASK_ID = issueId;
+  // Set auth token so agents can call the API
+  if (authToken) {
+    env.PAPERCLIP_API_KEY = authToken;
   }
+
+  if (issueId) env.PAPERCLIP_TASK_ID = issueId;
+  if (context.wakeCommentId || context.commentId) env.PAPERCLIP_WAKE_COMMENT_ID = context.wakeCommentId || context.commentId;
+  if (context.approvalId) env.PAPERCLIP_APPROVAL_ID = context.approvalId;
+  if (context.approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = context.approvalStatus;
+
+  // WSL env forwarding: list all PAPERCLIP_* keys in WSLENV
+  if (command.toLowerCase().startsWith("wsl ")) {
+    const paperclipKeys = Object.keys(env).filter((k) => k.startsWith("PAPERCLIP_"));
+    const existing = env.WSLENV || process.env.WSLENV || "";
+    env.WSLENV = [...(existing ? [existing] : []), ...paperclipKeys].join(":");
+  }
+
+  // Build prompt: instructions prefix + env note + prompt template
+  const instructionsPrefix = await loadInstructionsFile(config.instructionsFilePath);
+  const promptTemplate = config.promptTemplate || `Heartbeat run for ${agent.name}. Wake reason: ${wakeReason}`;
+
+  // Build env note (same as real adapter)
+  const envPairs = Object.entries(env)
+    .filter(([k]) => k.startsWith("PAPERCLIP_"))
+    .map(([k, v]) => `${k}=${k === "PAPERCLIP_API_KEY" ? "<redacted>" : v}`)
+    .join("\n");
+  const envNote = `The following PAPERCLIP_* environment variables are set in this run:\n\`\`\`\n${envPairs}\n\`\`\`\n\n`;
+
+  const prompt = `${instructionsPrefix}${envNote}${promptTemplate}`;
 
   // Parse command into parts
   const parts = command.split(/\s+/);
   const cmd = parts[0];
   const args = [...parts.slice(1), "-p", "--output-format", "stream-json", "--workspace", workspaceOverride];
 
-  if (model) {
-    args.push("--model", model);
-  }
+  if (model) args.push("--model", model);
 
-  // Add the prompt via stdin or -m flag
-  args.push("-m", prompt);
+  const autoTrust = config.dangerouslyBypassApprovalsAndSandbox;
+  if (autoTrust) args.push("--yolo");
 
   return new Promise((resolve) => {
     let stdoutBuf = "";
     let stderrBuf = "";
     let timedOut = false;
 
-    const timeoutSec = config.timeoutSec || 600; // 10 min default
+    const timeoutSec = config.timeoutSec || 600;
     const timeoutTimer = timeoutSec > 0
       ? setTimeout(() => {
           timedOut = true;
@@ -122,8 +187,13 @@ async function executeRun(runId, agent, context) {
       cwd,
       env,
       stdio: ["pipe", "pipe", "pipe"],
-      shell: process.platform === "win32",
     });
+
+    // Pass prompt via stdin (same as the real cursor adapter)
+    if (prompt) {
+      child.stdin.write(prompt);
+      child.stdin.end();
+    }
 
     child.stdout?.on("data", (data) => {
       const chunk = data.toString();
@@ -156,17 +226,22 @@ async function executeRun(runId, agent, context) {
       if (timeoutTimer) clearTimeout(timeoutTimer);
       console.log(`[run:${runId}] Exited: code=${code} signal=${signal} timedOut=${timedOut}`);
 
-      // Try to extract usage from stream-json output
+      // Try to extract usage from the result line in stream-json output
       let usage = undefined;
       try {
         const lines = stdoutBuf.split("\n").filter(Boolean);
         for (const line of lines) {
-          const parsed = JSON.parse(line);
-          if (parsed.type === "usage" || parsed.usage) {
-            usage = parsed.usage || parsed;
-          }
+          try {
+            const parsed = JSON.parse(line);
+            if (parsed.type === "result" && parsed.usage) {
+              usage = parsed.usage;
+            }
+            if (parsed.usage && parsed.type === "usage") {
+              usage = parsed.usage;
+            }
+          } catch { /* skip non-JSON lines */ }
         }
-      } catch { /* not all output is JSON */ }
+      } catch { /* ignore */ }
 
       resolve({
         exitCode: code,
@@ -187,6 +262,7 @@ async function pollLoop() {
   console.log(`   Server: ${SERVER_URL}`);
   console.log(`   Adapter types: ${ADAPTER_TYPES}`);
   console.log(`   Poll interval: ${POLL_INTERVAL}ms`);
+  console.log(`   Agents dir: ${LOCAL_AGENTS_DIR}`);
   console.log("");
 
   while (true) {
@@ -202,7 +278,7 @@ async function pollLoop() {
       const { runId, agentId } = pollResult.run;
       console.log(`\n📥 Found queued run: ${runId} for agent ${agentId}`);
 
-      // Claim the run
+      // Claim the run (includes auth token for agent API calls)
       let claimResult;
       try {
         claimResult = await apiFetch(`/runner/claim/${runId}`, { method: "POST" });
@@ -212,11 +288,11 @@ async function pollLoop() {
         continue;
       }
 
-      const { agent, run, runtime } = claimResult;
+      const { agent, run, runtime, authToken } = claimResult;
       console.log(`✅ Claimed run ${runId} for ${agent.name}`);
 
-      // Execute
-      const result = await executeRun(runId, agent, run.contextSnapshot || {});
+      // Execute with auth token
+      const result = await executeRun(runId, agent, run.contextSnapshot || {}, authToken);
 
       // Report completion
       await apiFetch(`/runner/complete/${runId}`, {

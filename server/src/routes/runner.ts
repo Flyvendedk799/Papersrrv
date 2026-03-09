@@ -17,6 +17,7 @@ import type { Db } from "@paperclipai/db";
 import { agents, heartbeatRuns, heartbeatRunEvents, agentRuntimeState, agentTaskSessions } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "../services/live-events.js";
+import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 
 /** Adapter types that require a local CLI and cannot run on a cloud server. */
 const LOCAL_ADAPTER_TYPES = new Set(["cursor", "process", "claude_local", "codex_local", "opencode_local", "pi_local"]);
@@ -173,6 +174,11 @@ export function runnerRoutes(db: Db) {
         .where(eq(agentRuntimeState.agentId, claimed.agentId))
         .then((rows) => rows[0] ?? null);
 
+      // Generate a JWT for the agent to authenticate API calls
+      const authToken = agent
+        ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, claimed.id)
+        : null;
+
       res.json({
         run: {
           id: claimed.id,
@@ -198,6 +204,7 @@ export function runnerRoutes(db: Db) {
           sessionId: runtimeState?.sessionId ?? null,
           stateJson: runtimeState?.stateJson ?? null,
         },
+        authToken,
       });
     } catch (err) {
       logger.error({ err }, "runner claim failed");
