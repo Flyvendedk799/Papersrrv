@@ -12,7 +12,7 @@
  */
 
 import { Router, type Request, type Response } from "express";
-import { and, eq, asc, inArray } from "drizzle-orm";
+import { and, eq, asc, inArray, isNull, or } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents, heartbeatRuns, heartbeatRunEvents, agentRuntimeState, agentTaskSessions, issues } from "@paperclipai/db";
 import { logger } from "../middleware/logger.js";
@@ -483,6 +483,53 @@ export function runnerRoutes(db: Db) {
       res.json({ ok: true, status });
     } catch (err) {
       logger.error({ err }, "runner complete failed");
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  /**
+   * POST /api/runner/fix-adapters
+   * Set adapterType on all agents that have null/empty adapterType.
+   * Body (optional): { adapterType?: string, adapterConfig?: object }
+   */
+  router.post("/runner/fix-adapters", async (req: Request, res: Response) => {
+    if (!assertRunnerAuth(req, res)) return;
+
+    try {
+      const defaultType = process.env.PAPERCLIP_DEFAULT_ADAPTER_TYPE || "cursor";
+      const targetType = (req.body as Record<string, unknown>)?.adapterType as string | undefined || defaultType;
+
+      // Find a reference agent that already has the target adapter type + config
+      const reference = await db
+        .select({ adapterConfig: agents.adapterConfig })
+        .from(agents)
+        .where(eq(agents.adapterType, targetType))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+
+      const patch: Record<string, unknown> = {
+        adapterType: targetType,
+        updatedAt: new Date(),
+      };
+
+      // If a reference config exists and the caller didn't provide one, copy it
+      const bodyConfig = (req.body as Record<string, unknown>)?.adapterConfig;
+      if (bodyConfig && typeof bodyConfig === "object") {
+        patch.adapterConfig = bodyConfig;
+      } else if (reference?.adapterConfig) {
+        patch.adapterConfig = reference.adapterConfig;
+      }
+
+      const updated = await db
+        .update(agents)
+        .set(patch)
+        .where(or(isNull(agents.adapterType), eq(agents.adapterType, "")))
+        .returning({ id: agents.id, name: agents.name });
+
+      logger.info({ count: updated.length, targetType }, "fix-adapters: patched agents");
+      res.json({ ok: true, patched: updated.length, agents: updated });
+    } catch (err) {
+      logger.error({ err }, "fix-adapters failed");
       res.status(500).json({ error: "Internal error" });
     }
   });

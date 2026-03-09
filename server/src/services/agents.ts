@@ -344,10 +344,11 @@ export function agentService(db: Db) {
       await assertCompanyShortnameAvailable(companyId, data.name);
 
       const role = data.role ?? "general";
+      const adapterType = data.adapterType || process.env.PAPERCLIP_DEFAULT_ADAPTER_TYPE || "cursor";
       const normalizedPermissions = normalizeAgentPermissions(data.permissions, role);
       const created = await db
         .insert(agents)
-        .values({ ...data, companyId, role, permissions: normalizedPermissions })
+        .values({ ...data, companyId, role, adapterType, permissions: normalizedPermissions })
         .returning()
         .then((rows) => rows[0]);
 
