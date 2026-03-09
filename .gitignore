@@ -37,3 +37,12 @@ tmp/
 .vscode/
 .claude/settings.local.json
 .paperclip-local/
+
+# Log files
+*.log
+
+# Temp DB scripts
+tempdb/
+db-query.js
+fix-db.mjs
+fix.js
