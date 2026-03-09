@@ -520,10 +520,21 @@ export function runnerRoutes(db: Db) {
         patch.adapterConfig = reference.adapterConfig;
       }
 
+      // Match agents with null, empty, or specific "from" types (e.g. "process")
+      const fromTypes = (req.body as Record<string, unknown>)?.fromTypes as string[] | undefined;
+      const matchConditions = [isNull(agents.adapterType), eq(agents.adapterType, "")];
+      if (fromTypes && Array.isArray(fromTypes)) {
+        for (const ft of fromTypes) {
+          if (typeof ft === "string" && ft !== targetType) {
+            matchConditions.push(eq(agents.adapterType, ft));
+          }
+        }
+      }
+
       const updated = await db
         .update(agents)
         .set(patch)
-        .where(or(isNull(agents.adapterType), eq(agents.adapterType, "")))
+        .where(or(...matchConditions))
         .returning({ id: agents.id, name: agents.name });
 
       logger.info({ count: updated.length, targetType }, "fix-adapters: patched agents");
