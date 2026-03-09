@@ -18,6 +18,7 @@ import { agents, heartbeatRuns, heartbeatRunEvents, agentRuntimeState, agentTask
 import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "../services/live-events.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
+import { getRunLogStore, type RunLogHandle } from "../services/run-log-store.js";
 
 /** Adapter types that require a local CLI and cannot run on a cloud server. */
 const LOCAL_ADAPTER_TYPES = new Set(["cursor", "process", "claude_local", "codex_local", "opencode_local", "pi_local"]);
@@ -45,6 +46,9 @@ function assertRunnerAuth(req: Request, res: Response): boolean {
   }
   return true;
 }
+
+/** In-memory map of runId → log handle for persisting runner logs to disk. */
+const runLogHandles = new Map<string, RunLogHandle>();
 
 export function runnerRoutes(db: Db) {
   const router = Router();
@@ -174,6 +178,25 @@ export function runnerRoutes(db: Db) {
         .where(eq(agentRuntimeState.agentId, claimed.agentId))
         .then((rows) => rows[0] ?? null);
 
+      // Initialize the run log store so logs persist for the completed-run transcript
+      try {
+        const logStore = getRunLogStore();
+        const handle = await logStore.begin({
+          companyId: claimed.companyId,
+          agentId: claimed.agentId,
+          runId: claimed.id,
+        });
+        runLogHandles.set(claimed.id, handle);
+
+        // Set logRef on the run immediately so the UI knows logs exist
+        await db
+          .update(heartbeatRuns)
+          .set({ logRef: handle.logRef, updatedAt: new Date() })
+          .where(eq(heartbeatRuns.id, claimed.id));
+      } catch (logErr) {
+        logger.warn({ err: logErr, runId: claimed.id }, "Failed to initialize run log store");
+      }
+
       // Generate a JWT for the agent to authenticate API calls
       const authToken = agent
         ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, claimed.id)
@@ -262,6 +285,21 @@ export function runnerRoutes(db: Db) {
         createdAt: new Date(),
       });
 
+      // Append to persisted log file for post-completion transcript
+      const logHandle = runLogHandles.get(runId);
+      if (logHandle) {
+        try {
+          const logStore = getRunLogStore();
+          await logStore.append(logHandle, {
+            stream,
+            chunk,
+            ts: new Date().toISOString(),
+          });
+        } catch (logErr) {
+          logger.warn({ err: logErr, runId }, "Failed to append to run log store");
+        }
+      }
+
       // Publish live log event
       const payloadChunk = chunk.length > 8192 ? chunk.slice(chunk.length - 8192) : chunk;
       publishLiveEvent({
@@ -338,6 +376,20 @@ export function runnerRoutes(db: Db) {
             }
           : null;
 
+      // Finalize the persisted log file
+      let logBytes: number | null = null;
+      const logHandle = runLogHandles.get(runId);
+      if (logHandle) {
+        try {
+          const logStore = getRunLogStore();
+          const summary = await logStore.finalize(logHandle);
+          logBytes = summary.bytes;
+        } catch (logErr) {
+          logger.warn({ err: logErr, runId }, "Failed to finalize run log store");
+        }
+        runLogHandles.delete(runId);
+      }
+
       await db
         .update(heartbeatRuns)
         .set({
@@ -351,6 +403,7 @@ export function runnerRoutes(db: Db) {
           stdoutExcerpt: result.stdoutExcerpt ?? null,
           stderrExcerpt: result.stderrExcerpt ?? null,
           sessionIdAfter: result.sessionId ?? null,
+          ...(logBytes != null ? { logBytes } : {}),
           updatedAt: new Date(),
         })
         .where(eq(heartbeatRuns.id, runId));
@@ -366,7 +419,7 @@ export function runnerRoutes(db: Db) {
         const newStatus = status === "succeeded" ? "idle" : "error";
         await db
           .update(agents)
-          .set({ status: newStatus, updatedAt: new Date() })
+          .set({ status: newStatus, lastHeartbeatAt: new Date(), updatedAt: new Date() })
           .where(eq(agents.id, agent.id));
 
         publishLiveEvent({
