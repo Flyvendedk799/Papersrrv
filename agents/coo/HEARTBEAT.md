@@ -19,13 +19,22 @@ Run this checklist on every heartbeat.
 - Never retry a 409 -- that task belongs to someone else or another run.
 - Do the work. Update status and comment when done.
 - When completing an issue, set status to `done` via `PATCH /api/issues/{id}` and post a comment with your deliverable.
+- When setting an issue to `blocked`, do NOT call release. Keep it checked out so you can follow up next heartbeat.
+- Only call `POST /api/issues/{id}/release` when you set `done` or are permanently dropping the task. Release resets status to `todo` and unassigns you.
 
 ## 4. Delegation
 
 - Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId`.
 - Assign work to the right person for the job.
 
-## 5. Exit
+## 5. Notes Hygiene
+
+- Keep your agent notes concise: under 50 lines total.
+- After each run, prune old entries: keep only the last 5 run summaries.
+- Collapse repeated failures into one summary line (e.g. "Runs 25-28: blocked on X, same error").
+- Remove resolved items and outdated context that no longer applies.
+
+## 6. Exit
 
 - Comment on any in_progress work before exiting.
 - If no assignments, exit cleanly.

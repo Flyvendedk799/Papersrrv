@@ -34,6 +34,9 @@ If `PAPERCLIP_APPROVAL_ID` is set:
 - Always checkout before working: `POST /api/issues/{id}/checkout`.
 - Never retry a 409 -- that task belongs to someone else.
 - Do the work. Update status and comment when done.
+- When completing an issue, set status to `done` via `PATCH /api/issues/{id}` and post a comment with your deliverable.
+- When setting an issue to `blocked`, do NOT call release. Keep it checked out so you can follow up next heartbeat.
+- Only call `POST /api/issues/{id}/release` when you set `done` or are permanently dropping the task. Release resets status to `todo` and unassigns you.
 
 ## 6. Delegation
 
@@ -48,7 +51,14 @@ If `PAPERCLIP_APPROVAL_ID` is set:
 3. Update `$AGENT_HOME/memory/YYYY-MM-DD.md` with timeline entries.
 4. Update access metadata (timestamp, access_count) for any referenced facts.
 
-## 8. Exit
+## 8. Notes Hygiene
+
+- Keep your agent notes concise: under 50 lines total.
+- After each run, prune old entries: keep only the last 5 run summaries.
+- Collapse repeated failures into one summary line (e.g. "Runs 25-28: blocked on X, same error").
+- Remove resolved items and outdated context that no longer applies.
+
+## 9. Exit
 
 - Comment on any in_progress work before exiting.
 - If no assignments and no valid mention-handoff, exit cleanly.

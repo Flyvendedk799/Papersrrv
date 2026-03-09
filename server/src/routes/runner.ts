@@ -50,6 +50,9 @@ function assertRunnerAuth(req: Request, res: Response): boolean {
 /** In-memory map of runId → log handle for persisting runner logs to disk. */
 const runLogHandles = new Map<string, RunLogHandle>();
 
+/** In-memory seq counters per run – avoids a COUNT(*) query on every log call. */
+const runSeqCounters = new Map<string, number>();
+
 export function runnerRoutes(db: Db) {
   const router = Router();
 
@@ -178,6 +181,9 @@ export function runnerRoutes(db: Db) {
         .where(eq(agentRuntimeState.agentId, claimed.agentId))
         .then((rows) => rows[0] ?? null);
 
+      // Initialize seq counter for this run
+      runSeqCounters.set(claimed.id, 0);
+
       // Initialize the run log store so logs persist for the completed-run transcript
       try {
         const logStore = getRunLogStore();
@@ -263,15 +269,10 @@ export function runnerRoutes(db: Db) {
         return;
       }
 
-      // Count existing events for seq
-      const existingEvents = await db
-        .select({ seq: heartbeatRunEvents.seq })
-        .from(heartbeatRunEvents)
-        .where(eq(heartbeatRunEvents.runId, runId))
-        .orderBy(heartbeatRunEvents.seq)
-        .then((rows) => rows.length);
-
-      const seq = existingEvents + 1;
+      // Use in-memory seq counter (initialized at claim time) instead of COUNT(*) query
+      const prevSeq = runSeqCounters.get(runId) ?? 0;
+      const seq = prevSeq + 1;
+      runSeqCounters.set(runId, seq);
 
       await db.insert(heartbeatRunEvents).values({
         companyId: run.companyId,
@@ -389,6 +390,7 @@ export function runnerRoutes(db: Db) {
         }
         runLogHandles.delete(runId);
       }
+      runSeqCounters.delete(runId);
 
       await db
         .update(heartbeatRuns)
