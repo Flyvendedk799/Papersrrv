@@ -542,13 +542,13 @@ export function runnerRoutes(db: Db) {
 
       // Find matching agents first so we can set per-agent instructionsFilePath
       const toFix = await db
-        .select({ id: agents.id, name: agents.name, urlKey: agents.urlKey, adapterConfig: agents.adapterConfig })
+        .select({ id: agents.id, name: agents.name, adapterConfig: agents.adapterConfig })
         .from(agents)
         .where(whereCondition);
 
       const results: { id: string; name: string }[] = [];
       for (const agent of toFix) {
-        const urlKey = agent.urlKey ?? agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+        const urlKey = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
         // Build per-agent config: infrastructure from template, paths from agent identity
         const agentConfig: Record<string, unknown> = {
           ...(templateConfig ?? {}),
