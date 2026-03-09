@@ -1,0 +1,418 @@
+/**
+ * Remote Runner API
+ *
+ * Allows an external runner process (e.g. on a local laptop) to claim queued
+ * heartbeat runs, stream logs, and report completion.  The server schedules
+ * runs via the heartbeat system as usual, but when PAPERCLIP_RUNNER_MODE=remote,
+ * local adapters (cursor, process, etc.) are not executed server-side.  Instead
+ * the runner polls these endpoints.
+ *
+ * Authentication: runner must provide a valid runner token via
+ *   Authorization: Bearer <PAPERCLIP_RUNNER_TOKEN>
+ */
+
+import { Router, type Request, type Response } from "express";
+import { and, eq, asc, inArray } from "drizzle-orm";
+import type { Db } from "@paperclipai/db";
+import { agents, heartbeatRuns, heartbeatRunEvents, agentRuntimeState, agentTaskSessions } from "@paperclipai/db";
+import { logger } from "../middleware/logger.js";
+import { publishLiveEvent } from "../services/live-events.js";
+
+/** Adapter types that require a local CLI and cannot run on a cloud server. */
+const LOCAL_ADAPTER_TYPES = new Set(["cursor", "process", "claude_local", "codex_local", "opencode_local", "pi_local"]);
+
+export function isRemoteRunnerMode(): boolean {
+  return process.env.PAPERCLIP_RUNNER_MODE === "remote";
+}
+
+/** Returns true if the given adapter type needs a remote runner. */
+export function needsRemoteRunner(adapterType: string | null): boolean {
+  if (!isRemoteRunnerMode()) return false;
+  return LOCAL_ADAPTER_TYPES.has(adapterType ?? "process");
+}
+
+function assertRunnerAuth(req: Request, res: Response): boolean {
+  const token = process.env.PAPERCLIP_RUNNER_TOKEN;
+  if (!token) {
+    res.status(500).json({ error: "PAPERCLIP_RUNNER_TOKEN not configured on server" });
+    return false;
+  }
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ") || auth.slice(7) !== token) {
+    res.status(401).json({ error: "Invalid or missing runner token" });
+    return false;
+  }
+  return true;
+}
+
+export function runnerRoutes(db: Db) {
+  const router = Router();
+
+  /**
+   * GET /api/runner/poll
+   * Returns the next queued run for a local adapter type.
+   * Query params:
+   *   adapterTypes - comma-separated adapter types (default: all local types)
+   */
+  router.get("/runner/poll", async (req: Request, res: Response) => {
+    if (!assertRunnerAuth(req, res)) return;
+
+    try {
+      const requestedTypes = req.query.adapterTypes
+        ? String(req.query.adapterTypes).split(",").filter((t) => LOCAL_ADAPTER_TYPES.has(t))
+        : Array.from(LOCAL_ADAPTER_TYPES);
+
+      if (requestedTypes.length === 0) {
+        res.json({ run: null });
+        return;
+      }
+
+      // Find queued runs whose agents use a local adapter type
+      const queuedRuns = await db
+        .select({
+          runId: heartbeatRuns.id,
+          agentId: heartbeatRuns.agentId,
+          companyId: heartbeatRuns.companyId,
+          adapterType: agents.adapterType,
+          createdAt: heartbeatRuns.createdAt,
+        })
+        .from(heartbeatRuns)
+        .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
+        .where(
+          and(
+            eq(heartbeatRuns.status, "queued"),
+            inArray(agents.adapterType, requestedTypes),
+          ),
+        )
+        .orderBy(asc(heartbeatRuns.createdAt))
+        .limit(1);
+
+      if (queuedRuns.length === 0) {
+        res.json({ run: null });
+        return;
+      }
+
+      res.json({ run: queuedRuns[0] });
+    } catch (err) {
+      logger.error({ err }, "runner poll failed");
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  /**
+   * POST /api/runner/claim/:runId
+   * Atomically claim a queued run (queued → running).
+   * Returns the full execution context needed to run the adapter.
+   */
+  router.post("/runner/claim/:runId", async (req: Request, res: Response) => {
+    if (!assertRunnerAuth(req, res)) return;
+
+    try {
+      const runId = String(req.params.runId);
+
+      // Atomic claim: queued → running
+      const claimedAt = new Date();
+      const claimed = await db
+        .update(heartbeatRuns)
+        .set({
+          status: "running",
+          startedAt: claimedAt,
+          updatedAt: claimedAt,
+        })
+        .where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.status, "queued")))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+
+      if (!claimed) {
+        res.status(409).json({ error: "Run already claimed or not found" });
+        return;
+      }
+
+      // Publish live event
+      publishLiveEvent({
+        companyId: claimed.companyId,
+        type: "heartbeat.run.status",
+        payload: {
+          runId: claimed.id,
+          agentId: claimed.agentId,
+          status: "running",
+          invocationSource: claimed.invocationSource,
+          triggerDetail: claimed.triggerDetail,
+          startedAt: claimedAt.toISOString(),
+          finishedAt: null,
+          error: null,
+          errorCode: null,
+        },
+      });
+
+      // Update agent status to running
+      const agent = await db
+        .select()
+        .from(agents)
+        .where(eq(agents.id, claimed.agentId))
+        .then((rows) => rows[0] ?? null);
+
+      if (agent) {
+        await db
+          .update(agents)
+          .set({ status: "running", updatedAt: new Date() })
+          .where(eq(agents.id, agent.id));
+
+        publishLiveEvent({
+          companyId: agent.companyId,
+          type: "agent.status",
+          payload: { agentId: agent.id, status: "running", outcome: "running" },
+        });
+      }
+
+      // Build execution context
+      const context = claimed.contextSnapshot ?? {};
+      const runtimeState = await db
+        .select()
+        .from(agentRuntimeState)
+        .where(eq(agentRuntimeState.agentId, claimed.agentId))
+        .then((rows) => rows[0] ?? null);
+
+      res.json({
+        run: {
+          id: claimed.id,
+          agentId: claimed.agentId,
+          companyId: claimed.companyId,
+          status: claimed.status,
+          invocationSource: claimed.invocationSource,
+          triggerDetail: claimed.triggerDetail,
+          contextSnapshot: context,
+          wakeupRequestId: claimed.wakeupRequestId,
+        },
+        agent: agent
+          ? {
+              id: agent.id,
+              name: agent.name,
+              companyId: agent.companyId,
+              adapterType: agent.adapterType,
+              adapterConfig: agent.adapterConfig,
+              runtimeConfig: agent.runtimeConfig,
+            }
+          : null,
+        runtime: {
+          sessionId: runtimeState?.sessionId ?? null,
+          stateJson: runtimeState?.stateJson ?? null,
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, "runner claim failed");
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  /**
+   * POST /api/runner/log/:runId
+   * Append log lines to a running run.
+   * Body: { stream: "stdout"|"stderr", chunk: string }
+   */
+  router.post("/runner/log/:runId", async (req: Request, res: Response) => {
+    if (!assertRunnerAuth(req, res)) return;
+
+    try {
+      const runId = String(req.params.runId);
+      const { stream, chunk } = req.body as { stream: "stdout" | "stderr"; chunk: string };
+
+      if (!stream || !chunk) {
+        res.status(400).json({ error: "stream and chunk required" });
+        return;
+      }
+
+      const run = await db
+        .select()
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null);
+
+      if (!run || run.status !== "running") {
+        res.status(404).json({ error: "Run not found or not running" });
+        return;
+      }
+
+      // Count existing events for seq
+      const existingEvents = await db
+        .select({ seq: heartbeatRunEvents.seq })
+        .from(heartbeatRunEvents)
+        .where(eq(heartbeatRunEvents.runId, runId))
+        .orderBy(heartbeatRunEvents.seq)
+        .then((rows) => rows.length);
+
+      const seq = existingEvents + 1;
+
+      await db.insert(heartbeatRunEvents).values({
+        companyId: run.companyId,
+        runId,
+        agentId: run.agentId,
+        seq,
+        eventType: "lifecycle",
+        stream,
+        level: "info",
+        message: chunk.slice(0, 2000),
+        createdAt: new Date(),
+      });
+
+      // Publish live log event
+      const payloadChunk = chunk.length > 8192 ? chunk.slice(chunk.length - 8192) : chunk;
+      publishLiveEvent({
+        companyId: run.companyId,
+        type: "heartbeat.run.log",
+        payload: {
+          runId: run.id,
+          agentId: run.agentId,
+          stream,
+          chunk: payloadChunk,
+          truncated: payloadChunk.length !== chunk.length,
+        },
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error({ err }, "runner log failed");
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  /**
+   * POST /api/runner/complete/:runId
+   * Mark a run as completed with a result.
+   * Body: AdapterExecutionResult-like payload
+   */
+  router.post("/runner/complete/:runId", async (req: Request, res: Response) => {
+    if (!assertRunnerAuth(req, res)) return;
+
+    try {
+      const runId = String(req.params.runId);
+      const result = req.body as {
+        exitCode?: number | null;
+        signal?: string | null;
+        timedOut?: boolean;
+        errorMessage?: string | null;
+        errorCode?: string | null;
+        usage?: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number };
+        costUsd?: number | null;
+        billingType?: string | null;
+        sessionId?: string | null;
+        summary?: string | null;
+        stdoutExcerpt?: string | null;
+        stderrExcerpt?: string | null;
+      };
+
+      const run = await db
+        .select()
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null);
+
+      if (!run || run.status !== "running") {
+        res.status(404).json({ error: "Run not found or not running" });
+        return;
+      }
+
+      // Determine outcome
+      let status: "succeeded" | "failed" | "timed_out";
+      if (result.timedOut) {
+        status = "timed_out";
+      } else if ((result.exitCode ?? 0) === 0 && !result.errorMessage) {
+        status = "succeeded";
+      } else {
+        status = "failed";
+      }
+
+      const usageJson =
+        result.usage || result.costUsd != null
+          ? {
+              ...(result.usage ?? {}),
+              ...(result.costUsd != null ? { costUsd: result.costUsd } : {}),
+              ...(result.billingType ? { billingType: result.billingType } : {}),
+            }
+          : null;
+
+      await db
+        .update(heartbeatRuns)
+        .set({
+          status,
+          finishedAt: new Date(),
+          error: status !== "succeeded" ? (result.errorMessage ?? "Runner reported failure") : null,
+          errorCode: result.errorCode ?? (status === "timed_out" ? "timeout" : status === "failed" ? "adapter_failed" : null),
+          exitCode: result.exitCode ?? null,
+          signal: result.signal ?? null,
+          usageJson: usageJson as Record<string, unknown> | null,
+          stdoutExcerpt: result.stdoutExcerpt ?? null,
+          stderrExcerpt: result.stderrExcerpt ?? null,
+          sessionIdAfter: result.sessionId ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(heartbeatRuns.id, runId));
+
+      // Update agent status
+      const agent = await db
+        .select()
+        .from(agents)
+        .where(eq(agents.id, run.agentId))
+        .then((rows) => rows[0] ?? null);
+
+      if (agent) {
+        const newStatus = status === "succeeded" ? "idle" : "error";
+        await db
+          .update(agents)
+          .set({ status: newStatus, updatedAt: new Date() })
+          .where(eq(agents.id, agent.id));
+
+        publishLiveEvent({
+          companyId: agent.companyId,
+          type: "agent.status",
+          payload: { agentId: agent.id, status: newStatus, outcome: status },
+        });
+      }
+
+      // Publish run status event
+      publishLiveEvent({
+        companyId: run.companyId,
+        type: "heartbeat.run.status",
+        payload: {
+          runId: run.id,
+          agentId: run.agentId,
+          status,
+          invocationSource: run.invocationSource,
+          triggerDetail: run.triggerDetail,
+          error: result.errorMessage ?? null,
+          errorCode: result.errorCode ?? null,
+          startedAt: run.startedAt ? new Date(run.startedAt).toISOString() : null,
+          finishedAt: new Date().toISOString(),
+        },
+      });
+
+      // Update runtime state (token usage)
+      if (result.usage && agent) {
+        const existing = await db
+          .select()
+          .from(agentRuntimeState)
+          .where(eq(agentRuntimeState.agentId, agent.id))
+          .then((rows) => rows[0] ?? null);
+
+        if (existing) {
+          await db
+            .update(agentRuntimeState)
+            .set({
+              totalInputTokens: (existing.totalInputTokens ?? 0) + (result.usage.inputTokens ?? 0),
+              totalOutputTokens: (existing.totalOutputTokens ?? 0) + (result.usage.outputTokens ?? 0),
+              sessionId: result.sessionId ?? existing.sessionId,
+              updatedAt: new Date(),
+            })
+            .where(eq(agentRuntimeState.agentId, agent.id));
+        }
+      }
+
+      res.json({ ok: true, status });
+    } catch (err) {
+      logger.error({ err }, "runner complete failed");
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  return router;
+}

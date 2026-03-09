@@ -40,8 +40,15 @@ import {
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
 import { ensureOpenCodeModelConfiguredAndAvailable } from "@paperclipai/adapter-opencode-local/server";
 
-/** WSL-based Cursor agent command for all agents. */
-const DEFAULT_CURSOR_WSL_COMMAND = "wsl -d Ubuntu -- /root/.local/bin/agent";
+/**
+ * Default command for the Cursor adapter.
+ * On Linux/macOS the `agent` binary is on the PATH.
+ * On Windows/WSL the previous default was "wsl -d Ubuntu -- /root/.local/bin/agent".
+ * This can be overridden per-agent via adapterConfig.command.
+ */
+const DEFAULT_CURSOR_COMMAND = process.platform === "win32"
+  ? "wsl -d Ubuntu -- /root/.local/bin/agent"
+  : "agent";
 
 /** All agents use composer-1.5 via Cursor subscription through WSL. */
 function pickDefaultModel(): string {
@@ -185,7 +192,7 @@ async function scaffoldAgentInstructions(
       needsUpdate = true;
     }
     if (!config.command) {
-      config.command = DEFAULT_CURSOR_WSL_COMMAND;
+      config.command = DEFAULT_CURSOR_COMMAND;
       config.cwd = agentsDir;
       config.workspaceOverride = "/root/paperclip-agents";
       needsUpdate = true;
