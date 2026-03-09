@@ -521,22 +521,30 @@ export function runnerRoutes(db: Db) {
         templateConfig = reference.adapterConfig as Record<string, unknown>;
       }
 
-      // Match agents with null, empty, or specific "from" types (e.g. "process")
-      const fromTypes = (req.body as Record<string, unknown>)?.fromTypes as string[] | undefined;
-      const matchConditions = [isNull(agents.adapterType), eq(agents.adapterType, "")];
-      if (fromTypes && Array.isArray(fromTypes)) {
-        for (const ft of fromTypes) {
-          if (typeof ft === "string" && ft !== targetType) {
-            matchConditions.push(eq(agents.adapterType, ft));
+      // Match by specific agent IDs, or by adapter type conditions
+      const agentIds = (req.body as Record<string, unknown>)?.agentIds as string[] | undefined;
+      let whereCondition;
+
+      if (agentIds && Array.isArray(agentIds) && agentIds.length > 0) {
+        whereCondition = inArray(agents.id, agentIds);
+      } else {
+        const fromTypes = (req.body as Record<string, unknown>)?.fromTypes as string[] | undefined;
+        const matchConditions = [isNull(agents.adapterType), eq(agents.adapterType, "")];
+        if (fromTypes && Array.isArray(fromTypes)) {
+          for (const ft of fromTypes) {
+            if (typeof ft === "string" && ft !== targetType) {
+              matchConditions.push(eq(agents.adapterType, ft));
+            }
           }
         }
+        whereCondition = or(...matchConditions);
       }
 
       // Find matching agents first so we can set per-agent instructionsFilePath
       const toFix = await db
         .select({ id: agents.id, name: agents.name, urlKey: agents.urlKey, adapterConfig: agents.adapterConfig })
         .from(agents)
-        .where(or(...matchConditions));
+        .where(whereCondition);
 
       const results: { id: string; name: string }[] = [];
       for (const agent of toFix) {
@@ -558,9 +566,6 @@ export function runnerRoutes(db: Db) {
 
       logger.info({ count: results.length, targetType }, "fix-adapters: patched agents");
       res.json({ ok: true, patched: results.length, agents: results });
-
-      logger.info({ count: updated.length, targetType }, "fix-adapters: patched agents");
-      res.json({ ok: true, patched: updated.length, agents: updated });
     } catch (err) {
       logger.error({ err }, "fix-adapters failed");
       res.status(500).json({ error: "Internal error" });
