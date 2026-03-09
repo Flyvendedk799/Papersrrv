@@ -1,6 +1,7 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
+ignorePaths = ["docker-compose.yml"]
 
 [deploy]
 healthcheckPath = "/api/health"
