@@ -1,0 +1,231 @@
+- id: mymetaview-001
+  fact: "Project MyMetaView target date is 2026-03-11."
+  category: milestone
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 3
+
+- id: mymetaview-002
+  fact: "Issue AIL-2 (demo generation quality) was delegated by CEO to Founding Engineer on 2026-03-08."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 3
+
+- id: mymetaview-003
+  fact: "Founding Engineer was authorized to request up to two specialized software engineering hires for AIL-2."
+  category: relationship
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+    - people/founding-engineer
+  last_accessed: "2026-03-08"
+  access_count: 3
+
+- id: mymetaview-004
+  fact: "Child issue AIL-3 was created on 2026-03-08 and assigned to Founding Engineer to execute the demo quality recovery plan."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+    - people/founding-engineer
+  last_accessed: "2026-03-08"
+  access_count: 2
+
+- id: mymetaview-005
+  fact: "CEO audit on 2026-03-08 found no commit/PR evidence tied to AIL-3 completion window; child issue AIL-8 was created to enforce branch+PR publication and workflow standardization."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+    - people/founding-engineer
+  last_accessed: "2026-03-08"
+  access_count: 1
+
+- id: mymetaview-006
+  fact: "Issue AIL-9 was converted to a strict hiring execution path on 2026-03-08: child issue AIL-10 assigned to Founding Engineer requires exactly 3 hires completed end-to-end with approval and created-agent evidence."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+    - people/founding-engineer
+  last_accessed: "2026-03-08"
+  access_count: 2
+
+- id: mymetaview-007
+  fact: "Issue AIL-11 generated a pending COO hire approval on 2026-03-08 (approval e094b822-0f71-4fec-81ae-d599b01fedfa); requested role was mapped to role=general with title Chief Operating Officer due to API role enum constraints."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: superseded
+  superseded_by: mymetaview-008
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 2
+
+- id: mymetaview-008
+  fact: "Approval e094b822-0f71-4fec-81ae-d599b01fedfa for COO hire was approved on 2026-03-08, enabling activation of agent COO (7116da86-6529-4d46-9df4-c7d24460cabe) and completion of issue AIL-11."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 2
+
+- id: mymetaview-009
+  fact: "Issue AIL-12 initiated Sales department setup on 2026-03-08; CEO submitted Chief of Sales hire request and linked approval 51d3e74a-5626-42d1-a4b6-ed9232578eb2."
+  category: milestone
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 3
+
+- id: mymetaview-010
+  fact: "Approval 51d3e74a-5626-42d1-a4b6-ed9232578eb2 was approved on 2026-03-08, activating agent Chief of Sales (e663fc39-03a6-47f2-a896-fca79e13a8ee) with canCreateAgents=true."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 3
+
+- id: mymetaview-011
+  fact: "Child issue AIL-13 was created on 2026-03-08 and assigned to Chief of Sales to hire one Sales Team Lead and three sales specialists for outreach, tenders, and portfolio packaging."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 3
+
+- id: mymetaview-012
+  fact: "Sales hiring stalled because delegated issue AIL-13 remained todo with no progress comments; CEO re-triggered execution on 2026-03-08 via escalation comment c89323d2-b599-45f6-96be-29558716549a."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: superseded
+  superseded_by: mymetaview-013
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 2
+
+- id: mymetaview-013
+  fact: "Issue AIL-13 was fully completed on 2026-03-08 after board approvals; sales org now includes Sales Team Lead plus three specialists (cold outreach, tenders, portfolio packaging), and parent issue AIL-12 was closed done."
+  category: milestone
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 2
+
+- id: mymetaview-014
+  fact: "Issue AIL-16 was completed on 2026-03-08 with a final strategic 5-hire plan ranked as: CTO/Head of Engineering, Senior Product Engineer, AI Systems Engineer, Product Designer, and Customer Success/Implementation Lead."
+  category: milestone
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: superseded
+  superseded_by: mymetaview-015
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 2
+
+- id: mymetaview-015
+  fact: "After board reopening on 2026-03-08, issue AIL-16 is blocked pending five hire approvals; execution issue AIL-19 reports all five roles created and awaiting board governance approval."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 1
+
+- id: mymetaview-016
+  fact: "Issue AIL-20 was completed on 2026-03-08 after delegated execution in AIL-21: approval 1ebdfbe5-35a8-4bfa-9fb2-b2ca5ed90372 was approved and Process Chain Manager agent (4e09f53b-9c74-4886-9506-570ce43fce9f) is active."
+  category: milestone
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 1
+
+- id: mymetaview-017
+  fact: "Issue AIL-22 was delegated on 2026-03-08 with COO as execution owner and child issue AIL-23 assigned to Process Chain Manager for end-to-end follow-through until PR delivery."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 1
+
+- id: mymetaview-018
+  fact: "CEO intervened on 2026-03-08 after COO escalation by issuing a direct CTO kickoff order on AIL-24 (comment 436e5b02-53b9-49fc-8355-63b899ec8e36), preserving COO ownership of AIL-22 and PCM follow-through on AIL-23."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 1
+
+- id: mymetaview-019
+  fact: "A second CEO unblock attempt on 2026-03-08 confirmed platform guardrail on AIL-24: only the assignee can release checkout lock; CTO remains the direct unblock owner."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 1

@@ -125,7 +125,10 @@ async function ensureMigrations(
       { tableCount: state.tableCount },
       `${label} has existing tables but no migration journal. Run migrations manually to sync schema.`,
     );
-    const apply = autoApply ? true : await promptApplyMigrations(state.pendingMigrations);
+    const apply =
+      autoApply || process.env.PAPERCLIP_MIGRATION_PROMPT === "never"
+        ? true
+        : await promptApplyMigrations(state.pendingMigrations);
     if (!apply) {
       logger.warn(
         { pendingMigrations: state.pendingMigrations },
@@ -139,7 +142,10 @@ async function ensureMigrations(
     return "applied (pending migrations)";
   }
 
-  const apply = autoApply ? true : await promptApplyMigrations(state.pendingMigrations);
+  const apply =
+    autoApply || process.env.PAPERCLIP_MIGRATION_PROMPT === "never"
+      ? true
+      : await promptApplyMigrations(state.pendingMigrations);
   if (!apply) {
     logger.warn(
       { pendingMigrations: state.pendingMigrations },
@@ -375,7 +381,7 @@ if (config.databaseUrl) {
 if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
   throw new Error(
     `local_trusted mode requires loopback host binding (received: ${config.host}). ` +
-      "Use authenticated mode for non-loopback deployments.",
+    "Use authenticated mode for non-loopback deployments.",
   );
 }
 

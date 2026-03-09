@@ -12,11 +12,11 @@ export function healthRoutes(
     authReady: boolean;
     companyDeletionEnabled: boolean;
   } = {
-    deploymentMode: "local_trusted",
-    deploymentExposure: "private",
-    authReady: true,
-    companyDeletionEnabled: true,
-  },
+      deploymentMode: "local_trusted",
+      deploymentExposure: "private",
+      authReady: true,
+      companyDeletionEnabled: true,
+    },
 ) {
   const router = Router();
 

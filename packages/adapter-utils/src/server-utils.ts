@@ -169,13 +169,16 @@ export async function ensureAbsoluteDirectory(
 }
 
 export async function ensureCommandResolvable(command: string, cwd: string, env: NodeJS.ProcessEnv) {
-  const hasPathSeparator = command.includes("/") || command.includes("\\");
+  // When command contains spaces it is a shell invocation (e.g. "wsl -d Ubuntu -- /root/bin/agent").
+  // Extract just the first token (the binary) for validation.
+  const binary = command.includes(" ") ? command.split(" ")[0] : command;
+  const hasPathSeparator = binary.includes("/") || binary.includes("\\");
   if (hasPathSeparator) {
-    const absolute = path.isAbsolute(command) ? command : path.resolve(cwd, command);
+    const absolute = path.isAbsolute(binary) ? binary : path.resolve(cwd, binary);
     try {
       await fs.access(absolute, fsConstants.X_OK);
     } catch {
-      throw new Error(`Command is not executable: "${command}" (resolved: "${absolute}")`);
+      throw new Error(`Command is not executable: "${binary}" (resolved: "${absolute}")`);
     }
     return;
   }
@@ -189,7 +192,7 @@ export async function ensureCommandResolvable(command: string, cwd: string, env:
 
   for (const dir of dirs) {
     for (const ext of windowsExt) {
-      const candidate = path.join(dir, process.platform === "win32" ? `${command}${ext}` : command);
+      const candidate = path.join(dir, process.platform === "win32" ? `${binary}${ext}` : binary);
       try {
         await fs.access(candidate, fsConstants.X_OK);
         return;
@@ -199,7 +202,7 @@ export async function ensureCommandResolvable(command: string, cwd: string, env:
     }
   }
 
-  throw new Error(`Command not found in PATH: "${command}"`);
+  throw new Error(`Command not found in PATH: "${binary}"`);
 }
 
 export async function runChildProcess(
@@ -223,7 +226,7 @@ export async function runChildProcess(
     const child = spawn(command, args, {
       cwd: opts.cwd,
       env: mergedEnv,
-      shell: false,
+      shell: process.platform === "win32",
       stdio: [opts.stdin != null ? "pipe" : "ignore", "pipe", "pipe"],
     }) as ChildProcessWithEvents;
 

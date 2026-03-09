@@ -30,6 +30,7 @@ if (process.env.npm_config_authenticated_private === "true") {
 const env = {
   ...process.env,
   PAPERCLIP_UI_DEV_MIDDLEWARE: "true",
+  PAPERCLIP_MIGRATION_PROMPT: "never",
 };
 
 if (tailscaleAuth) {
@@ -47,7 +48,7 @@ const serverScript = mode === "watch" ? "dev:watch" : "dev";
 const child = spawn(
   pnpmBin,
   ["--filter", "@paperclipai/server", serverScript, ...forwardedArgs],
-  { stdio: "inherit", env },
+  { stdio: "inherit", env, shell: true },
 );
 
 child.on("exit", (code, signal) => {

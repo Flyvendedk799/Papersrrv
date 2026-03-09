@@ -28,6 +28,7 @@ const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
 const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
+const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 const startLocksByAgent = new Map<string, Promise<void>>();
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 
@@ -711,6 +712,16 @@ export function heartbeatService(db: Db) {
     status: string,
     patch?: Partial<typeof heartbeatRuns.$inferInsert>,
   ) {
+    const existing = await getRun(runId);
+    if (!existing) return null;
+    if (
+      TERMINAL_RUN_STATUSES.has(existing.status) &&
+      existing.status !== status
+    ) {
+      // First terminal status wins to avoid racy overwrites (e.g., cancel vs late adapter success).
+      return existing;
+    }
+
     const updated = await db
       .update(heartbeatRuns)
       .set({ status, ...patch, updatedAt: new Date() })
@@ -802,6 +813,7 @@ export function heartbeatService(db: Db) {
       intervalSec: Math.max(0, asNumber(heartbeat.intervalSec, 0)),
       wakeOnDemand: asBoolean(heartbeat.wakeOnDemand ?? heartbeat.wakeOnAssignment ?? heartbeat.wakeOnOnDemand ?? heartbeat.wakeOnAutomation, true),
       maxConcurrentRuns: normalizeMaxConcurrentRuns(heartbeat.maxConcurrentRuns),
+      alwaysWakeOnTimer: asBoolean(heartbeat.alwaysWakeOnTimer, false),
     };
   }
 
@@ -2205,6 +2217,7 @@ export function heartbeatService(db: Db) {
       let checked = 0;
       let enqueued = 0;
       let skipped = 0;
+      let skippedNoIssues = 0;
 
       for (const agent of allAgents) {
         if (agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") continue;
@@ -2215,6 +2228,23 @@ export function heartbeatService(db: Db) {
         const baseline = new Date(agent.lastHeartbeatAt ?? agent.createdAt).getTime();
         const elapsedMs = now.getTime() - baseline;
         if (elapsedMs < policy.intervalSec * 1000) continue;
+
+        // Skip timer wakeup if agent has no assigned issues (unless alwaysWakeOnTimer is set)
+        if (!policy.alwaysWakeOnTimer) {
+          const [{ count: assignedCount }] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(issues)
+            .where(
+              and(
+                eq(issues.assigneeAgentId, agent.id),
+                inArray(issues.status, ["todo", "in_progress", "blocked"]),
+              ),
+            );
+          if (Number(assignedCount) === 0) {
+            skippedNoIssues += 1;
+            continue;
+          }
+        }
 
         const run = await enqueueWakeup(agent.id, {
           source: "timer",
@@ -2232,7 +2262,10 @@ export function heartbeatService(db: Db) {
         else skipped += 1;
       }
 
-      return { checked, enqueued, skipped };
+      if (skippedNoIssues > 0) {
+        logger.info({ skippedNoIssues }, "timer tick: skipped agents with no assigned issues");
+      }
+      return { checked, enqueued, skipped, skippedNoIssues };
     },
 
     cancelRun: async (runId: string) => {
@@ -2285,7 +2318,7 @@ export function heartbeatService(db: Db) {
         .where(and(eq(heartbeatRuns.agentId, agentId), inArray(heartbeatRuns.status, ["queued", "running"])));
 
       for (const run of runs) {
-        await setRunStatus(run.id, "cancelled", {
+        const cancelled = await setRunStatus(run.id, "cancelled", {
           finishedAt: new Date(),
           error: "Cancelled due to agent pause",
           errorCode: "cancelled",
@@ -2299,9 +2332,23 @@ export function heartbeatService(db: Db) {
         const running = runningProcesses.get(run.id);
         if (running) {
           running.child.kill("SIGTERM");
+          const graceMs = Math.max(1, running.graceSec) * 1000;
+          setTimeout(() => {
+            if (!running.child.killed) {
+              running.child.kill("SIGKILL");
+            }
+          }, graceMs);
           runningProcesses.delete(run.id);
         }
-        await releaseIssueExecutionAndPromote(run);
+        if (cancelled) {
+          await appendRunEvent(cancelled, 1, {
+            eventType: "lifecycle",
+            stream: "system",
+            level: "warn",
+            message: "run cancelled due to agent pause",
+          });
+          await releaseIssueExecutionAndPromote(cancelled);
+        }
       }
 
       return runs.length;

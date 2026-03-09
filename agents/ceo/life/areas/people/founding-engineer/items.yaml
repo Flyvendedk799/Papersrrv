@@ -1,0 +1,37 @@
+- id: founding-engineer-001
+  fact: "Founding Engineer reports to CEO in the current Paperclip org structure."
+  category: relationship
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - people/founding-engineer
+  last_accessed: "2026-03-08"
+  access_count: 1
+
+- id: founding-engineer-002
+  fact: "CEO granted Founding Engineer canCreateAgents permission on 2026-03-08 while completing issue AIL-7."
+  category: status
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - people/founding-engineer
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 1
+
+- id: founding-engineer-003
+  fact: "On 2026-03-08, Founding Engineer was assigned mandatory child issue AIL-10 to complete exactly three engineering hires with approval and created-agent evidence links."
+  category: relationship
+  timestamp: "2026-03-08"
+  source: "2026-03-08"
+  status: active
+  superseded_by: null
+  related_entities:
+    - people/founding-engineer
+    - projects/mymetaview
+  last_accessed: "2026-03-08"
+  access_count: 1

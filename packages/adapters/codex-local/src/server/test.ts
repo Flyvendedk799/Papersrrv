@@ -154,19 +154,31 @@ export async function testEnvironment(
       if (extraArgs.length > 0) args.push(...extraArgs);
       args.push("-");
 
-      const probe = await runChildProcess(
-        `codex-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        command,
-        args,
-        {
-          cwd,
-          env,
-          timeoutSec: 45,
-          graceSec: 5,
-          stdin: "Respond with hello.",
-          onLog: async () => {},
-        },
-      );
+      let probe;
+      try {
+        probe = await runChildProcess(
+          `codex-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          args,
+          {
+            cwd,
+            env,
+            timeoutSec: 45,
+            graceSec: 5,
+            stdin: "Respond with hello.",
+            onLog: async () => {},
+          },
+        );
+      } catch (spawnErr) {
+        checks.push({
+          code: "codex_hello_probe_failed",
+          level: "error",
+          message: "Codex hello probe failed to start.",
+          detail: spawnErr instanceof Error ? spawnErr.message.slice(0, 240) : String(spawnErr).slice(0, 240),
+          hint: "Ensure the codex command is installed and accessible from the working directory.",
+        });
+      }
+      if (probe) {
       const parsed = parseCodexJsonl(probe.stdout);
       const detail = summarizeProbeDetail(probe.stdout, probe.stderr, parsed.errorMessage);
       const authEvidence = `${parsed.errorMessage ?? ""}\n${probe.stdout}\n${probe.stderr}`.trim();
@@ -210,6 +222,7 @@ export async function testEnvironment(
           ...(detail ? { detail } : {}),
           hint: "Run `codex exec --json -` manually in this working directory and prompt `Respond with hello` to debug.",
         });
+      }
       }
     }
   }

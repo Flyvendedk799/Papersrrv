@@ -1,5 +1,6 @@
 import { Router, type Request } from "express";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import { agents as agentsTable, companies, heartbeatRuns } from "@paperclipai/db";
@@ -38,6 +39,169 @@ import {
 } from "@paperclipai/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
 import { ensureOpenCodeModelConfiguredAndAvailable } from "@paperclipai/adapter-opencode-local/server";
+
+/** WSL-based Cursor agent command for all agents. */
+const DEFAULT_CURSOR_WSL_COMMAND = "wsl -d Ubuntu -- /root/.local/bin/agent";
+
+/** All agents use composer-1.5 via Cursor subscription through WSL. */
+function pickDefaultModel(): string {
+  return "composer-1.5";
+}
+
+/**
+ * Auto-scaffold AGENTS.md + HEARTBEAT.md for a newly created agent and patch
+ * its adapterConfig so the adapter picks them up on the first heartbeat.
+ * Silently no-ops if the files already exist or the agents/ directory is missing.
+ */
+async function scaffoldAgentInstructions(
+  db: Db,
+  agent: { id: string; name: string; title: string | null; capabilities: string | null; adapterConfig: Record<string, unknown> | null },
+) {
+  try {
+    const agentsDir = path.resolve(process.cwd(), "agents");
+    if (!fs.existsSync(agentsDir)) return;
+
+    const slug = agent.name.toLowerCase().replace(/\s+/g, "-");
+    const dir = path.join(agentsDir, slug);
+    const agentsMdPath = path.join(dir, "AGENTS.md");
+    const heartbeatMdPath = path.join(dir, "HEARTBEAT.md");
+
+    if (fs.existsSync(agentsMdPath)) return; // already scaffolded
+
+    fs.mkdirSync(dir, { recursive: true });
+
+    const displayName = agent.title || agent.name;
+    const caps = agent.capabilities || `Carry out assigned work as ${displayName}.`;
+    const isLead = /chief|lead|manager|ceo|coo|cto|vp/i.test(agent.name);
+
+    const agentsMd = [
+      `You are ${displayName}.`,
+      "",
+      "Your home directory is $AGENT_HOME. Everything personal to you -- memory, notes -- lives there.",
+      "",
+      "## References",
+      "",
+      "These files are essential. Read them.",
+      "",
+      "- `$AGENT_HOME/HEARTBEAT.md` -- execution checklist. Run every heartbeat.",
+      "",
+      "## Safety Considerations",
+      "",
+      "- Never exfiltrate secrets or private data.",
+      "- Do not perform any destructive commands unless explicitly requested by your manager or the board.",
+      "",
+    ].join("\n");
+
+    const delegationSection = isLead
+      ? [
+          "",
+          "## 4. Delegation",
+          "",
+          "- Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId`.",
+          "- Assign work to the right agent for the job.",
+          "",
+        ].join("\n")
+      : "";
+
+    const exitStep = isLead ? "5" : "4";
+
+    const heartbeatMd = [
+      `# HEARTBEAT.md -- ${displayName} Heartbeat Checklist`,
+      "",
+      "Run this checklist on every heartbeat.",
+      "",
+      "## 1. Identity and Context",
+      "",
+      "- `GET /api/agents/me` -- confirm your id, role, company.",
+      "- Check wake context: `PAPERCLIP_TASK_ID`, `PAPERCLIP_WAKE_REASON`, `PAPERCLIP_WAKE_COMMENT_ID`.",
+      "",
+      "## 2. Get Assignments",
+      "",
+      "- `GET /api/companies/{companyId}/issues?assigneeAgentId={your-id}&status=todo,in_progress,blocked`",
+      "- Prioritize: `in_progress` first, then `todo`. Skip `blocked` unless you can unblock it.",
+      "- If `PAPERCLIP_TASK_ID` is set and assigned to you, prioritize that task.",
+      "",
+      "## 3. Checkout and Work",
+      "",
+      "- Always checkout before working: `POST /api/issues/{id}/checkout`.",
+      "- Never retry a 409 -- that task belongs to someone else or another run.",
+      "- Do the work. Update status and comment when done.",
+      "- When completing an issue, set status to `done` via `PATCH /api/issues/{id}` and post a comment with your deliverable.",
+      delegationSection,
+      `## ${exitStep}. Exit`,
+      "",
+      "- Comment on any in_progress work before exiting.",
+      "- If no assignments, exit cleanly.",
+      "",
+      "---",
+      "",
+      `## ${displayName} Responsibilities`,
+      "",
+      caps,
+      "",
+      "**Never look for unassigned work** -- only work on what is assigned to you.",
+      "",
+      "## Rules",
+      "",
+      "- Always include `X-Paperclip-Run-Id` header on mutating API calls.",
+      "- Comment in concise markdown: status line + bullets + links.",
+      "",
+      "## API Quick Reference",
+      "",
+      "Use `$PAPERCLIP_API_URL` as the base. Authenticate with `Authorization: Bearer $PAPERCLIP_API_KEY`.",
+      "Include `X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID` header on all mutating (POST/PATCH/DELETE) calls.",
+      "",
+      "| Action | Method | Endpoint |",
+      "|--------|--------|----------|",
+      "| Who am I? | GET | `/api/agents/me` |",
+      "| List my issues | GET | `/api/companies/{companyId}/issues?assigneeAgentId={id}&status=todo,in_progress,blocked` |",
+      "| Get issue detail | GET | `/api/issues/{id}` |",
+      "| Create issue | POST | `/api/companies/{companyId}/issues` |",
+      "| Update issue (status, fields) | PATCH | `/api/issues/{id}` -- body: `{status, title, description, ...}` |",
+      "| Checkout issue | POST | `/api/issues/{id}/checkout` -- body: `{agentId, expectedStatuses}` |",
+      "| Release checkout | POST | `/api/issues/{id}/release` |",
+      "| List comments | GET | `/api/issues/{id}/comments` |",
+      "| Post comment | POST | `/api/issues/{id}/comments` -- body: `{body}` |",
+      "| List agents | GET | `/api/companies/{companyId}/agents` |",
+      "| Request hire | POST | `/api/companies/{companyId}/approvals` -- body: `{type: \"hire_agent\", payload: {...}}` |",
+      "| List approvals | GET | `/api/companies/{companyId}/approvals` |",
+      "",
+    ].join("\n");
+
+    fs.writeFileSync(agentsMdPath, agentsMd);
+    fs.writeFileSync(heartbeatMdPath, heartbeatMd);
+
+    // Patch adapterConfig with instructionsFilePath and cwd
+    const config = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+    let needsUpdate = false;
+    if (!config.instructionsFilePath) {
+      config.instructionsFilePath = agentsMdPath;
+      config.cwd = agentsDir;
+      needsUpdate = true;
+    }
+    // Set Cursor via WSL defaults for new agents
+    if (!config.model) {
+      config.model = pickDefaultModel();
+      needsUpdate = true;
+    }
+    if (!config.command) {
+      config.command = DEFAULT_CURSOR_WSL_COMMAND;
+      config.cwd = agentsDir;
+      config.workspaceOverride = "/root/paperclip-agents";
+      needsUpdate = true;
+    }
+    if (needsUpdate) {
+      const { agents: agentsSchema } = await import("@paperclipai/db");
+      const drizzle = await import("drizzle-orm");
+      await db
+        .update(agentsSchema)
+        .set({ adapterType: "cursor", adapterConfig: config, updatedAt: new Date() })
+        .where(drizzle.eq(agentsSchema.id, agent.id));
+    }
+  } catch {
+    // Non-critical — agent still works, just without instruction files
+  }
+}
 
 export function agentRoutes(db: Db) {
   const DEFAULT_INSTRUCTIONS_PATH_KEYS: Record<string, string> = {
@@ -642,6 +806,8 @@ export function agentRoutes(db: Db) {
       lastHeartbeatAt: null,
     });
 
+    await scaffoldAgentInstructions(db, agent);
+
     let approval: Awaited<ReturnType<typeof approvalsSvc.getById>> | null = null;
     const actor = getActorInfo(req);
 
@@ -766,6 +932,8 @@ export function agentRoutes(db: Db) {
       spentMonthlyCents: 0,
       lastHeartbeatAt: null,
     });
+
+    await scaffoldAgentInstructions(db, agent);
 
     const actor = getActorInfo(req);
     await logActivity(db, {

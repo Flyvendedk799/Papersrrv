@@ -104,9 +104,8 @@ export class PaperclipApiClient {
 
 function buildUrl(apiBase: string, path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const url = new URL(apiBase);
-  url.pathname = `${url.pathname.replace(/\/+$/, "")}${normalizedPath}`;
-  return url.toString();
+  const base = apiBase.replace(/\/+$/, "");
+  return `${base}${normalizedPath}`;
 }
 
 function safeParseJson(text: string): unknown {

@@ -22,6 +22,10 @@ import {
   resolveHomeAwarePath,
 } from "./home-paths.js";
 
+if (existsSync(".env")) {
+  loadDotenv({ path: ".env", override: false, quiet: true });
+}
+
 const PAPERCLIP_ENV_FILE_PATH = resolvePaperclipEnvPath();
 if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
   loadDotenv({ path: PAPERCLIP_ENV_FILE_PATH, override: false, quiet: true });
@@ -96,8 +100,8 @@ export function loadConfig(): Config {
   const storageProvider: StorageProvider = storageProviderFromEnv ?? fileStorage?.provider ?? "local_disk";
   const storageLocalDiskBaseDir = resolveHomeAwarePath(
     process.env.PAPERCLIP_STORAGE_LOCAL_DIR ??
-      fileStorage?.localDisk?.baseDir ??
-      resolveDefaultStorageDir(),
+    fileStorage?.localDisk?.baseDir ??
+    resolveDefaultStorageDir(),
   );
   const storageS3Bucket = process.env.PAPERCLIP_STORAGE_S3_BUCKET ?? fileStorage?.s3?.bucket ?? "paperclip";
   const storageS3Region = process.env.PAPERCLIP_STORAGE_S3_REGION ?? fileStorage?.s3?.region ?? "us-east-1";
@@ -117,7 +121,7 @@ export function loadConfig(): Config {
   const deploymentExposureFromEnvRaw = process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
   const deploymentExposureFromEnv =
     deploymentExposureFromEnvRaw &&
-    DEPLOYMENT_EXPOSURES.includes(deploymentExposureFromEnvRaw as DeploymentExposure)
+      DEPLOYMENT_EXPOSURES.includes(deploymentExposureFromEnvRaw as DeploymentExposure)
       ? (deploymentExposureFromEnvRaw as DeploymentExposure)
       : null;
   const deploymentExposure: DeploymentExposure =
@@ -127,7 +131,7 @@ export function loadConfig(): Config {
   const authBaseUrlModeFromEnvRaw = process.env.PAPERCLIP_AUTH_BASE_URL_MODE;
   const authBaseUrlModeFromEnv =
     authBaseUrlModeFromEnvRaw &&
-    AUTH_BASE_URL_MODES.includes(authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
+      AUTH_BASE_URL_MODES.includes(authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
       ? (authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
       : null;
   const publicUrlFromEnv = process.env.PAPERCLIP_PUBLIC_URL;
@@ -180,19 +184,19 @@ export function loadConfig(): Config {
   const databaseBackupIntervalMinutes = Math.max(
     1,
     Number(process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES) ||
-      fileDatabaseBackup?.intervalMinutes ||
-      60,
+    fileDatabaseBackup?.intervalMinutes ||
+    60,
   );
   const databaseBackupRetentionDays = Math.max(
     1,
     Number(process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS) ||
-      fileDatabaseBackup?.retentionDays ||
-      30,
+    fileDatabaseBackup?.retentionDays ||
+    30,
   );
   const databaseBackupDir = resolveHomeAwarePath(
     process.env.PAPERCLIP_DB_BACKUP_DIR ??
-      fileDatabaseBackup?.dir ??
-      resolveDefaultBackupDir(),
+    fileDatabaseBackup?.dir ??
+    resolveDefaultBackupDir(),
   );
 
   return {
@@ -223,8 +227,8 @@ export function loadConfig(): Config {
     secretsMasterKeyFilePath:
       resolveHomeAwarePath(
         process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??
-          fileSecrets?.localEncrypted.keyFilePath ??
-          resolveDefaultSecretsKeyFilePath(),
+        fileSecrets?.localEncrypted.keyFilePath ??
+        resolveDefaultSecretsKeyFilePath(),
       ),
     storageProvider,
     storageLocalDiskBaseDir,

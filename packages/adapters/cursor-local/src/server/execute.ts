@@ -248,6 +248,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     env.PAPERCLIP_API_KEY = authToken;
   }
   const billingType = resolveCursorBillingType(env);
+
+  // When running via WSL, env vars must be listed in WSLENV to be forwarded
+  // from Windows to the Linux guest.
+  if (command.toLowerCase().startsWith("wsl ")) {
+    const paperclipKeys = Object.keys(env).filter((k) => k.startsWith("PAPERCLIP_"));
+    if (paperclipKeys.length > 0) {
+      const existing = env.WSLENV ?? process.env.WSLENV ?? "";
+      env.WSLENV = [...(existing ? [existing] : []), ...paperclipKeys].join(":");
+    }
+  }
+
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
@@ -328,8 +339,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const paperclipEnvNote = renderPaperclipEnvNote(env);
   const prompt = `${instructionsPrefix}${paperclipEnvNote}${renderedPrompt}`;
 
+  // Allow overriding the workspace path passed to the CLI (e.g. WSL path when
+  // the command runs inside WSL but cwd validation happens on Windows).
+  const workspaceArg = asString(config.workspaceOverride, "") || cwd;
   const buildArgs = (resumeSessionId: string | null) => {
-    const args = ["-p", "--output-format", "stream-json", "--workspace", cwd];
+    const args = ["-p", "--output-format", "stream-json", "--workspace", workspaceArg];
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     if (model) args.push("--model", model);
     if (mode) args.push("--mode", mode);

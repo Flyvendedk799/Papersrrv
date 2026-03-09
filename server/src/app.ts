@@ -120,28 +120,12 @@ export async function createApp(
       allowedHostnames: opts.allowedHostnames,
     }),
   );
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
   });
-
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  if (opts.uiMode === "static") {
-    // Try published location first (server/ui-dist/), then monorepo dev location (../../ui/dist)
-    const candidates = [
-      path.resolve(__dirname, "../ui-dist"),
-      path.resolve(__dirname, "../../ui/dist"),
-    ];
-    const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
-    if (uiDist) {
-      app.use(express.static(uiDist));
-      app.get(/.*/, (_req, res) => {
-        res.sendFile("index.html", { root: uiDist });
-      });
-    } else {
-      console.warn("[paperclip] UI dist not found; running in API-only mode");
-    }
-  }
 
   if (opts.uiMode === "vite-dev") {
     const uiRoot = path.resolve(__dirname, "../../ui");
@@ -156,16 +140,31 @@ export async function createApp(
     });
 
     app.use(vite.middlewares);
-    app.get(/.*/, async (req, res, next) => {
+    app.get(/^(?!\/api).*/, async (req, res, next) => {
       try {
+        const url = req.originalUrl;
         const templatePath = path.resolve(uiRoot, "index.html");
         const template = fs.readFileSync(templatePath, "utf-8");
-        const html = await vite.transformIndexHtml(req.originalUrl, template);
+        const html = await vite.transformIndexHtml(url, template);
         res.status(200).set({ "Content-Type": "text/html" }).end(html);
       } catch (err) {
         next(err);
       }
     });
+  } else if (opts.uiMode === "static") {
+    const candidates = [
+      path.resolve(__dirname, "../ui-dist"),
+      path.resolve(__dirname, "../../ui/dist"),
+    ];
+    const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
+    if (uiDist) {
+      app.use(express.static(uiDist));
+      app.get(/^(?!\/api).*/, (_req, res) => {
+        res.sendFile("index.html", { root: uiDist });
+      });
+    } else {
+      console.warn("[paperclip] UI dist not found; running in API-only mode");
+    }
   }
 
   app.use(errorHandler);
