@@ -6,7 +6,8 @@ RUN corepack enable
 
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN printf 'packages:\n  - packages/*\n  - packages/adapters/*\n  - server\n  - ui\n  - cli\n' > pnpm-workspace.yaml
 COPY cli/package.json cli/
 COPY server/package.json server/
 COPY ui/package.json ui/

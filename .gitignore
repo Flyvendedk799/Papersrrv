@@ -41,6 +41,9 @@ tmp/
 # Log files
 *.log
 
+# Workspace config (generated in Dockerfile, keeps Railway from detecting monorepo)
+pnpm-workspace.yaml
+
 # Agent temp directories
 agents/tmp-*/
 
