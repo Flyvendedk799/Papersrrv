@@ -52,6 +52,7 @@ export type {
   JoinRequest,
   InstanceUserRoleGrant,
 } from "./access.js";
+export type { FileSnapshot, FileContent, FileTreeNode, FileWithHistory } from "./file.js";
 export type {
   CompanyPortabilityInclude,
   CompanyPortabilitySecretRequirement,

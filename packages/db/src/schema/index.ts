@@ -31,3 +31,5 @@ export { approvalComments } from "./approval_comments.js";
 export { activityLog } from "./activity_log.js";
 export { companySecrets } from "./company_secrets.js";
 export { companySecretVersions } from "./company_secret_versions.js";
+export { fileContents } from "./file_contents.js";
+export { agentFileSnapshots } from "./agent_file_snapshots.js";

@@ -118,6 +118,15 @@ export {
 } from "./asset.js";
 
 export {
+  FILE_OPERATIONS,
+  createFileSnapshotSchema,
+  indexRunFilesSchema,
+  type FileOperation,
+  type CreateFileSnapshot,
+  type IndexRunFiles,
+} from "./file.js";
+
+export {
   createCompanyInviteSchema,
   acceptInviteSchema,
   listJoinRequestsQuerySchema,

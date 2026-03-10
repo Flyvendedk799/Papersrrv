@@ -70,5 +70,14 @@ export const queryKeys = {
     ["heartbeats", companyId, agentId] as const,
   liveRuns: (companyId: string) => ["live-runs", companyId] as const,
   runIssues: (runId: string) => ["run-issues", runId] as const,
+  files: {
+    list: (companyId: string) => ["files", companyId] as const,
+    tree: (companyId: string) => ["files", companyId, "tree"] as const,
+    history: (companyId: string, filePath: string) =>
+      ["files", companyId, "history", filePath] as const,
+    content: (hash: string) => ["files", "content", hash] as const,
+    runFiles: (companyId: string, runId: string) =>
+      ["files", companyId, "run", runId] as const,
+  },
   org: (companyId: string) => ["org", companyId] as const,
 };

@@ -63,6 +63,13 @@ export {
 } from "./constants.js";
 
 export type {
+  FileSnapshot,
+  FileContent,
+  FileTreeNode,
+  FileWithHistory,
+} from "./types/index.js";
+
+export type {
   Company,
   Agent,
   AgentPermissions,
@@ -211,6 +218,12 @@ export {
   type ClaimJoinRequestApiKey,
   type UpdateMemberPermissions,
   type UpdateUserCompanyAccess,
+  FILE_OPERATIONS,
+  createFileSnapshotSchema,
+  indexRunFilesSchema,
+  type FileOperation,
+  type CreateFileSnapshot,
+  type IndexRunFiles,
   portabilityIncludeSchema,
   portabilitySecretRequirementSchema,
   portabilityCompanyManifestEntrySchema,
