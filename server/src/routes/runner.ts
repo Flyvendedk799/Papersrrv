@@ -210,15 +210,24 @@ export function runnerRoutes(db: Db) {
         : null;
 
       // Resolve secrets in adapterConfig before sending to remote runner
-      let resolvedAdapterConfig = agent?.adapterConfig ?? {};
-      if (agent && typeof resolvedAdapterConfig === "object" && resolvedAdapterConfig !== null) {
+      let resolvedAdapterConfig: Record<string, unknown> = {};
+      if (agent) {
         try {
+          // Drizzle usually returns an object for jsonb, but let's be safe
+          const rawConfig = typeof agent.adapterConfig === "string"
+            ? JSON.parse(agent.adapterConfig)
+            : (agent.adapterConfig || {});
+
           resolvedAdapterConfig = await secretService(db).resolveAdapterConfigForRuntime(
             agent.companyId,
-            resolvedAdapterConfig as Record<string, unknown>,
+            rawConfig as Record<string, unknown>,
           );
         } catch (resolveErr) {
           logger.warn({ err: resolveErr, agentId: agent.id }, "Failed to resolve adapter config secrets for runner");
+          // Fallback to a safe object if parsing failed
+          resolvedAdapterConfig = typeof agent.adapterConfig === "object" && agent.adapterConfig !== null
+            ? (agent.adapterConfig as Record<string, unknown>)
+            : {};
         }
       }
 
