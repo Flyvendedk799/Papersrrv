@@ -213,7 +213,6 @@ export function runnerRoutes(db: Db) {
       let resolvedAdapterConfig: Record<string, unknown> = {};
       if (agent) {
         try {
-          // Drizzle usually returns an object for jsonb, but let's be safe
           const rawConfig = typeof agent.adapterConfig === "string"
             ? JSON.parse(agent.adapterConfig)
             : (agent.adapterConfig || {});
@@ -223,11 +222,21 @@ export function runnerRoutes(db: Db) {
             rawConfig as Record<string, unknown>,
           );
         } catch (resolveErr) {
-          logger.warn({ err: resolveErr, agentId: agent.id }, "Failed to resolve adapter config secrets for runner");
-          // Fallback to a safe object if parsing failed
-          resolvedAdapterConfig = typeof agent.adapterConfig === "object" && agent.adapterConfig !== null
-            ? (agent.adapterConfig as Record<string, unknown>)
+          const errMsg = resolveErr instanceof Error ? resolveErr.message : String(resolveErr);
+          logger.warn({ err: resolveErr, agentId: agent.id }, `Failed to resolve adapter config secrets for runner: ${errMsg}`);
+
+          // Fallback to a safe object if parsing failed, but inject the error so it's visible to the runner logs
+          const originalConfig = typeof agent.adapterConfig === "object" && agent.adapterConfig !== null
+            ? { ...(agent.adapterConfig as Record<string, unknown>) }
             : {};
+
+          // Inject a special error env var so the runner can see why resolution failed
+          const env = (originalConfig.env as Record<string, unknown>) || {};
+          originalConfig.env = {
+            ...env,
+            PAPERCLIP_SECRET_ERROR: `Failed to resolve secrets: ${errMsg}. Check if the secret exists for this company.`,
+          };
+          resolvedAdapterConfig = originalConfig;
         }
       }
 
