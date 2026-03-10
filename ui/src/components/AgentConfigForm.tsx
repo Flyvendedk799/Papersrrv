@@ -857,8 +857,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               </div>
             </CollapsibleSection>
           </div>
-        )}
         </div>
+      )}
     </div>
   );
 }
