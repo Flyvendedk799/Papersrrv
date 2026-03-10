@@ -18,7 +18,7 @@
  *   MAX_CONCURRENT_RUNS   - Max concurrent runs (default: 5)
  */
 
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import * as fs from "node:fs";
 import { dirname, join } from "node:path";
@@ -123,6 +123,13 @@ async function executeRun(runId, agent, context, authToken) {
   const localAgentWorkspace = resolveLocalPath(workspaceOverride);
   if (localAgentWorkspace && !fs.existsSync(localAgentWorkspace)) {
     fs.mkdirSync(localAgentWorkspace, { recursive: true });
+  }
+
+  // Also ensure the directory exists inside WSL when using a WSL command
+  if (command.toLowerCase().startsWith("wsl ")) {
+    try {
+      execSync(`wsl -d Ubuntu -- mkdir -p "${workspaceOverride}"`, { stdio: "ignore" });
+    } catch { /* best-effort */ }
   }
 
   const model = config.model || "composer-1.5";
