@@ -36,7 +36,7 @@ function extractFilePathFromInput(input: unknown): string | null {
   const rec = asRecord(input);
   if (!rec) return null;
   // Try common field names across adapters
-  for (const key of ["file_path", "filePath", "path", "filename", "file", "target_file"]) {
+  for (const key of ["file_path", "filePath", "path", "filename", "file", "target_file", "relative_workspace_path", "relativeWorkspacePath"]) {
     if (typeof rec[key] === "string" && rec[key]) return rec[key] as string;
   }
   return null;
@@ -51,58 +51,38 @@ function extractContentFromInput(input: unknown): string | undefined {
   return undefined;
 }
 
+type ParsedEvent = { toolCall: { name: string; input: unknown } } | { toolResult: { content: string } };
+
 /**
- * Parse a single NDJSON log line and extract file operations from tool_call entries.
- * Returns extracted file operations with path and operation type.
+ * Try to parse a single JSON object from adapter stdout and extract tool events.
+ * Supports multiple adapter formats:
+ *   - Claude: {type:"assistant", message:{content:[{type:"tool_use", name, input}]}}
+ *   - Cursor tool_call: {type:"tool_call", subtype:"started", tool_call:{toolName:{args}}}
+ *   - Cursor tool_use: {type:"tool_use", part:{tool, state:{input, output, status}}}
+ *   - Generic: {type:"tool_call"|"function_call", name, input}
  */
-function parseLogLine(line: string): { toolCall?: { name: string; input: unknown }; toolResult?: { content: string } } {
-  try {
-    const logEntry = JSON.parse(line) as { stream?: string; chunk?: string };
-    if (logEntry.stream !== "stdout" || !logEntry.chunk) return {};
+function parseAdapterJson(parsed: Record<string, unknown>): ParsedEvent[] {
+  const type = typeof parsed.type === "string" ? parsed.type : "";
+  const results: ParsedEvent[] = [];
 
-    // The chunk itself is a JSON string from the adapter
-    let parsed: Record<string, unknown> | null = null;
-    try {
-      parsed = asRecord(JSON.parse(logEntry.chunk));
-    } catch {
-      return {};
-    }
-    if (!parsed) return {};
+  // Claude format: {type: "assistant", message: {content: [{type: "tool_use"|"tool_call", name, input}]}}
+  if (type === "assistant") {
+    const message = asRecord(parsed.message);
+    if (!message) return results;
+    const content = Array.isArray(message.content) ? message.content : [];
+    for (const blockRaw of content) {
+      const block = asRecord(blockRaw);
+      if (!block) continue;
+      const blockType = typeof block.type === "string" ? block.type : "";
 
-    const type = typeof parsed.type === "string" ? parsed.type : "";
-
-    // Claude format: {type: "assistant", message: {content: [{type: "tool_use", name: "Read", input: {...}}]}}
-    if (type === "assistant") {
-      const message = asRecord(parsed.message);
-      if (!message) return {};
-      const content = Array.isArray(message.content) ? message.content : [];
-      for (const blockRaw of content) {
-        const block = asRecord(blockRaw);
-        if (!block || block.type !== "tool_use") continue;
-        if (typeof block.name === "string") {
-          return { toolCall: { name: block.name, input: block.input } };
+      if (blockType === "tool_use" || blockType === "tool_call") {
+        const name = typeof block.name === "string" ? block.name : (typeof block.tool === "string" ? block.tool : "");
+        if (name) {
+          results.push({ toolCall: { name, input: block.input ?? block.arguments ?? block.args ?? {} } });
         }
       }
-    }
 
-    // Cursor format: tool_call events
-    if (type === "tool_call" || type === "function_call") {
-      return {
-        toolCall: {
-          name: typeof parsed.name === "string" ? parsed.name : "",
-          input: parsed.input ?? parsed.arguments ?? parsed.params ?? {},
-        },
-      };
-    }
-
-    // User messages with tool_result
-    if (type === "user") {
-      const message = asRecord(parsed.message);
-      if (!message) return {};
-      const content = Array.isArray(message.content) ? message.content : [];
-      for (const blockRaw of content) {
-        const block = asRecord(blockRaw);
-        if (!block || block.type !== "tool_result") continue;
+      if (blockType === "tool_result") {
         let text = "";
         if (typeof block.content === "string") {
           text = block.content;
@@ -114,13 +94,131 @@ function parseLogLine(line: string): { toolCall?: { name: string; input: unknown
           }
           text = parts.join("\n");
         }
-        if (text) return { toolResult: { content: text } };
+        const output = typeof block.output === "string" ? block.output : "";
+        if (text || output) results.push({ toolResult: { content: text || output } });
+      }
+    }
+    return results;
+  }
+
+  // Cursor tool_call event: {type:"tool_call", subtype:"started"|"completed", tool_call:{ReadFile:{args:{...}}}}
+  if (type === "tool_call") {
+    const subtype = typeof parsed.subtype === "string" ? parsed.subtype : "";
+
+    // Nested tool_call object format
+    const toolCallObj = asRecord(parsed.tool_call ?? parsed.toolCall);
+    if (toolCallObj) {
+      const toolName = Object.keys(toolCallObj)[0];
+      if (toolName) {
+        const payload = asRecord(toolCallObj[toolName]) ?? {};
+
+        if (subtype === "started" || subtype === "start" || !subtype) {
+          const rawInput = payload.args ?? asRecord(payload.function)?.arguments ?? payload;
+          results.push({ toolCall: { name: toolName, input: rawInput } });
+        }
+
+        if (subtype === "completed" || subtype === "complete" || subtype === "finished") {
+          const result = payload.result ?? payload.output ?? payload.error;
+          const content = typeof result === "string" ? result : (result !== undefined ? JSON.stringify(result) : `${toolName} completed`);
+          results.push({ toolResult: { content } });
+        }
+      }
+      return results;
+    }
+
+    // Flat format: {type:"tool_call", name:"Read", input:{...}}
+    const name = typeof parsed.name === "string" ? parsed.name : "";
+    if (name) {
+      results.push({ toolCall: { name, input: parsed.input ?? parsed.arguments ?? parsed.params ?? {} } });
+    }
+    return results;
+  }
+
+  if (type === "function_call") {
+    const name = typeof parsed.name === "string" ? parsed.name : "";
+    if (name) {
+      results.push({ toolCall: { name, input: parsed.input ?? parsed.arguments ?? parsed.params ?? {} } });
+    }
+    return results;
+  }
+
+  // Cursor tool_use format: {type:"tool_use", part:{tool:"ReadFile", state:{input:{}, output:"...", status:"..."}}}
+  if (type === "tool_use") {
+    const part = asRecord(parsed.part);
+    if (part) {
+      const toolName = typeof part.tool === "string" ? part.tool : "";
+      const state = asRecord(part.state);
+      if (toolName && state) {
+        results.push({ toolCall: { name: toolName, input: state.input ?? {} } });
+        const output = typeof state.output === "string" ? state.output : "";
+        if (output) {
+          results.push({ toolResult: { content: output } });
+        }
+      }
+    }
+    return results;
+  }
+
+  // User messages with tool_result
+  if (type === "user") {
+    const message = asRecord(parsed.message);
+    if (!message) return results;
+    const content = Array.isArray(message.content) ? message.content : [];
+    for (const blockRaw of content) {
+      const block = asRecord(blockRaw);
+      if (!block || block.type !== "tool_result") continue;
+      let text = "";
+      if (typeof block.content === "string") {
+        text = block.content;
+      } else if (Array.isArray(block.content)) {
+        const parts: string[] = [];
+        for (const part of block.content as unknown[]) {
+          const p = asRecord(part);
+          if (p && typeof p.text === "string") parts.push(p.text);
+        }
+        text = parts.join("\n");
+      }
+      if (text) results.push({ toolResult: { content: text } });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Extract all tool events from a single NDJSON log line.
+ * Each log line has {ts, stream, chunk} where chunk may contain multiple
+ * newline-separated JSON objects from the adapter's raw stdout.
+ */
+function parseLogLine(line: string): ParsedEvent[] {
+  const events: ParsedEvent[] = [];
+  try {
+    const logEntry = JSON.parse(line) as { stream?: string; chunk?: string };
+    if (logEntry.stream !== "stdout" || !logEntry.chunk) return events;
+
+    // The chunk may contain multiple newline-separated JSON objects
+    const subLines = logEntry.chunk.split("\n");
+    for (const subLine of subLines) {
+      let trimmed = subLine.trim();
+      if (!trimmed) continue;
+
+      // Handle Cursor "stdout: {json}" or "stdout={json}" prefix
+      const prefixed = trimmed.match(/^(?:stdout|stderr)\s*[:=]?\s*([\[{].*)$/i);
+      if (prefixed) trimmed = prefixed[1]!.trim();
+
+      try {
+        const parsed = asRecord(JSON.parse(trimmed));
+        if (!parsed) continue;
+        const subEvents = parseAdapterJson(parsed);
+        events.push(...subEvents);
+      } catch {
+        // Not valid JSON — skip this sub-line
       }
     }
   } catch {
-    // Silently skip unparseable lines
+    // Outer NDJSON line not parseable — skip
   }
-  return {};
+  return events;
 }
 
 /**
@@ -135,23 +233,21 @@ export function extractFileOpsFromLog(logContent: string): ExtractedFileOp[] {
   let pendingToolCall: { name: string; input: unknown } | null = null;
 
   for (const line of lines) {
-    const { toolCall, toolResult } = parseLogLine(line);
+    const events = parseLogLine(line);
 
-    if (toolCall) {
-      // Process the pending tool call if we get a new one without a result
-      if (pendingToolCall) {
-        const op = resolveFileOp(pendingToolCall, undefined);
+    for (const event of events) {
+      if ("toolCall" in event) {
+        // Process the pending tool call if we get a new one without a result
+        if (pendingToolCall) {
+          const op = resolveFileOp(pendingToolCall, undefined);
+          if (op) addOp(ops, seenPaths, op);
+        }
+        pendingToolCall = event.toolCall;
+      } else if ("toolResult" in event && pendingToolCall) {
+        const op = resolveFileOp(pendingToolCall, event.toolResult.content);
         if (op) addOp(ops, seenPaths, op);
+        pendingToolCall = null;
       }
-      pendingToolCall = toolCall;
-      continue;
-    }
-
-    if (toolResult && pendingToolCall) {
-      const op = resolveFileOp(pendingToolCall, toolResult.content);
-      if (op) addOp(ops, seenPaths, op);
-      pendingToolCall = null;
-      continue;
     }
   }
 
@@ -248,7 +344,10 @@ export async function indexRunFromLog(
     }
     if (!logContent) return 0;
 
+    logger.info({ runId: run.id, logBytes: logContent.length }, "reading run log for file indexing");
+
     const fileOps = extractFileOpsFromLog(logContent);
+    logger.info({ runId: run.id, fileOpsCount: fileOps.length, sample: fileOps.slice(0, 3).map(o => `${o.operation}:${o.filePath}`) }, "extracted file ops from log");
     if (fileOps.length === 0) return 0;
 
     let indexed = 0;

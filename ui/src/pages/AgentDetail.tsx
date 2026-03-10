@@ -1358,7 +1358,7 @@ function extractFilePathFromToolInput(toolName: string, input: unknown): string 
   if (!FILE_TOOLS.has(toolName)) return null;
   if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
   const rec = input as Record<string, unknown>;
-  for (const key of ["file_path", "filePath", "path", "filename", "file", "target_file"]) {
+  for (const key of ["file_path", "filePath", "path", "filename", "file", "target_file", "relative_workspace_path", "relativeWorkspacePath"]) {
     if (typeof rec[key] === "string" && rec[key]) return rec[key] as string;
   }
   return null;
