@@ -64,6 +64,15 @@ function loadOrCreateMasterKey(): Buffer {
   mkdirSync(dir, { recursive: true });
   const generated = randomBytes(32);
   writeFileSync(keyPath, generated.toString("base64"), { encoding: "utf8", mode: 0o600 });
+
+  console.warn(`
+  [WARNING] Generated a NEW secrets master key at ${keyPath}.
+  If this is an ephemeral file system (like Railway), this key will be LOST on redeploy,
+  making all previously saved secrets unreadable.
+  
+  TO FIX THIS: Set the PAPERCLIP_SECRETS_MASTER_KEY environment variable to a persistent 32-byte base64 string.
+  `);
+
   try {
     chmodSync(keyPath, 0o600);
   } catch {
