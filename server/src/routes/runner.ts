@@ -19,6 +19,7 @@ import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "../services/live-events.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { getRunLogStore, type RunLogHandle } from "../services/run-log-store.js";
+import { secretService } from "../services/index.js";
 
 /** Adapter types that require a local CLI and cannot run on a cloud server. */
 const LOCAL_ADAPTER_TYPES = new Set(["cursor", "process", "claude_local", "codex_local", "opencode_local", "pi_local"]);
@@ -208,6 +209,19 @@ export function runnerRoutes(db: Db) {
         ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, claimed.id)
         : null;
 
+      // Resolve secrets in adapterConfig before sending to remote runner
+      let resolvedAdapterConfig = agent?.adapterConfig ?? {};
+      if (agent && typeof resolvedAdapterConfig === "object" && resolvedAdapterConfig !== null) {
+        try {
+          resolvedAdapterConfig = await secretService(db).resolveAdapterConfigForRuntime(
+            agent.companyId,
+            resolvedAdapterConfig as Record<string, unknown>,
+          );
+        } catch (resolveErr) {
+          logger.warn({ err: resolveErr, agentId: agent.id }, "Failed to resolve adapter config secrets for runner");
+        }
+      }
+
       res.json({
         run: {
           id: claimed.id,
@@ -221,13 +235,13 @@ export function runnerRoutes(db: Db) {
         },
         agent: agent
           ? {
-              id: agent.id,
-              name: agent.name,
-              companyId: agent.companyId,
-              adapterType: agent.adapterType,
-              adapterConfig: agent.adapterConfig,
-              runtimeConfig: agent.runtimeConfig,
-            }
+            id: agent.id,
+            name: agent.name,
+            companyId: agent.companyId,
+            adapterType: agent.adapterType,
+            adapterConfig: resolvedAdapterConfig,
+            runtimeConfig: agent.runtimeConfig,
+          }
           : null,
         runtime: {
           sessionId: runtimeState?.sessionId ?? null,
@@ -371,10 +385,10 @@ export function runnerRoutes(db: Db) {
       const usageJson =
         result.usage || result.costUsd != null
           ? {
-              ...(result.usage ?? {}),
-              ...(result.costUsd != null ? { costUsd: result.costUsd } : {}),
-              ...(result.billingType ? { billingType: result.billingType } : {}),
-            }
+            ...(result.usage ?? {}),
+            ...(result.costUsd != null ? { costUsd: result.costUsd } : {}),
+            ...(result.billingType ? { billingType: result.billingType } : {}),
+          }
           : null;
 
       // Finalize the persisted log file

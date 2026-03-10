@@ -154,10 +154,19 @@ async function executeRun(runId, agent, context, authToken) {
 
   if (issueId) env.PAPERCLIP_TASK_ID = issueId;
 
+  // Inject agent-specific environment variables from adapterConfig
+  if (config.env && typeof config.env === "object") {
+    for (const [key, value] of Object.entries(config.env)) {
+      env[key] = String(value);
+    }
+  }
+
   if (command.toLowerCase().startsWith("wsl ")) {
     const paperclipKeys = Object.keys(env).filter((k) => k.startsWith("PAPERCLIP_"));
+    const configEnvKeys = config.env ? Object.keys(config.env) : [];
     const existing = env.WSLENV || process.env.WSLENV || "";
-    env.WSLENV = [...(existing ? [existing] : []), ...paperclipKeys].join(":");
+    const allKeys = [...new Set([...paperclipKeys, ...configEnvKeys])];
+    env.WSLENV = [...(existing ? [existing] : []), ...allKeys].join(":");
   }
 
   const instructionsPrefix = await loadInstructionsFile(config.instructionsFilePath);
