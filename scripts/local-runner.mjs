@@ -29,7 +29,7 @@ const SERVER_URL = process.env.PAPERCLIP_SERVER_URL;
 const RUNNER_TOKEN = process.env.PAPERCLIP_RUNNER_TOKEN;
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS || "3000", 10);
 const ADAPTER_TYPES = process.env.ADAPTER_TYPES || "cursor";
-const MAX_CONCURRENT_RUNS = parseInt(process.env.MAX_CONCURRENT_RUNS || "5", 10);
+const MAX_CONCURRENT_RUNS = parseInt(process.env.MAX_CONCURRENT_RUNS || "8", 10);
 
 if (!SERVER_URL || !RUNNER_TOKEN) {
   console.error("ERROR: PAPERCLIP_SERVER_URL and PAPERCLIP_RUNNER_TOKEN are required");
