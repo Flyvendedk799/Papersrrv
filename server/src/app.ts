@@ -26,6 +26,7 @@ import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { runnerRoutes } from "./routes/runner.js";
 import { fileRoutes } from "./routes/files.js";
+import { debugRoutes } from "./routes/debug.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
 type UiMode = "none" | "static" | "vite-dev";
@@ -116,6 +117,7 @@ export async function createApp(
   api.use(sidebarBadgeRoutes(db));
   api.use(runnerRoutes(db));
   api.use(fileRoutes(db));
+  api.use(debugRoutes(db));
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,
