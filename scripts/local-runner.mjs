@@ -15,11 +15,13 @@
  *   PAPERCLIP_RUNNER_TOKEN - Auth token matching the server's PAPERCLIP_RUNNER_TOKEN
  *   POLL_INTERVAL_MS      - Poll interval in ms (default: 3000)
  *   ADAPTER_TYPES         - Comma-separated adapter types to handle (default: cursor)
+ *   MAX_CONCURRENT_RUNS   - Max concurrent runs (default: 5)
  */
 
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import * as fs from "node:fs";
+import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +29,7 @@ const SERVER_URL = process.env.PAPERCLIP_SERVER_URL;
 const RUNNER_TOKEN = process.env.PAPERCLIP_RUNNER_TOKEN;
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS || "3000", 10);
 const ADAPTER_TYPES = process.env.ADAPTER_TYPES || "cursor";
+const MAX_CONCURRENT_RUNS = parseInt(process.env.MAX_CONCURRENT_RUNS || "5", 10);
 
 if (!SERVER_URL || !RUNNER_TOKEN) {
   console.error("ERROR: PAPERCLIP_SERVER_URL and PAPERCLIP_RUNNER_TOKEN are required");
@@ -70,9 +73,11 @@ const LOCAL_AGENTS_DIR = process.env.PAPERCLIP_LOCAL_AGENTS_DIR
 
 function resolveLocalPath(remotePath) {
   if (!remotePath) return null;
-  // Map /app/agents/... -> local agents dir
   if (remotePath.startsWith("/app/agents")) {
     return remotePath.replace("/app/agents", LOCAL_AGENTS_DIR).replace(/\//g, "\\");
+  }
+  if (remotePath.startsWith("/root/paperclip-agents")) {
+    return remotePath.replace("/root/paperclip-agents", PROJECT_ROOT).replace(/\//g, "\\");
   }
   if (remotePath === "/app") return PROJECT_ROOT;
   return remotePath;
@@ -108,14 +113,22 @@ async function executeRun(runId, agent, context, authToken) {
 
   const command = config.command || "wsl -d Ubuntu -- /root/.local/bin/agent";
   const cwd = resolveLocalCwd(config.cwd);
-  const workspaceOverride = config.workspaceOverride || "/root/paperclip-agents";
+
+  // Isolate workspaces to prevent parallel agents from locking each other out
+  const baseWorkspace = (config.workspaceOverride || "/root/paperclip-agents").replace(/\/$/, "");
+  const safeName = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const workspaceOverride = `${baseWorkspace}/.agent-workspaces/${safeName}`;
+
+  // Ensure the local folder exists so Claude Code doesn't crash on startup
+  const localAgentWorkspace = resolveLocalPath(workspaceOverride);
+  if (localAgentWorkspace && !fs.existsSync(localAgentWorkspace)) {
+    fs.mkdirSync(localAgentWorkspace, { recursive: true });
+  }
+
   const model = config.model || "composer-1.5";
 
-  console.log(`[run:${runId}] Agent: ${agent.name}`);
-  console.log(`[run:${runId}] Command: ${command}`);
-  console.log(`[run:${runId}] CWD: ${cwd}`);
+  console.log(`[run:${runId}] Agent: ${agent.name} (Started)`);
 
-  // Build context env vars (matching the real adapter)
   const issueId = context.issueId || "";
   const wakeReason = context.wakeReason || context.reason || "heartbeat_timer";
 
@@ -128,45 +141,51 @@ async function executeRun(runId, agent, context, authToken) {
     PAPERCLIP_WAKE_REASON: wakeReason,
   };
 
-  // Set auth token so agents can call the API
   if (authToken) {
     env.PAPERCLIP_API_KEY = authToken;
   }
 
   if (issueId) env.PAPERCLIP_TASK_ID = issueId;
-  if (context.wakeCommentId || context.commentId) env.PAPERCLIP_WAKE_COMMENT_ID = context.wakeCommentId || context.commentId;
-  if (context.approvalId) env.PAPERCLIP_APPROVAL_ID = context.approvalId;
-  if (context.approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = context.approvalStatus;
 
-  // WSL env forwarding: list all PAPERCLIP_* keys in WSLENV
   if (command.toLowerCase().startsWith("wsl ")) {
     const paperclipKeys = Object.keys(env).filter((k) => k.startsWith("PAPERCLIP_"));
     const existing = env.WSLENV || process.env.WSLENV || "";
     env.WSLENV = [...(existing ? [existing] : []), ...paperclipKeys].join(":");
   }
 
-  // Build prompt: instructions prefix + env note + prompt template
   const instructionsPrefix = await loadInstructionsFile(config.instructionsFilePath);
   const promptTemplate = config.promptTemplate || `Heartbeat run for ${agent.name}. Wake reason: ${wakeReason}`;
-
-  // Build env note (same as real adapter)
   const envPairs = Object.entries(env)
     .filter(([k]) => k.startsWith("PAPERCLIP_") && k !== "PAPERCLIP_RUNNER_TOKEN" && k !== "PAPERCLIP_SERVER_URL")
     .map(([k, v]) => `${k}=${k === "PAPERCLIP_API_KEY" ? "<redacted>" : v}`)
     .join("\n");
   const envNote = `The following PAPERCLIP_* environment variables are set in this run:\n\`\`\`\n${envPairs}\n\`\`\`\n\n`;
-
   const prompt = `${instructionsPrefix}${envNote}${promptTemplate}`;
 
-  // Parse command into parts
   const parts = command.split(/\s+/);
   const cmd = parts[0];
   const args = [...parts.slice(1), "-p", "--output-format", "stream-json", "--workspace", workspaceOverride];
-
   if (model) args.push("--model", model);
+  if (config.dangerouslyBypassApprovalsAndSandbox) args.push("--yolo");
 
-  const autoTrust = config.dangerouslyBypassApprovalsAndSandbox;
-  if (autoTrust) args.push("--yolo");
+  // Log buffering & local file writing
+  let logBuffer = [];
+  const logsDir = join(PROJECT_ROOT, "logs");
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+  }
+  const logFilePath = join(logsDir, `run-${runId}-${agent.name.replace(/[^a-z0-9]/gi, '_')}.log`);
+  fs.writeFileSync(logFilePath, `=== STARTED RUN ${runId} for ${agent.name} ===\n`);
+  fs.appendFileSync(logFilePath, `Workspace: ${workspaceOverride}\nCommand: ${cmd} ${args.join(" ")}\n`);
+
+  const flushLogs = async () => {
+    if (logBuffer.length === 0) return;
+    const chunk = logBuffer.join("");
+    logBuffer = [];
+    fs.appendFileSync(logFilePath, chunk);
+    await sendLog(runId, "stdout", chunk);
+  };
+  const logTimer = setInterval(flushLogs, 500);
 
   return new Promise((resolve) => {
     let stdoutBuf = "";
@@ -176,20 +195,13 @@ async function executeRun(runId, agent, context, authToken) {
     const timeoutSec = config.timeoutSec || 600;
     const timeoutTimer = timeoutSec > 0
       ? setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGTERM");
-        }, timeoutSec * 1000)
+        timedOut = true;
+        child.kill("SIGTERM");
+      }, timeoutSec * 1000)
       : null;
 
-    console.log(`[run:${runId}] Spawning: ${cmd} ${args.join(" ")}`);
+    const child = spawn(cmd, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
 
-    const child = spawn(cmd, args, {
-      cwd,
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    // Pass prompt via stdin (same as the real cursor adapter)
     if (prompt) {
       child.stdin.write(prompt);
       child.stdin.end();
@@ -198,113 +210,118 @@ async function executeRun(runId, agent, context, authToken) {
     child.stdout?.on("data", (data) => {
       const chunk = data.toString();
       stdoutBuf += chunk;
-      process.stdout.write(chunk);
-      sendLog(runId, "stdout", chunk);
+      process.stdout.write(`[${agent.name}] ${chunk}`);
+      logBuffer.push(chunk);
     });
 
     child.stderr?.on("data", (data) => {
       const chunk = data.toString();
       stderrBuf += chunk;
-      process.stderr.write(chunk);
-      sendLog(runId, "stderr", chunk);
+      process.stderr.write(`[${agent.name}] ERR: ${chunk}`);
+      logBuffer.push(chunk);
     });
 
     child.on("error", (err) => {
+      clearInterval(logTimer);
+      flushLogs().catch(() => { });
       console.error(`[run:${runId}] Spawn error:`, err.message);
       resolve({
-        exitCode: 1,
-        signal: null,
-        timedOut: false,
-        errorMessage: err.message,
-        errorCode: "spawn_error",
-        stdoutExcerpt: stdoutBuf.slice(-4096),
-        stderrExcerpt: stderrBuf.slice(-4096),
+        exitCode: 1, signal: null, timedOut: false,
+        errorMessage: err.message, errorCode: "spawn_error",
+        stdoutExcerpt: stdoutBuf.slice(-4096), stderrExcerpt: stderrBuf.slice(-4096),
       });
     });
 
     child.on("close", (code, signal) => {
-      if (timeoutTimer) clearTimeout(timeoutTimer);
-      console.log(`[run:${runId}] Exited: code=${code} signal=${signal} timedOut=${timedOut}`);
+      clearInterval(logTimer);
+      flushLogs().then(() => {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        console.log(`[run:${runId}] Exited code=${code} signal=${signal}`);
 
-      // Try to extract usage from the result line in stream-json output
-      let usage = undefined;
-      try {
-        const lines = stdoutBuf.split("\n").filter(Boolean);
-        for (const line of lines) {
-          try {
-            const parsed = JSON.parse(line);
-            if (parsed.type === "result" && parsed.usage) {
-              usage = parsed.usage;
-            }
-            if (parsed.usage && parsed.type === "usage") {
-              usage = parsed.usage;
-            }
-          } catch { /* skip non-JSON lines */ }
-        }
-      } catch { /* ignore */ }
+        let usage = undefined;
+        try {
+          const lines = stdoutBuf.split("\n").filter(Boolean);
+          for (const line of lines) {
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.type === "result" && parsed.usage) usage = parsed.usage;
+              if (parsed.usage && parsed.type === "usage") usage = parsed.usage;
+            } catch { }
+          }
+        } catch { }
 
-      resolve({
-        exitCode: code,
-        signal: signal || null,
-        timedOut,
-        errorMessage: timedOut ? "Timed out" : (code !== 0 ? `Process exited with code ${code}` : null),
-        errorCode: timedOut ? "timeout" : (code !== 0 ? "adapter_failed" : null),
-        usage,
-        stdoutExcerpt: stdoutBuf.slice(-4096),
-        stderrExcerpt: stderrBuf.slice(-4096),
-      });
+        resolve({
+          exitCode: code, signal: signal || null, timedOut,
+          errorMessage: timedOut ? "Timed out" : (code !== 0 ? `Process exited with code ${code}` : null),
+          errorCode: timedOut ? "timeout" : (code !== 0 ? "adapter_failed" : null),
+          usage, stdoutExcerpt: stdoutBuf.slice(-4096), stderrExcerpt: stderrBuf.slice(-4096),
+        });
+      }).catch(() => { });
     });
   });
 }
 
-async function pollLoop() {
-  console.log(`🔄 Paperclip Local Runner started`);
-  console.log(`   Server: ${SERVER_URL}`);
-  console.log(`   Adapter types: ${ADAPTER_TYPES}`);
-  console.log(`   Poll interval: ${POLL_INTERVAL}ms`);
-  console.log(`   Agents dir: ${LOCAL_AGENTS_DIR}`);
-  console.log("");
+async function pollAndClaim(activeRunIds) {
+  try {
+    const pollResult = await apiFetch(`/runner/poll?adapterTypes=${ADAPTER_TYPES}`);
+    if (!pollResult.run) return false;
 
-  while (true) {
-    try {
-      // Poll for queued run
-      const pollResult = await apiFetch(`/runner/poll?adapterTypes=${ADAPTER_TYPES}`);
+    const { runId, agentId } = pollResult.run;
+    if (activeRunIds.has(runId)) return false;
 
-      if (!pollResult.run) {
-        await sleep(POLL_INTERVAL);
-        continue;
-      }
+    console.log(`📥 Pickup: ${runId} (Agent ${agentId})`);
+    const claimResult = await apiFetch(`/runner/claim/${runId}`, { method: "POST" });
+    const { agent, run, authToken } = claimResult;
 
-      const { runId, agentId } = pollResult.run;
-      console.log(`\n📥 Found queued run: ${runId} for agent ${agentId}`);
+    console.log(`✅ Started: ${agent.name} [Running: ${activeRunIds.size + 1}/${MAX_CONCURRENT_RUNS}]`);
+    activeRunIds.add(runId);
 
-      // Claim the run (includes auth token for agent API calls)
-      let claimResult;
-      try {
-        claimResult = await apiFetch(`/runner/claim/${runId}`, { method: "POST" });
-      } catch (err) {
-        console.log(`⚠️  Could not claim run ${runId}: ${err.message}`);
-        await sleep(1000);
-        continue;
-      }
-
-      const { agent, run, runtime, authToken } = claimResult;
-      console.log(`✅ Claimed run ${runId} for ${agent.name}`);
-
-      // Execute with auth token
-      const result = await executeRun(runId, agent, run.contextSnapshot || {}, authToken);
-
-      // Report completion
-      await apiFetch(`/runner/complete/${runId}`, {
-        method: "POST",
-        body: JSON.stringify(result),
+    executeRun(runId, agent, run.contextSnapshot || {}, authToken)
+      .then(async (result) => {
+        try {
+          await apiFetch(`/runner/complete/${runId}`, {
+            method: "POST",
+            body: JSON.stringify(result),
+          });
+          console.log(`✅ Done: ${agent.name} (${runId})`);
+        } catch (err) {
+          console.error(`❌ Complete error ${runId}: ${err.message}`);
+        }
+      })
+      .catch((err) => {
+        console.error(`❌ Runner crash ${runId}:`, err);
+      })
+      .finally(() => {
+        activeRunIds.delete(runId);
       });
 
-      console.log(`✅ Completed run ${runId}: ${result.exitCode === 0 ? "succeeded" : "failed"}`);
-    } catch (err) {
-      console.error(`❌ Poll error: ${err.message}`);
-      await sleep(POLL_INTERVAL);
+    return true; // Found and claimed work
+  } catch (err) {
+    if (!err.message.includes("409")) {
+      console.error(`❌ Poll/Claim error: ${err.message}`);
     }
+    return false;
+  }
+}
+
+async function pollLoop() {
+  const activeRunIds = new Set();
+  console.log(`🔄 Paperclip Local Runner started | Mode: Parallel`);
+  console.log(`   Max concurrency: ${MAX_CONCURRENT_RUNS} | Interval: ${POLL_INTERVAL}ms\n`);
+
+  while (true) {
+    if (activeRunIds.size < MAX_CONCURRENT_RUNS) {
+      // Try to pick up one job
+      const claimed = await pollAndClaim(activeRunIds);
+      if (claimed) {
+        // If we found something, try to pick up another one immediately
+        await sleep(100);
+        continue;
+      }
+    }
+
+    // No work found or at capacity, wait for the poll interval
+    await sleep(activeRunIds.size >= MAX_CONCURRENT_RUNS ? 1000 : POLL_INTERVAL);
   }
 }
 

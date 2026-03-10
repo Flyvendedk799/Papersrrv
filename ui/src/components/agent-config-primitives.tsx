@@ -47,6 +47,7 @@ export const help: Record<string, string> = {
   cooldownSec: "Minimum seconds between consecutive heartbeat runs.",
   maxConcurrentRuns: "Maximum number of heartbeat runs that can execute simultaneously for this agent.",
   budgetMonthlyCents: "Monthly spending limit in cents. 0 means no limit.",
+  alwaysWakeOnTimer: "Run heartbeat even if no issues are assigned. Useful for background monitors or managers.",
 };
 
 export const adapterLabels: Record<string, string> = {
