@@ -157,9 +157,11 @@ export function fileRoutes(db: Db) {
 
     let totalIndexed = 0;
     let failed = 0;
+    let missingLogs = 0;
     for (const run of runs) {
       try {
         const count = await indexRunFromLog(db, run);
+        if (count === 0) missingLogs++;
         totalIndexed += count;
       } catch (err) {
         logger.warn({ err, runId: run.id }, "backfill indexing failed for run");
@@ -179,7 +181,7 @@ export function fileRoutes(db: Db) {
       details: { runsProcessed: runs.length, totalIndexed, failed },
     });
 
-    res.json({ runsProcessed: runs.length, totalIndexed, failed });
+    res.json({ runsProcessed: runs.length, totalIndexed, failed, missingLogs });
   });
 
   return router;

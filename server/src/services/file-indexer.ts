@@ -237,8 +237,15 @@ export async function indexRunFromLog(
     const logStore = getRunLogStore();
     const handle = { store: (run.logStore ?? "local_file") as "local_file", logRef: run.logRef };
 
-    // Read the entire log (up to 10MB)
-    const { content: logContent } = await logStore.read(handle, { offset: 0, limitBytes: 10_000_000 });
+    // Read the entire log (up to 10MB) — gracefully handle missing files
+    let logContent: string;
+    try {
+      const result = await logStore.read(handle, { offset: 0, limitBytes: 10_000_000 });
+      logContent = result.content;
+    } catch {
+      // Log file missing (common on ephemeral filesystems after redeploy)
+      return 0;
+    }
     if (!logContent) return 0;
 
     const fileOps = extractFileOpsFromLog(logContent);
