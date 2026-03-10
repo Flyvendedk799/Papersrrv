@@ -31,4 +31,10 @@ export const filesApi = {
 
   indexRun: (companyId: string, data: Record<string, unknown>) =>
     api.post<{ indexed: number }>(`/companies/${companyId}/files/index`, data),
+
+  backfill: (companyId: string) =>
+    api.post<{ runsProcessed: number; totalIndexed: number; failed: number }>(
+      `/companies/${companyId}/files/backfill`,
+      {},
+    ),
 };

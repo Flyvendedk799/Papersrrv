@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Search, File, Folder, FolderOpen, ChevronRight, ChevronDown, Clock, User, FileQuestion } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Search, File, Folder, FolderOpen, ChevronRight, ChevronDown, Clock, User, FileQuestion, RefreshCw } from "lucide-react";
+import { useSearchParams } from "@/lib/router";
 import { filesApi } from "../api/files";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompany } from "../context/CompanyContext";
@@ -85,9 +86,19 @@ function FileTreeItem({
 
 export function Files() {
   const { selectedCompanyId } = useCompany();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"tree" | "list">("tree");
+
+  // Open file from URL ?file= param
+  useEffect(() => {
+    const fileParam = searchParams.get("file");
+    if (fileParam) {
+      setSelectedFilePath(fileParam);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const { data: tree, isLoading: treeLoading } = useQuery({
     queryKey: queryKeys.files.tree(selectedCompanyId!),
@@ -109,6 +120,15 @@ export function Files() {
   }, [files, searchTerm]);
 
   const isLoading = treeLoading || filesLoading;
+  const queryClient = useQueryClient();
+
+  const backfillMutation = useMutation({
+    mutationFn: () => filesApi.backfill(selectedCompanyId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.files.tree(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.files.list(selectedCompanyId!) });
+    },
+  });
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -149,8 +169,24 @@ export function Files() {
               List
             </button>
           </div>
+          <button
+            onClick={() => backfillMutation.mutate()}
+            disabled={backfillMutation.isPending}
+            className="h-8 px-3 rounded-md border border-input bg-background text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            title="Index files from past agent runs"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", backfillMutation.isPending && "animate-spin")} />
+            {backfillMutation.isPending ? "Indexing..." : "Index past runs"}
+          </button>
         </div>
       </div>
+
+      {backfillMutation.isSuccess && (
+        <div className="mb-4 rounded-md border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 px-3 py-2 text-xs text-green-700 dark:text-green-300">
+          Indexed {backfillMutation.data.totalIndexed} files from {backfillMutation.data.runsProcessed} runs.
+          {backfillMutation.data.failed > 0 && ` (${backfillMutation.data.failed} failed)`}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="text-sm text-muted-foreground py-8 text-center">Loading files...</div>

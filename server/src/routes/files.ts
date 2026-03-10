@@ -1,9 +1,13 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
+import { heartbeatRuns } from "@paperclipai/db";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { createFileSnapshotSchema, indexRunFilesSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { fileService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { indexRunFromLog } from "../services/file-indexer.js";
+import { logger } from "../middleware/logger.js";
 
 export function fileRoutes(db: Db) {
   const router = Router();
@@ -129,6 +133,54 @@ export function fileRoutes(db: Db) {
       res.status(201).json({ indexed });
     },
   );
+
+  // Backfill: re-index files from all completed runs for a company
+  router.post("/companies/:companyId/files/backfill", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const runs = await db
+      .select({
+        id: heartbeatRuns.id,
+        companyId: heartbeatRuns.companyId,
+        agentId: heartbeatRuns.agentId,
+        logStore: heartbeatRuns.logStore,
+        logRef: heartbeatRuns.logRef,
+      })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          isNotNull(heartbeatRuns.logRef),
+        ),
+      );
+
+    let totalIndexed = 0;
+    let failed = 0;
+    for (const run of runs) {
+      try {
+        const count = await indexRunFromLog(db, run);
+        totalIndexed += count;
+      } catch (err) {
+        logger.warn({ err, runId: run.id }, "backfill indexing failed for run");
+        failed++;
+      }
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "file.backfill",
+      entityType: "file",
+      entityId: companyId,
+      details: { runsProcessed: runs.length, totalIndexed, failed },
+    });
+
+    res.json({ runsProcessed: runs.length, totalIndexed, failed });
+  });
 
   return router;
 }

@@ -20,6 +20,7 @@ import { publishLiveEvent } from "../services/live-events.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { getRunLogStore, type RunLogHandle } from "../services/run-log-store.js";
 import { secretService } from "../services/index.js";
+import { indexRunFromLog } from "../services/file-indexer.js";
 
 /** Adapter types that require a local CLI and cannot run on a cloud server. */
 const LOCAL_ADAPTER_TYPES = new Set(["cursor", "process", "claude_local", "codex_local", "opencode_local", "pi_local"]);
@@ -510,6 +511,20 @@ export function runnerRoutes(db: Db) {
             })
             .where(eq(agentRuntimeState.agentId, agent.id));
         }
+      }
+
+      // Index files from the run log in the background (non-blocking)
+      const logHandleForIndex = logHandle;
+      if (logHandleForIndex) {
+        indexRunFromLog(db, {
+          id: runId,
+          companyId: run.companyId,
+          agentId: run.agentId,
+          logStore: logHandleForIndex.store,
+          logRef: logHandleForIndex.logRef,
+        }).catch((indexErr) => {
+          logger.warn({ err: indexErr, runId }, "background file indexing failed");
+        });
       }
 
       res.json({ ok: true, status });

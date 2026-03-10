@@ -24,6 +24,7 @@ import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } fr
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import { needsRemoteRunner } from "../routes/runner.js";
+import { indexRunFromLog } from "./file-indexer.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -1386,6 +1387,19 @@ export function heartbeatService(db: Db) {
           },
         });
         await releaseIssueExecutionAndPromote(finalizedRun);
+
+        // Index files from the run log in the background (non-blocking)
+        if (handle) {
+          indexRunFromLog(db, {
+            id: finalizedRun.id,
+            companyId: finalizedRun.companyId,
+            agentId: finalizedRun.agentId,
+            logStore: handle.store,
+            logRef: handle.logRef,
+          }).catch((indexErr) => {
+            logger.warn({ err: indexErr, runId }, "background file indexing failed");
+          });
+        }
       }
 
       if (finalizedRun) {

@@ -1346,6 +1346,24 @@ function RunsTab({
   );
 }
 
+/* ---- File path extraction for clickable links ---- */
+
+const FILE_TOOLS = new Set([
+  "Read", "read_file", "ReadFile", "read", "cat", "View",
+  "Write", "write_file", "WriteFile", "write", "CreateFile", "create_file",
+  "Edit", "edit_file", "EditFile", "edit", "Replace", "ReplaceInFile", "Patch", "NotebookEdit",
+]);
+
+function extractFilePathFromToolInput(toolName: string, input: unknown): string | null {
+  if (!FILE_TOOLS.has(toolName)) return null;
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
+  const rec = input as Record<string, unknown>;
+  for (const key of ["file_path", "filePath", "path", "filename", "file", "target_file"]) {
+    if (typeof rec[key] === "string" && rec[key]) return rec[key] as string;
+  }
+  return null;
+}
+
 /* ---- Run Detail (expanded) ---- */
 
 function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agentRouteId: string; adapterType: string }) {
@@ -2276,11 +2294,23 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           }
 
           if (entry.kind === "tool_call") {
+            const fileToolPath = extractFilePathFromToolInput(entry.name, entry.input);
             return (
               <div key={`${entry.ts}-tool-${idx}`} className={cn(grid, "gap-y-1 py-0.5")}>
                 <span className={tsCell}>{time}</span>
                 <span className={cn(lblCell, "text-yellow-700 dark:text-yellow-300")}>tool_call</span>
-                <span className="text-yellow-900 dark:text-yellow-100 min-w-0">{entry.name}</span>
+                <span className="text-yellow-900 dark:text-yellow-100 min-w-0">
+                  {entry.name}
+                  {fileToolPath && (
+                    <Link
+                      to={`/files?file=${encodeURIComponent(fileToolPath)}`}
+                      className="ml-2 text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-mono"
+                      title="View in Files"
+                    >
+                      {fileToolPath}
+                    </Link>
+                  )}
+                </span>
                 <pre className={cn(expandCell, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
                   {JSON.stringify(entry.input, null, 2)}
                 </pre>
