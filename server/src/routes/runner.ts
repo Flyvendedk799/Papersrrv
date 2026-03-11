@@ -427,13 +427,18 @@ export function runnerRoutes(db: Db) {
         status = "failed";
       }
 
-      // If adapter didn't report costUsd but sent token counts, estimate cost
-      // Pass the agent's model so we use correct pricing (not default Sonnet)
-      const agentModel = agent
-        ? ((typeof agent.adapterConfig === "object" && agent.adapterConfig !== null
-            ? (agent.adapterConfig as Record<string, unknown>).model
+      // Resolve the agent's model for accurate cost estimation
+      const agentForModel = await db
+        .select({ adapterConfig: agents.adapterConfig })
+        .from(agents)
+        .where(eq(agents.id, run.agentId))
+        .then((rows) => rows[0] ?? null);
+      const agentModel = agentForModel?.adapterConfig
+        ? ((typeof agentForModel.adapterConfig === "object" && agentForModel.adapterConfig !== null
+            ? (agentForModel.adapterConfig as Record<string, unknown>).model
             : null) as string | null)
         : null;
+
       let effectiveCostUsd = result.costUsd ?? null;
       if (effectiveCostUsd == null && result.usage) {
         const estimated = estimateCostUsd({
@@ -444,7 +449,7 @@ export function runnerRoutes(db: Db) {
         if (estimated > 0) {
           effectiveCostUsd = estimated;
           logger.info(
-            { runId, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, estimatedCostUsd: estimated },
+            { runId, model: agentModel, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, estimatedCostUsd: estimated },
             "runner: estimated costUsd from token counts",
           );
         }
