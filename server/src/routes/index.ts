@@ -17,3 +17,4 @@ export { docsRoutes } from "./docs.js";
 export { jobRoutes } from "./jobs.js";
 export { agentCollaborationRoutes } from "./agent-collaboration.js";
 export { auditRoutes } from "./audit.js";
+export { skillRoutes } from "./skills.js";

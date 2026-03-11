@@ -92,5 +92,9 @@ export const queryKeys = {
     run: (companyId: string, runId: string) => ["workflows", "run", companyId, runId] as const,
     templates: (companyId: string) => ["workflow-templates", companyId] as const,
   },
+  skills: {
+    list: (companyId: string) => ["skills", companyId] as const,
+    detail: (companyId: string, id: string) => ["skills", "detail", companyId, id] as const,
+  },
   org: (companyId: string) => ["org", companyId] as const,
 };

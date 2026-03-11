@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, Link, useBeforeUnload } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
+import { skillsApi } from "../api/skills";
 import { heartbeatsApi } from "../api/heartbeats";
 import { ApiError } from "../api/client";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
@@ -54,6 +55,8 @@ import {
   ArrowLeft,
   Settings,
   FileText,
+  Puzzle,
+  Library,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
@@ -1174,6 +1177,14 @@ function SkillsPluginsTab({
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+
+  // Fetch shared company skills for the library picker
+  const { data: sharedSkills } = useQuery({
+    queryKey: queryKeys.skills.list(companyId!),
+    queryFn: () => skillsApi.list(companyId!),
+    enabled: !!companyId && showLibrary,
+  });
 
   const isDirty = JSON.stringify(skills) !== JSON.stringify(savedSkills);
 
@@ -1345,7 +1356,16 @@ TODO: Add skill instructions here.
           </Button>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowLibrary(!showLibrary)}
+            className="gap-1.5"
+          >
+            <Library className="h-3.5 w-3.5" />
+            Add from Library
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1353,7 +1373,7 @@ TODO: Add skill instructions here.
             className="gap-1.5"
           >
             <Plus className="h-3.5 w-3.5" />
-            Add Skill
+            Add Custom
           </Button>
           <Button
             variant="outline"
@@ -1372,6 +1392,59 @@ TODO: Add skill instructions here.
             className="hidden"
             onChange={handleUpload}
           />
+        </div>
+      )}
+
+      {/* Library picker */}
+      {showLibrary && (
+        <div className="border border-border rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-muted/30 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Puzzle className="h-3.5 w-3.5 text-indigo-500" />
+              <span className="text-xs font-medium">Shared Skills Library</span>
+            </div>
+            <button onClick={() => setShowLibrary(false)} className="text-muted-foreground hover:text-foreground">
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="max-h-48 overflow-y-auto divide-y divide-border">
+            {!sharedSkills || sharedSkills.length === 0 ? (
+              <div className="px-4 py-4 text-xs text-muted-foreground text-center">
+                No shared skills in your company yet. Go to <strong>Work &gt; Skills</strong> to create some.
+              </div>
+            ) : (
+              sharedSkills.map((shared) => {
+                const alreadyAdded = skills.some((s) => s.name === shared.name);
+                return (
+                  <button
+                    key={shared.id}
+                    disabled={alreadyAdded}
+                    onClick={() => {
+                      setSkills([...skills, { name: shared.name, content: shared.content }]);
+                      setExpandedIdx(skills.length);
+                    }}
+                    className={cn(
+                      "flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors",
+                      alreadyAdded ? "opacity-50 cursor-default" : "hover:bg-accent/50",
+                    )}
+                  >
+                    <Puzzle className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-mono font-medium">{shared.name}</div>
+                      {shared.description && (
+                        <div className="text-[10px] text-muted-foreground truncate">{shared.description}</div>
+                      )}
+                    </div>
+                    {alreadyAdded ? (
+                      <span className="text-[10px] text-muted-foreground shrink-0">Added</span>
+                    ) : (
+                      <Plus className="h-3 w-3 text-muted-foreground shrink-0" />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
 

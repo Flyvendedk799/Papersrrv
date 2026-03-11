@@ -11,6 +11,7 @@ import {
   Settings,
   FolderOpen,
   Workflow,
+  Puzzle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
@@ -93,6 +94,7 @@ export function Sidebar() {
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           <SidebarNavItem to="/files" label="Files" icon={FolderOpen} />
           <SidebarNavItem to="/workflows" label="Workflows" icon={Workflow} />
+          <SidebarNavItem to="/skills" label="Skills" icon={Puzzle} />
         </SidebarSection>
 
         <SidebarProjects />

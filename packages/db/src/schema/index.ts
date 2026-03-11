@@ -48,3 +48,4 @@ export { agentCapabilities } from "./agent_capabilities.js";
 export { agentTaskOutcomes } from "./agent_task_outcomes.js";
 export { knowledgeBaseEntries } from "./knowledge_base.js";
 export { auditLogEntries } from "./audit_log.js";
+export { companySkills } from "./company_skills.js";
