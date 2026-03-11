@@ -1226,6 +1226,36 @@ TODO: Add skill instructions here.
     setSkills(skills.map((s, i) => (i === idx ? { ...s, content } : s)));
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = reader.result as string;
+        // Try to extract name from YAML frontmatter
+        const nameMatch = content.match(/^---[\s\S]*?name:\s*["']?([^"'\n]+)["']?/m);
+        // Fall back to filename: SKILL.md → parent dir name, or filename without extension
+        let name = nameMatch?.[1]?.trim()
+          ?? file.name.replace(/\.md$/i, "").replace(/^SKILL$/i, "uploaded-skill");
+        name = name.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+        // Deduplicate
+        let finalName = name;
+        let counter = 2;
+        while (skills.some((s) => s.name === finalName)) {
+          finalName = `${name}-${counter++}`;
+        }
+        setSkills((prev) => [...prev, { name: finalName, content }]);
+        setExpandedIdx(skills.length);
+      };
+      reader.readAsText(file);
+    });
+    // Reset so the same file can be uploaded again
+    e.target.value = "";
+  };
+
   const isClaudeAdapter = agent.adapterType === "claude_local";
 
   return (
@@ -1315,15 +1345,34 @@ TODO: Add skill instructions here.
           </Button>
         </div>
       ) : (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowAdd(true)}
-          className="gap-1.5"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add Skill
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAdd(true)}
+            className="gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Skill
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="gap-1.5"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Upload SKILL.md
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".md,.markdown,.txt"
+            multiple
+            className="hidden"
+            onChange={handleUpload}
+          />
+        </div>
       )}
 
       {/* Save bar */}
