@@ -1233,7 +1233,13 @@ export function issueService(db: Db) {
       if (tokens.size === 0) return [];
       const rows = await db.select({ id: agents.id, name: agents.name })
         .from(agents).where(eq(agents.companyId, companyId));
-      return rows.filter(a => tokens.has(a.name.toLowerCase())).map(a => a.id);
+      // Normalize so @senior-product-engineer matches "Senior Product Engineer"
+      const toSlug = (s: string) => s.toLowerCase().replace(/[\s_()]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      return rows.filter(a => {
+        const nameLower = a.name.toLowerCase();
+        const nameSlug = toSlug(a.name);
+        return tokens.has(nameLower) || tokens.has(nameSlug);
+      }).map(a => a.id);
     },
 
     findMentionedProjectIds: async (issueId: string) => {
