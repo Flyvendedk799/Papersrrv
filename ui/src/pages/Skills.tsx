@@ -176,6 +176,8 @@ export function Skills() {
       const additionalFiles: Record<string, string> = {};
       const promises: Promise<void>[] = [];
 
+      const binaryExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg", ".bmp", ".tiff", ".pdf", ".woff", ".woff2", ".ttf", ".eot", ".otf", ".mp3", ".mp4", ".wav", ".ogg", ".zip", ".tar", ".gz", ".exe", ".dll", ".so", ".dylib"]);
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       zip.forEach((relativePath: string, zipEntry: any) => {
         if (zipEntry.dir) return;
@@ -186,9 +188,12 @@ export function Skills() {
         if (relativePath.endsWith("package-lock.json")) return;
 
         const relPath = relativePath.slice(prefix.length);
+        const ext = relPath.slice(relPath.lastIndexOf(".")).toLowerCase();
+        const isBinary = binaryExts.has(ext);
+
         promises.push(
-          zipEntry.async("string").then((fileContent: string) => {
-            additionalFiles[relPath] = fileContent;
+          zipEntry.async(isBinary ? "base64" : "string").then((fileContent: string) => {
+            additionalFiles[relPath] = isBinary ? `base64:${fileContent}` : fileContent;
           }),
         );
       });
@@ -538,14 +543,24 @@ function SkillModal({
                       <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-xs font-mono">{path}</span>
                       <span className="text-[10px] text-muted-foreground ml-auto">
-                        {content.length} chars
+                        {content.startsWith("base64:") ? `${Math.round((content.length - 7) * 0.75 / 1024)}KB binary` : `${content.length} chars`}
                       </span>
                     </button>
                     {expandedFiles.has(path) && (
                       <div className="px-4 pb-3">
-                        <pre className="text-[11px] font-mono bg-muted/30 rounded-md p-3 whitespace-pre-wrap break-words max-h-48 overflow-auto">
-                          {content}
-                        </pre>
+                        {content.startsWith("base64:") ? (() => {
+                          const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+                          const imgExts = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"];
+                          if (imgExts.includes(ext)) {
+                            const mime = ext === ".svg" ? "image/svg+xml" : `image/${ext.slice(1).replace("jpg", "jpeg")}`;
+                            return <img src={`data:${mime};base64,${content.slice(7)}`} alt={path} className="max-w-full max-h-48 rounded-md" />;
+                          }
+                          return <div className="text-xs text-muted-foreground italic p-3 bg-muted/30 rounded-md">Binary file ({Math.round((content.length - 7) * 0.75 / 1024)}KB)</div>;
+                        })() : (
+                          <pre className="text-[11px] font-mono bg-muted/30 rounded-md p-3 whitespace-pre-wrap break-words max-h-48 overflow-auto">
+                            {content}
+                          </pre>
+                        )}
                       </div>
                     )}
                   </div>
