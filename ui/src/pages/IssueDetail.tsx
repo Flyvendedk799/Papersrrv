@@ -207,7 +207,7 @@ export function IssueDetail() {
       for (const snapshots of all) {
         for (const s of snapshots) {
           const existing = byPath.get(s.filePath);
-          if (!existing || new Date(s.createdAt) > new Date(existing.createdAt)) {
+          if (!existing || new Date(s.capturedAt) > new Date(existing.capturedAt)) {
             byPath.set(s.filePath, s);
           }
         }
@@ -886,7 +886,7 @@ export function IssueDetail() {
                     <FileText className={cn("h-3.5 w-3.5 shrink-0", isMd ? "text-blue-500" : "text-muted-foreground")} />
                     <span className="truncate font-mono text-xs">{snap.filePath}</span>
                     <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
-                      {relativeTime(snap.createdAt)}
+                      {relativeTime(snap.capturedAt)}
                     </span>
                   </Link>
                 );
