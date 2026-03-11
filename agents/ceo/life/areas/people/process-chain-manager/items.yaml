@@ -1,0 +1,7 @@
+# Process Chain Manager — durable facts
+# Schema: { id, fact, source, created_at, access_count?, last_accessed? }
+
+- id: pcm-perm-2026-03-10
+  fact: "CEO granted PCM canCreateAgents permission on 2026-03-10 (AIL-93) to unlock tasks:assign; PCM can now assign stalled issues directly."
+  source: AIL-93
+  created_at: "2026-03-10"

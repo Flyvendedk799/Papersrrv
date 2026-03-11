@@ -1,0 +1,47 @@
+- id: empstd-001
+  fact: "AIL-52 (Employee standards and routines) board-approved 2026-03-09. Requirement: well thought out structure, first integration = final."
+  category: milestone
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/employee-standards
+  last_accessed: "2026-03-09"
+  access_count: 1
+
+- id: empstd-002
+  fact: "CEO delegated AIL-56 to Process Chain Manager 2026-03-09: suggest delegations for 6-phase implementation and drive to completion."
+  category: status
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/employee-standards
+  last_accessed: "2026-03-09"
+  access_count: 1
+
+- id: empstd-003
+  fact: "Phase 2 (AIL-59) taxonomy complete 2026-03-09. standards/TAXONOMY.md maps inventory to global.md, hiring.md, engineering.md, secrets.md. Board approval required before Phase 3 content implementation."
+  category: milestone
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/employee-standards
+  last_accessed: "2026-03-09"
+  access_count: 1
+
+- id: empstd-004
+  fact: "AIL-52 (Employee standards and routines) complete 2026-03-09. All 6 phases delivered: structure (AIL-57), inventory (AIL-58), taxonomy (AIL-59), hiring rules (AIL-60), task conventions (AIL-61), secrets (AIL-62), hire for ownership (AIL-63). Deliverables: standards/STRUCTURE.md, TAXONOMY.md, global.md, hiring.md, secrets.md; doc/standards-inventory.md."
+  category: milestone
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/employee-standards
+  last_accessed: "2026-03-09"
+  access_count: 1

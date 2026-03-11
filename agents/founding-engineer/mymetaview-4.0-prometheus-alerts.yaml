@@ -1,0 +1,98 @@
+# Prometheus alert rules for MyMetaView 4.0 batch API
+# Source: MONITORING_OBSERVABILITY_MYMETAVIEW_4.0.md §4
+# Use with Prometheus Alertmanager; annotate with runbook links per spec §4.3
+
+groups:
+  - name: mymetaview-batch
+    rules:
+      # Queue depth
+      - alert: BatchQueueDepthHigh
+        expr: demo_batch_queue_depth > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Batch queue depth high"
+          description: "Queue depth {{ $value }} > 100 for 5 min. Scale workers; check Redis; inspect slow jobs."
+          runbook_url: "https://docs.example.com/runbooks/batch-queue-depth-high"
+
+      - alert: BatchQueueDepthCritical
+        expr: demo_batch_queue_depth > 400
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Batch queue depth critical"
+          description: "Queue depth {{ $value }} > 400 for 2 min. Near backpressure limit; jobs may be rejected."
+          runbook_url: "https://docs.example.com/runbooks/batch-queue-depth-critical"
+
+      # Failure rate (derived: urls_failed / (urls_failed + cache_hits + cache_misses))
+      - alert: BatchFailureRateHigh
+        expr: |
+          (
+            sum(rate(demo_batch_urls_failed_total[15m]))
+            /
+            (
+              sum(rate(demo_batch_urls_failed_total[15m]))
+              + sum(rate(demo_batch_cache_hits_total[15m]))
+              + sum(rate(demo_batch_cache_misses_total[15m]))
+            )
+          ) > 0.10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Batch URL failure rate high"
+          description: "Failure rate > 10% over 15 min. Inspect error_type; check target URLs; review timeout/retry."
+          runbook_url: "https://docs.example.com/runbooks/batch-failure-rate-high"
+
+      - alert: BatchFailureRateCritical
+        expr: |
+          (
+            sum(rate(demo_batch_urls_failed_total[5m]))
+            /
+            (
+              sum(rate(demo_batch_urls_failed_total[5m]))
+              + sum(rate(demo_batch_cache_hits_total[5m]))
+              + sum(rate(demo_batch_cache_misses_total[5m]))
+            )
+          ) > 0.25
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Batch URL failure rate critical"
+          description: "Failure rate > 25% over 5 min. Page on-call; check upstream."
+          runbook_url: "https://docs.example.com/runbooks/batch-failure-rate-critical"
+
+      # Webhook delivery
+      - alert: BatchWebhookDeliveryFailing
+        expr: sum(rate(demo_batch_webhook_deliveries_total{status="failed"}[5m])) * 60 > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Batch webhook delivery failing"
+          description: "Webhook failures > 5/min. Check tenant callback URLs; inspect retry logs."
+          runbook_url: "https://docs.example.com/runbooks/batch-webhook-delivery"
+
+      # Optional: no batch activity (info)
+      - alert: BatchQueueDepthZero
+        expr: demo_batch_queue_depth == 0 and demo_batch_jobs_in_progress == 0
+        for: 24h
+        labels:
+          severity: info
+        annotations:
+          summary: "No batch activity for 24h"
+          description: "Optional health check; may indicate deployment or routing issue."
+
+      # SLA breach (fires when app exposes demo_batch_sla_compliance_rate; 0–1 scale)
+      - alert: BatchSLABreach
+        expr: demo_batch_sla_compliance_rate < 0.90
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Batch SLA breach"
+          description: "SLA compliance < 90% over 1h. Check p95 latency; cache hit rate; timeout config."
+          runbook_url: "https://docs.example.com/runbooks/batch-sla-breach"

@@ -89,6 +89,12 @@ docker compose -f docker-compose.quickstart.yml up --build
 
 See `doc/DOCKER.md` for API key wiring (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) and persistence details.
 
+## Remote Runner (Cloud + Local Adapters)
+
+When Paperclip runs in the cloud (e.g. Railway), local adapters (`cursor`, `process`, etc.) cannot execute on the server. Use the Remote Runner pattern: set `PAPERCLIP_RUNNER_MODE=remote` on the server and run a local runner that polls, claims, executes, and reports runs.
+
+See `doc/RUNNER.md` for API reference, environment variables, and the `scripts/local-runner.mjs` usage.
+
 ## Database in Dev (Auto-Handled)
 
 For local development, leave `DATABASE_URL` unset.

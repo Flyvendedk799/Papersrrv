@@ -229,3 +229,185 @@
     - projects/mymetaview
   last_accessed: "2026-03-08"
   access_count: 1
+
+- id: mymetaview-020
+  fact: "Issue AIL-50 (MyMetaView 2.0 Git PR) is blocked on AIL-51 (Founding Engineer push branch to origin). Branch feature/mymetaview-2.0-final exists locally but was never pushed; compare URL returns 404. CEO lacks GitHub credentials; AIL-51 assigned to Founding Engineer, execution run queued as of 2026-03-09."
+  category: status
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: superseded
+  superseded_by: mymetaview-021
+  related_entities:
+    - projects/mymetaview
+    - people/founding-engineer
+  last_accessed: "2026-03-09"
+  access_count: 1
+
+- id: mymetaview-021
+  fact: "AIL-50/AIL-51 escalated to board 2026-03-09: Both CEO and Founding Engineer lack GitHub credentials in agent runtime. FE reported same blocker. Manual push required from machine with GitHub auth: cd agents/tmp-preview-check-20260308185629 && git push -u origin feature/mymetaview-2.0-final."
+  category: status
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: superseded
+  superseded_by: mymetaview-022
+  related_entities:
+    - projects/mymetaview
+    - people/founding-engineer
+  last_accessed: "2026-03-09"
+  access_count: 1
+
+- id: mymetaview-022
+  fact: "AIL-50 done 2026-03-09: Board provided GitHub token in comment; CEO pushed feature/mymetaview-2.0-final to origin. PR link live. AIL-51 superseded (FE never pushed; CEO completed via board credentials)."
+  category: milestone
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-09"
+  access_count: 1
+
+- id: mymetaview-023
+  fact: "AIL-70 (MyMetaView 2.0 not out yet) delegated 2026-03-09: AIL-71 to COO for whole-company delegation plan; AIL-72 to Process Chain Manager for follow-through to completion. Requirement: push fixes all issues, deploys on Railway without errors."
+  category: status
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-09"
+  access_count: 1
+
+- id: mymetaview-024
+  fact: "AIL-73 done 2026-03-09 (Founding Engineer commit 937102b). AIL-74 unblocked for Junior Dev Git to push and verify. AIL-72 assigned to Process Chain Manager for follow-through."
+  category: status
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-09"
+  access_count: 1
+
+- id: mymetaview-025
+  fact: "AIL-70 completed 2026-03-09. All deliverables done: AIL-73 (FE Railway fix), AIL-74 (push + verify), AIL-75 (QA), AIL-76 (UX), AIL-77 (docs). MyMetaView 2.0 delivered; deploys on Railway without errors."
+  category: milestone
+  timestamp: "2026-03-09"
+  source: "2026-03-09"
+  status: superseded
+  superseded_by: mymetaview-026
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 2
+
+- id: mymetaview-026
+  fact: "2026-03-10: AIL-78 (Founding Engineer commit d0edc56) fixed Railway healthcheck. AIL-79 blocked — agent run environments lack GitHub credentials; operator must run `git push -u origin feature/mymetaview-2.0-final` from agents/tmp-preview-check-20260308185629 manually."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 1
+
+- id: mymetaview-027
+  fact: "AIL-81 (MyMetaView 3.0) assigned 2026-03-10: board reports MyMetaView 2.0 getting bad customer reviews; need drastic improvement. CEO delegated to COO via AIL-82: create whole-company delegation plan and execute; utilize full org (engineering, UX, QA, docs, sales, customer success)."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 1
+
+- id: mymetaview-028
+  fact: "AIL-87 (push MyMetaView 3.0 to origin) blocked 2026-03-10: Junior Dev Git lacks GITHUB_TOKEN in env. Board action required per standards/secrets.md §8 — create company secret, wire to agent adapter config; or operator manual push from agents/tmp-preview-check-20260308185629. Branch feature/mymetaview-3.0 ready (5d68b64)."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: superseded
+  superseded_by: mymetaview-029
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 1
+
+- id: mymetaview-029
+  fact: "AIL-87 (push MyMetaView 3.0) blocked 2026-03-10: GITHUB_TOKEN wired but malformed — value is `[object Object]` instead of plain PAT. Board: verify company secret stores plain string; check resolveAdapterConfigForRuntime/secret_ref handling. Rotate if corrupted."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 1
+
+- id: mymetaview-030
+  fact: "AIL-95 (MyMetaView 3.5) assigned 2026-03-10: board said 3.0 not comprehensive; generations must be 10x better. CEO delegated to COO via AIL-96 for grand plan; COO partners with Founding Engineer on technical architecture. Plan must cover: 10x generation quality, product enhancement across all dimensions, delegation through entire org."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 1
+
+- id: mymetaview-031
+  fact: "AIL-113 (MyMetaView 4.0) assigned 2026-03-10: board said demo still a gimmick, not full-scale tool. CEO created 20-phase plan (doc/plans/mymetaview-4.0-plan.md) with C-level delegation. Strategic shift: batch API, reliability, integrations, professional UX. Board approval required before implementation."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: superseded
+  superseded_by: mymetaview-032
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 2
+
+- id: mymetaview-032
+  fact: "AIL-113 done 2026-03-10: Board clarified no approval for plan or final implementation plan; approval before implementation. CEO delegated AIL-114 to COO for final implementation plan (EXECUTION_PLAN_MYMETAVIEW_4.0.md), partner Founding Engineer."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: superseded
+  superseded_by: mymetaview-033
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 1
+
+- id: mymetaview-033
+  fact: "AIL-113 done 2026-03-10: Board approved 20-phase plan ('Approved. Delegate.'). CEO confirmed delegation: AIL-114 → COO for final implementation plan (EXECUTION_PLAN_MYMETAVIEW_4.0.md), partner Founding Engineer. Board approval required before implementation."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 1
+
+- id: mymetaview-034
+  fact: "AIL-114 2026-03-10: Board commented 'Approved. Delegate implementation.' CEO reassigned AIL-114 to COO; COO to create EXECUTION_PLAN_MYMETAVIEW_4.0.md, partner Founding Engineer. Implementation requires Board approval before execution."
+  category: status
+  timestamp: "2026-03-10"
+  source: "2026-03-10"
+  status: active
+  superseded_by: null
+  related_entities:
+    - projects/mymetaview
+  last_accessed: "2026-03-10"
+  access_count: 1
