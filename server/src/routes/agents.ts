@@ -1825,20 +1825,15 @@ export function agentRoutes(db: Db) {
     };
     const effectiveModel = (typeof requestedModel === "string" && requestedModel) || defaultModelByAdapter[adapterType] || "auto";
 
-    const result = await db
-      .update(agentsTable)
-      .set({
-        adapterType,
-        adapterConfig: sql`jsonb_set(coalesce(${agentsTable.adapterConfig}, '{}'::jsonb), '{model}', ${JSON.stringify(effectiveModel)}::jsonb)`,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(agentsTable.companyId, companyId),
-          not(eq(agentsTable.status, "terminated")),
-        ),
-      )
-      .returning({ id: agentsTable.id, name: agentsTable.name });
+    const modelJson = JSON.stringify(effectiveModel); // e.g. '"gpt-5.3-codex"'
+    const result = await db.execute<{ id: string; name: string }>(sql`
+      UPDATE agents
+      SET adapter_type = ${adapterType},
+          adapter_config = jsonb_set(coalesce(adapter_config, '{}'::jsonb), '{model}', ${modelJson}::jsonb),
+          updated_at = now()
+      WHERE company_id = ${companyId} AND status != 'terminated'
+      RETURNING id, name
+    `);
 
     const actor = getActorInfo(req);
     await logActivity(db, {
@@ -1848,15 +1843,15 @@ export function agentRoutes(db: Db) {
       action: "agents.bulk_adapter_switch",
       entityType: "company",
       entityId: companyId,
-      details: { adapterType, agentCount: result.length },
+      details: { adapterType, model: effectiveModel, agentCount: result.rows.length },
     });
 
     logger.info(
-      { companyId, adapterType, agentCount: result.length },
+      { companyId, adapterType, model: effectiveModel, agentCount: result.rows.length },
       "bulk adapter switch completed",
     );
 
-    res.json({ switched: result.length, adapterType, agents: result });
+    res.json({ switched: result.rows.length, adapterType, agents: result.rows });
   });
 
   return router;
