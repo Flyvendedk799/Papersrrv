@@ -20,5 +20,5 @@ export const defaultCreateValues: CreateConfigValues = {
   bootstrapPrompt: "",
   maxTurnsPerRun: 80,
   heartbeatEnabled: false,
-  intervalSec: 300,
+  intervalSec: 3600,
 };

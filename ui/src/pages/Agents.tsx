@@ -63,7 +63,7 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab, showTerminated: boolean
 }
 
 const SWITCHABLE_ADAPTERS = [
-  { value: "cursor", label: "Cursor", model: undefined },
+  { value: "cursor", label: "Cursor", model: "composer-1.5" },
   { value: "codex_local", label: "Codex (High)", model: "gpt-5.3-codex" },
   { value: "codex_local", label: "Codex (Low)", model: "gpt-5.1-codex-mini" },
   { value: "codex_local", label: "Codex (GPT Mini)", model: "gpt-4.1-mini" },

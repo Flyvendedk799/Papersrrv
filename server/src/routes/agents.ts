@@ -1817,7 +1817,7 @@ export function agentRoutes(db: Db) {
 
     // Use explicit model if provided, otherwise fall back to adapter default.
     const defaultModelByAdapter: Record<string, string> = {
-      cursor: "auto",
+      cursor: "composer-1.5",
       codex_local: "gpt-4.1-mini",
       claude_local: "claude-sonnet-4-5-20250929",
       opencode_local: "auto",
