@@ -8,9 +8,9 @@ import pino from "pino";
 const logger = pino({ name: "file-indexer" });
 
 /** Tool names that represent file operations (across different adapters). */
-const FILE_READ_TOOLS = new Set(["Read", "read_file", "ReadFile", "read", "cat", "View"]);
-const FILE_WRITE_TOOLS = new Set(["Write", "write_file", "WriteFile", "write", "CreateFile", "create_file"]);
-const FILE_EDIT_TOOLS = new Set(["Edit", "edit_file", "EditFile", "edit", "Replace", "ReplaceInFile", "Patch", "NotebookEdit"]);
+const FILE_READ_TOOLS = new Set(["Read", "read_file", "ReadFile", "read", "cat", "View", "readToolCall", "readFile"]);
+const FILE_WRITE_TOOLS = new Set(["Write", "write_file", "WriteFile", "write", "CreateFile", "create_file", "writeToolCall", "createToolCall", "writeFile", "createFile"]);
+const FILE_EDIT_TOOLS = new Set(["Edit", "edit_file", "EditFile", "edit", "Replace", "ReplaceInFile", "Patch", "NotebookEdit", "editToolCall", "editFile"]);
 
 interface ExtractedFileOp {
   filePath: string;
