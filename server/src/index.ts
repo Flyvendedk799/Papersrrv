@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import type { Request as ExpressRequest, RequestHandler } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {
   createDb,
   ensurePostgresDatabase,
@@ -14,9 +14,12 @@ import {
   reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
   runDatabaseBackup,
+  agents as agentsTable,
   authUsers,
   companies,
   companyMemberships,
+  costEvents,
+  heartbeatRuns,
   instanceUserRoles,
 } from "@paperclipai/db";
 import detectPort from "detect-port";
@@ -570,30 +573,35 @@ engine.recoverInFlightRuns().catch((err) => {
 // Safe to run on every startup — idempotent, only creates/updates missing events
 (async () => {
   try {
-    const { costEvents, heartbeatRuns, agents: agentsTable, companies: companiesTable } = await import("@paperclipai/db");
-    const { and: _and, eq: _eq, isNotNull, sql: _sql } = await import("drizzle-orm");
+    logger.info("cost-backfill: starting scan of heartbeat_runs for costUsd data");
 
-    // Check if there are runs with costUsd > 0 but no matching cost_event
     const runsWithCost = await (db as any)
       .select({
         id: heartbeatRuns.id,
         agentId: heartbeatRuns.agentId,
         companyId: heartbeatRuns.companyId,
-        costUsd: _sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric`,
-        inputTokens: _sql`coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0)`,
-        outputTokens: _sql`coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0)`,
+        costUsd: sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric`,
+        inputTokens: sql`coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0)`,
+        outputTokens: sql`coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0)`,
         finishedAt: heartbeatRuns.finishedAt,
       })
       .from(heartbeatRuns)
       .where(
-        _and(
+        and(
           isNotNull(heartbeatRuns.usageJson),
-          _sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric > 0`,
+          sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric > 0`,
         ),
       );
 
+    logger.info({ runsFound: runsWithCost.length }, "cost-backfill: runs with costUsd > 0");
+
     if (runsWithCost.length === 0) {
-      logger.info("cost-backfill: no runs with costUsd found, skipping");
+      // Also log how many runs have usageJson at all for diagnostics
+      const [{ totalWithUsage }] = await (db as any)
+        .select({ totalWithUsage: sql`count(*)::int` })
+        .from(heartbeatRuns)
+        .where(isNotNull(heartbeatRuns.usageJson));
+      logger.info({ totalWithUsage: totalWithUsage }, "cost-backfill: no runs with costUsd > 0, skipping");
       return;
     }
 
@@ -608,17 +616,17 @@ engine.recoverInFlightRuns().catch((err) => {
         .select({ id: costEvents.id, costCents: costEvents.costCents })
         .from(costEvents)
         .where(
-          _and(
-            _eq(costEvents.companyId, run.companyId),
-            _eq(costEvents.agentId, run.agentId),
-            _eq(costEvents.occurredAt, run.finishedAt),
+          and(
+            eq(costEvents.companyId, run.companyId),
+            eq(costEvents.agentId, run.agentId),
+            eq(costEvents.occurredAt, run.finishedAt),
           ),
         )
         .then((rows: any[]) => rows[0] ?? null);
 
       if (existing) {
         if (existing.costCents === 0 && costCents > 0) {
-          await (db as any).update(costEvents).set({ costCents }).where(_eq(costEvents.id, existing.id));
+          await (db as any).update(costEvents).set({ costCents }).where(eq(costEvents.id, existing.id));
           updated++;
         }
       } else {
@@ -643,33 +651,33 @@ engine.recoverInFlightRuns().catch((err) => {
     const companyTotals = await (db as any)
       .select({
         companyId: costEvents.companyId,
-        total: _sql`coalesce(sum(${costEvents.costCents}), 0)::int`,
+        total: sql`coalesce(sum(${costEvents.costCents}), 0)::int`,
       })
       .from(costEvents)
-      .where(_sql`${costEvents.occurredAt} >= ${monthStart}`)
+      .where(sql`${costEvents.occurredAt} >= ${monthStart}`)
       .groupBy(costEvents.companyId);
 
-    for (const { companyId, total } of companyTotals) {
+    for (const row of companyTotals) {
       await (db as any)
-        .update(companiesTable)
-        .set({ spentMonthlyCents: Number(total), updatedAt: now })
-        .where(_eq(companiesTable.id, companyId));
+        .update(companies)
+        .set({ spentMonthlyCents: Number(row.total), updatedAt: now })
+        .where(eq(companies.id, row.companyId));
     }
 
     const agentTotals = await (db as any)
       .select({
         agentId: costEvents.agentId,
-        total: _sql`coalesce(sum(${costEvents.costCents}), 0)::int`,
+        total: sql`coalesce(sum(${costEvents.costCents}), 0)::int`,
       })
       .from(costEvents)
-      .where(_sql`${costEvents.occurredAt} >= ${monthStart}`)
+      .where(sql`${costEvents.occurredAt} >= ${monthStart}`)
       .groupBy(costEvents.agentId);
 
-    for (const { agentId, total } of agentTotals) {
+    for (const row of agentTotals) {
       await (db as any)
         .update(agentsTable)
-        .set({ spentMonthlyCents: Number(total), updatedAt: now })
-        .where(_eq(agentsTable.id, agentId));
+        .set({ spentMonthlyCents: Number(row.total), updatedAt: now })
+        .where(eq(agentsTable.id, row.agentId));
     }
 
     logger.info(

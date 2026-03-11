@@ -371,5 +371,81 @@ export function debugRoutes(db: Db) {
     });
   });
 
+  /**
+   * GET /companies/:companyId/debug/cost-data
+   * Diagnostic: shows raw cost data from heartbeat_runs.usageJson and cost_events
+   */
+  router.get("/companies/:companyId/debug/cost-data", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    // Sample runs with usageJson
+    const runsWithUsage = await db
+      .select({
+        id: heartbeatRuns.id,
+        agentId: heartbeatRuns.agentId,
+        agentName: agents.name,
+        status: heartbeatRuns.status,
+        usageJson: heartbeatRuns.usageJson,
+        finishedAt: heartbeatRuns.finishedAt,
+      })
+      .from(heartbeatRuns)
+      .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          isNotNull(heartbeatRuns.usageJson),
+        ),
+      )
+      .orderBy(desc(heartbeatRuns.finishedAt))
+      .limit(20);
+
+    // Count runs with costUsd > 0
+    const [{ withCost }] = await db
+      .select({
+        withCost: sql<number>`count(*)::int`,
+      })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          isNotNull(heartbeatRuns.usageJson),
+          sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric > 0`,
+        ),
+      );
+
+    // Count total cost_events and sum
+    const [{ eventCount, eventTotalCents }] = await db
+      .select({
+        eventCount: sql<number>`count(*)::int`,
+        eventTotalCents: sql<number>`coalesce(sum(cost_cents), 0)::int`,
+      })
+      .from(sql`cost_events`)
+      .where(eq(sql`company_id`, companyId));
+
+    // Total from usageJson
+    const [{ usageTotal }] = await db
+      .select({
+        usageTotal: sql<number>`coalesce(sum(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0)), 0)::numeric`,
+      })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.companyId, companyId));
+
+    res.json({
+      runsWithUsageJsonSample: runsWithUsage.map((r) => ({
+        id: r.id,
+        agent: r.agentName,
+        status: r.status,
+        usageJson: r.usageJson,
+        finishedAt: r.finishedAt,
+      })),
+      runsWithCostUsdGt0: withCost,
+      costEventsCount: eventCount,
+      costEventsTotalCents: eventTotalCents,
+      usageJsonTotalUsd: Number(usageTotal),
+      totalRunsWithUsageJson: runsWithUsage.length,
+    });
+  });
+
   return router;
 }
