@@ -575,6 +575,14 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
+  // Use refs for values that change but should NOT cause WS reconnection
+  const pushToastRef = useRef(pushToast);
+  pushToastRef.current = pushToast;
+  const currentUserIdRef = useRef(currentUserId);
+  currentUserIdRef.current = currentUserId;
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
+
   useEffect(() => {
     if (!selectedCompanyId) return;
 
@@ -593,7 +601,9 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     const scheduleReconnect = () => {
       if (closed) return;
       reconnectAttempt += 1;
-      const delayMs = Math.min(15000, 1000 * 2 ** Math.min(reconnectAttempt - 1, 4));
+      // Cap at 10 attempts, then stop retrying
+      if (reconnectAttempt > 10) return;
+      const delayMs = Math.min(30000, 1000 * 2 ** Math.min(reconnectAttempt - 1, 5));
       reconnectTimer = window.setTimeout(() => {
         reconnectTimer = null;
         connect();
@@ -619,8 +629,8 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
         try {
           const parsed = JSON.parse(raw) as LiveEvent;
-          handleLiveEvent(queryClient, selectedCompanyId, parsed, pushToast, gateRef.current, {
-            userId: currentUserId,
+          handleLiveEvent(queryClientRef.current, selectedCompanyId, parsed, pushToastRef.current, gateRef.current, {
+            userId: currentUserIdRef.current,
             agentId: null,
           });
         } catch {
@@ -651,7 +661,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
         socket.close(1000, "provider_unmount");
       }
     };
-  }, [queryClient, selectedCompanyId, pushToast, currentUserId]);
+  }, [selectedCompanyId]);
 
   return <>{children}</>;
 }
