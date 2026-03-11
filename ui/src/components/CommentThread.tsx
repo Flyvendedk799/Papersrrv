@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent } from "re
 import { Link, useLocation } from "react-router-dom";
 import type { IssueComment, Agent } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Paperclip } from "lucide-react";
+import { Check, Copy, Paperclip, FileText } from "lucide-react";
 import { Identity } from "./Identity";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { MarkdownBody } from "./MarkdownBody";
@@ -155,6 +155,14 @@ const TimelineList = memo(function TimelineList({
                   {run.runId.slice(0, 8)}
                 </Link>
                 <StatusBadge status={run.status} />
+                <Link
+                  to={`/files?runId=${run.runId}`}
+                  className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors ml-auto"
+                  title="View files touched by this run"
+                >
+                  <FileText className="h-3 w-3" />
+                  Files
+                </Link>
               </div>
             </div>
           );

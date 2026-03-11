@@ -7,6 +7,7 @@ import { heartbeatsApi } from "../api/heartbeats";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
+import { filesApi } from "../api/files";
 import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -34,6 +35,7 @@ import {
   ChevronDown,
   ChevronRight,
   EyeOff,
+  FileText,
   Hexagon,
   ListTree,
   MessageSquare,
@@ -43,7 +45,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ActivityEvent } from "@paperclipai/shared";
-import type { Agent, IssueAttachment } from "@paperclipai/shared";
+import type { Agent, IssueAttachment, FileSnapshot } from "@paperclipai/shared";
 
 type CommentReassignment = {
   assigneeAgentId: string | null;
@@ -189,6 +191,30 @@ export function IssueDetail() {
     queryKey: queryKeys.issues.approvals(issueId!),
     queryFn: () => issuesApi.listApprovals(issueId!),
     enabled: !!issueId,
+  });
+
+  const runIds = useMemo(() => (linkedRuns ?? []).map((r) => r.runId), [linkedRuns]);
+
+  const { data: issueFiles } = useQuery({
+    queryKey: [...queryKeys.issues.runs(issueId!), "files"],
+    queryFn: async () => {
+      if (!selectedCompanyId || runIds.length === 0) return [];
+      const all = await Promise.all(
+        runIds.map((rid) => filesApi.runFiles(selectedCompanyId, rid).catch(() => [] as FileSnapshot[])),
+      );
+      // Deduplicate by filePath, keeping newest snapshot
+      const byPath = new Map<string, FileSnapshot>();
+      for (const snapshots of all) {
+        for (const s of snapshots) {
+          const existing = byPath.get(s.filePath);
+          if (!existing || new Date(s.createdAt) > new Date(existing.createdAt)) {
+            byPath.set(s.filePath, s);
+          }
+        }
+      }
+      return Array.from(byPath.values()).sort((a, b) => a.filePath.localeCompare(b.filePath));
+    },
+    enabled: !!issueId && !!selectedCompanyId && runIds.length > 0,
   });
 
   const { data: attachments } = useQuery({
@@ -759,6 +785,13 @@ export function IssueDetail() {
             <ActivityIcon className="h-3.5 w-3.5" />
             Activity
           </TabsTrigger>
+          {(issueFiles ?? []).length > 0 && (
+            <TabsTrigger value="files" className="gap-1.5">
+              <FileText className="h-3.5 w-3.5" />
+              Files
+              <span className="text-[10px] text-muted-foreground">({(issueFiles ?? []).length})</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="comments">
@@ -833,6 +866,31 @@ export function IssueDetail() {
                   <span className="ml-auto shrink-0">{relativeTime(evt.createdAt)}</span>
                 </div>
               ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="files">
+          {!issueFiles || issueFiles.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No files touched by runs on this issue.</p>
+          ) : (
+            <div className="border border-border rounded-lg divide-y divide-border">
+              {issueFiles.map((snap) => {
+                const isMd = /\.md$/i.test(snap.filePath);
+                return (
+                  <Link
+                    key={snap.id}
+                    to={`/files?file=${encodeURIComponent(snap.filePath)}`}
+                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
+                  >
+                    <FileText className={cn("h-3.5 w-3.5 shrink-0", isMd ? "text-blue-500" : "text-muted-foreground")} />
+                    <span className="truncate font-mono text-xs">{snap.filePath}</span>
+                    <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
+                      {relativeTime(snap.createdAt)}
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </TabsContent>

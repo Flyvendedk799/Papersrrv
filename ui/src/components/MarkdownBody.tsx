@@ -1,18 +1,17 @@
 import { isValidElement, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useParams, useLocation } from "react-router-dom";
 import { parseProjectMentionHref } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 import { useTheme } from "../context/ThemeContext";
+import { useCompany } from "../context/CompanyContext";
+import { extractCompanyPrefixFromPath, normalizeCompanyPrefix } from "../lib/company-routes";
 import { FileText } from "lucide-react";
 
 interface MarkdownBodyProps {
   children: string;
   className?: string;
-  /** Company ID for clickable file references. If not provided, file links will be disabled. */
-  companyId?: string;
-  /** Company prefix for routing (e.g. "ACME"). If not provided, file links use relative paths. */
-  companyPrefix?: string;
 }
 
 let mermaidLoaderPromise: Promise<typeof import("mermaid").default> | null = null;
@@ -136,8 +135,17 @@ function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: b
   );
 }
 
-export function MarkdownBody({ children, className, companyId, companyPrefix }: MarkdownBodyProps) {
+export function MarkdownBody({ children, className }: MarkdownBodyProps) {
   const { theme } = useTheme();
+
+  // Auto-resolve company prefix for file path links
+  const { selectedCompany } = useCompany();
+  const params = useParams<{ companyPrefix?: string }>();
+  const location = useLocation();
+  const companyPrefix =
+    params.companyPrefix ? normalizeCompanyPrefix(params.companyPrefix)
+    : extractCompanyPrefixFromPath(location.pathname)
+    ?? (selectedCompany ? normalizeCompanyPrefix(selectedCompany.issuePrefix) : null);
 
   const filePathUrl = (filePath: string) => {
     const base = companyPrefix ? `/${companyPrefix}/files` : "/files";

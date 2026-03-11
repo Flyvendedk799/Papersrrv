@@ -217,11 +217,19 @@ export function Files() {
   const [previewFile, setPreviewFile] = useState<{ path: string; hash: string | null } | null>(null);
   const [viewMode, setViewMode] = useState<"tree" | "list" | "categories">("tree");
 
-  // Open file from URL ?file= param
+  const [runIdFilter, setRunIdFilter] = useState<string | null>(null);
+
+  // Open file from URL params: ?file= or ?runId=
   useEffect(() => {
     const fileParam = searchParams.get("file");
+    const runIdParam = searchParams.get("runId");
     if (fileParam) {
       setSelectedFilePath(fileParam);
+      setSearchParams({}, { replace: true });
+    }
+    if (runIdParam) {
+      setRunIdFilter(runIdParam);
+      setViewMode("list");
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams]);
@@ -233,8 +241,8 @@ export function Files() {
   });
 
   const { data: files, isLoading: filesLoading } = useQuery({
-    queryKey: queryKeys.files.list(selectedCompanyId!),
-    queryFn: () => filesApi.list(selectedCompanyId!),
+    queryKey: [...queryKeys.files.list(selectedCompanyId!), runIdFilter],
+    queryFn: () => filesApi.list(selectedCompanyId!, { runId: runIdFilter ?? undefined }),
     enabled: !!selectedCompanyId,
   });
 
@@ -337,6 +345,18 @@ export function Files() {
           </button>
         </div>
       </div>
+
+      {runIdFilter && (
+        <div className="mb-4 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 flex items-center justify-between">
+          <span>Showing files from run <code className="font-mono">{runIdFilter.slice(0, 8)}</code></span>
+          <button
+            onClick={() => setRunIdFilter(null)}
+            className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+          >
+            Show all files
+          </button>
+        </div>
+      )}
 
       {backfillMutation.isSuccess && (
         <div className="mb-4 rounded-md border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 px-3 py-2 text-xs text-green-700 dark:text-green-300">
