@@ -1,0 +1,38 @@
+/**
+ * MyMetaView 5.0 — Demo generation animation styles
+ *
+ * Copy to: your MyMetaView frontend (e.g. src/styles/demo-generation.css)
+ * Import in your app entry or layout.
+ *
+ * Reference: agents/junior-dev-animation/deliverables/MYMETAVIEW_5.0_DEMO_ANIMATION_SPEC.md
+ */
+
+/* Skeleton shimmer — gradient scan-line effect */
+.mv-shimmer {
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(56, 189, 248, 0.25) 40%,
+    rgba(56, 189, 248, 0.4) 50%,
+    rgba(56, 189, 248, 0.25) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: mv-shimmer-anim 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mv-shimmer {
+    animation: none;
+    background: rgba(56, 189, 248, 0.08);
+  }
+}
+
+@keyframes mv-shimmer-anim {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

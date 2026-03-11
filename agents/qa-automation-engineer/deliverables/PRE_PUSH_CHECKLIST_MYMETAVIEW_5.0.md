@@ -33,10 +33,10 @@ Complete **before** any push to origin. Do not allow push without evidence.
 
 | # | Check | Status | Evidence / Notes |
 |---|-------|--------|------------------|
-| 1 | W1 (demo workstream) complete | ☐ | AIL-145 done; supporting issues closed |
+| 1 | W1 (demo workstream) complete | ☐ | AIL-145 in progress; AIL-150, AIL-153 still open |
 | 2 | Employee involvement verified | ☐ | Running table in AIL-145 or PCM tracker |
 | 3 | Net new lines target met | ☐ | >= 5000 lines tracked in PR description |
-| 4 | Junior Dev (Git) lined up for PR | ☐ | AIL-147 assigned; PR author confirmed |
+| 4 | Junior Dev (Git) lined up for PR | ☑ | AIL-147 assigned; PR author confirmed |
 | 5 | No workflow steps skipped | ☐ | All phases W1–W3 executed per AIL-142 |
 | 6 | PCM breadcrumbs captured | ☐ | Reference artifacts in AIL-144 or PCM audit |
 
