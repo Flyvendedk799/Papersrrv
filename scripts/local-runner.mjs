@@ -334,11 +334,12 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
   const baseWorkspace = WORKSPACE_ROOT.replace(/\/$/, "");
   const safeName = agent.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
-  // Agent workspace: isolated working directory for this agent's codex/claude/cursor
-  const workspaceDir = `${baseWorkspace}/.agent-workspaces/${safeName}`;
-
   // Agent home: where AGENTS.md, SOUL.md, HEARTBEAT.md, TOOLS.md, memory/, life/ live
   const agentHome = `${baseWorkspace}/agents/${safeName}`;
+
+  // Use agent home as workspace so CLIs auto-discover AGENTS.md, HEARTBEAT.md etc.
+  // as project files — avoids slow manual file reads via shell commands.
+  const workspaceDir = agentHome;
 
   // Instructions file: resolve from config or derive from agent name
   const instructionsFilePath = config.instructionsFilePath
@@ -361,7 +362,7 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
   const isWsl = command.toLowerCase().startsWith("wsl ");
   if (isWsl) {
     try {
-      execSync(`wsl -d ${WSL_DISTRO} -- bash -c "mkdir -p '${workspaceDir}' '${agentHome}'"`, { stdio: "ignore" });
+      execSync(`wsl -d ${WSL_DISTRO} -- bash -c "mkdir -p '${agentHome}'"`, { stdio: "ignore" });
     } catch { /* best-effort */ }
   }
 
