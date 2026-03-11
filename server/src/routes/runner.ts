@@ -21,6 +21,7 @@ import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { getRunLogStore, type RunLogHandle } from "../services/run-log-store.js";
 import { secretService } from "../services/index.js";
 import { indexRunFromLog } from "../services/file-indexer.js";
+import { estimateCostUsd } from "../services/token-cost-estimator.js";
 
 /** Adapter types that require a local CLI and cannot run on a cloud server. */
 const LOCAL_ADAPTER_TYPES = new Set(["cursor", "process", "claude_local", "codex_local", "opencode_local", "pi_local"]);
@@ -401,11 +402,28 @@ export function runnerRoutes(db: Db) {
         status = "failed";
       }
 
+      // If adapter didn't report costUsd but sent token counts, estimate cost
+      let effectiveCostUsd = result.costUsd ?? null;
+      if (effectiveCostUsd == null && result.usage) {
+        const estimated = estimateCostUsd({
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          cacheReadTokens: result.usage.cachedInputTokens,
+        });
+        if (estimated > 0) {
+          effectiveCostUsd = estimated;
+          logger.info(
+            { runId, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, estimatedCostUsd: estimated },
+            "runner: estimated costUsd from token counts",
+          );
+        }
+      }
+
       const usageJson =
-        result.usage || result.costUsd != null
+        result.usage || effectiveCostUsd != null
           ? {
             ...(result.usage ?? {}),
-            ...(result.costUsd != null ? { costUsd: result.costUsd } : {}),
+            ...(effectiveCostUsd != null ? { costUsd: effectiveCostUsd } : {}),
             ...(result.billingType ? { billingType: result.billingType } : {}),
           }
           : null;

@@ -569,11 +569,12 @@ engine.recoverInFlightRuns().catch((err) => {
   logger.warn({ err }, "workflow recovery failed");
 });
 
-// One-time cost backfill: fix historical runs where costCents was rounded to 0
-// Safe to run on every startup — idempotent, only creates/updates missing events
+// One-time cost backfill: estimate costs from token counts for historical runs
+// Uses Claude Sonnet pricing ($3/MTok in, $15/MTok out, $0.30/MTok cache-read) as default
+// Safe to run on every startup — idempotent, only creates missing cost_events
 (async () => {
   try {
-    logger.info("cost-backfill: starting scan of heartbeat_runs for costUsd data");
+    logger.info("cost-backfill: starting scan of heartbeat_runs with token data");
 
     const runsWithCost = await (db as any)
       .select({
@@ -583,33 +584,43 @@ engine.recoverInFlightRuns().catch((err) => {
         costUsd: sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric`,
         inputTokens: sql`coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0)`,
         outputTokens: sql`coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0)`,
+        cacheReadTokens: sql`coalesce((${heartbeatRuns.usageJson} ->> 'cacheReadTokens')::int, 0)`,
         finishedAt: heartbeatRuns.finishedAt,
       })
       .from(heartbeatRuns)
       .where(
         and(
           isNotNull(heartbeatRuns.usageJson),
-          sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric > 0`,
+          sql`(
+            coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0) > 0 OR
+            coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0) > 0
+          )`,
         ),
       );
 
-    logger.info({ runsFound: runsWithCost.length }, "cost-backfill: runs with costUsd > 0");
+    logger.info({ runsFound: runsWithCost.length }, "cost-backfill: runs with token data");
 
     if (runsWithCost.length === 0) {
-      // Also log how many runs have usageJson at all for diagnostics
-      const [{ totalWithUsage }] = await (db as any)
-        .select({ totalWithUsage: sql`count(*)::int` })
-        .from(heartbeatRuns)
-        .where(isNotNull(heartbeatRuns.usageJson));
-      logger.info({ totalWithUsage: totalWithUsage }, "cost-backfill: no runs with costUsd > 0, skipping");
+      logger.info("cost-backfill: no runs with token data, skipping");
       return;
     }
 
     let created = 0;
     let updated = 0;
     for (const run of runsWithCost) {
-      const costUsd = Number(run.costUsd);
-      if (!costUsd || costUsd <= 0) continue;
+      const inputTokens = Number(run.inputTokens) || 0;
+      const outputTokens = Number(run.outputTokens) || 0;
+      const cacheReadTokens = Number(run.cacheReadTokens) || 0;
+
+      // Use reported costUsd if available, otherwise estimate from tokens
+      let costUsd = Number(run.costUsd) || 0;
+      if (costUsd <= 0) {
+        costUsd =
+          (inputTokens / 1_000_000) * 3 +
+          (outputTokens / 1_000_000) * 15 +
+          (cacheReadTokens / 1_000_000) * 0.3;
+      }
+      if (costUsd <= 0) continue;
       const costCents = Math.max(1, Math.ceil(costUsd * 100));
 
       const existing = await (db as any)
@@ -633,10 +644,10 @@ engine.recoverInFlightRuns().catch((err) => {
         await (db as any).insert(costEvents).values({
           companyId: run.companyId,
           agentId: run.agentId,
-          provider: "unknown",
-          model: "unknown",
-          inputTokens: Number(run.inputTokens) || 0,
-          outputTokens: Number(run.outputTokens) || 0,
+          provider: "estimated",
+          model: "claude-sonnet-4",
+          inputTokens,
+          outputTokens,
           costCents,
           occurredAt: run.finishedAt ?? new Date(),
         });

@@ -87,20 +87,29 @@ export function costService(db: Db) {
         .from(costEvents)
         .where(and(...ceConditions));
 
-      // Secondary source: heartbeat_runs.usage_json->costUsd (higher precision float)
-      // This catches runs where costCents rounded to 0 but costUsd was non-zero
+      // Secondary source: heartbeat_runs token counts with cost estimation
+      // Uses costUsd if available, otherwise estimates from token counts using Claude Sonnet pricing
+      // Default pricing: $3/MTok input, $15/MTok output, $0.30/MTok cache-read
       const hrConditions: ReturnType<typeof eq>[] = [eq(heartbeatRuns.companyId, companyId)];
       if (range?.from) hrConditions.push(gte(heartbeatRuns.finishedAt, range.from));
       if (range?.to) hrConditions.push(lte(heartbeatRuns.finishedAt, range.to));
 
       const [{ usdTotal }] = await db
         .select({
-          usdTotal: sql<number>`coalesce(sum(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0)), 0)::numeric`,
+          usdTotal: sql<number>`coalesce(sum(
+            coalesce(
+              (${heartbeatRuns.usageJson} ->> 'costUsd')::numeric,
+              (coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::numeric, 0) * 3 / 1000000) +
+              (coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::numeric, 0) * 15 / 1000000) +
+              (coalesce((${heartbeatRuns.usageJson} ->> 'cacheReadTokens')::numeric, 0) * 0.3 / 1000000),
+              0
+            )
+          ), 0)::numeric`,
         })
         .from(heartbeatRuns)
         .where(and(...hrConditions));
 
-      // Use the higher of the two sources (usageJson is more precise)
+      // Use the higher of the two sources (token-estimated is more precise)
       const fromEvents = Number(centsTotal);
       const fromRuns = Math.round(Number(usdTotal) * 100);
       const spendCents = Math.max(fromEvents, fromRuns);
@@ -145,9 +154,17 @@ export function costService(db: Db) {
       const runRows = await db
         .select({
           agentId: heartbeatRuns.agentId,
-          // Precise cost from usageJson (float USD -> cents)
+          // Precise cost from usageJson: use costUsd if available, else estimate from tokens
           preciseCostCents:
-            sql<number>`coalesce(round(sum(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0)) * 100), 0)::int`,
+            sql<number>`coalesce(round(sum(
+              coalesce(
+                (${heartbeatRuns.usageJson} ->> 'costUsd')::numeric,
+                (coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::numeric, 0) * 3 / 1000000) +
+                (coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::numeric, 0) * 15 / 1000000) +
+                (coalesce((${heartbeatRuns.usageJson} ->> 'cacheReadTokens')::numeric, 0) * 0.3 / 1000000),
+                0
+              )
+            ) * 100), 0)::int`,
           apiRunCount:
             sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'api' then 1 else 0 end), 0)::int`,
           subscriptionRunCount:
@@ -208,7 +225,15 @@ export function costService(db: Db) {
       if (range?.from) conditions.push(gte(heartbeatRuns.finishedAt, range.from));
       if (range?.to) conditions.push(lte(heartbeatRuns.finishedAt, range.to));
 
-      const costCentsExpr = sql<number>`coalesce(sum(round(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0) * 100)), 0)::int`;
+      const costCentsExpr = sql<number>`coalesce(sum(round(
+        coalesce(
+          (${heartbeatRuns.usageJson} ->> 'costUsd')::numeric,
+          (coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::numeric, 0) * 3 / 1000000) +
+          (coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::numeric, 0) * 15 / 1000000) +
+          (coalesce((${heartbeatRuns.usageJson} ->> 'cacheReadTokens')::numeric, 0) * 0.3 / 1000000),
+          0
+        ) * 100
+      )), 0)::int`;
 
       return db
         .select({

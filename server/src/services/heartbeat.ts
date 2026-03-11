@@ -28,6 +28,7 @@ import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import { needsRemoteRunner } from "../routes/runner.js";
 import { indexRunFromLog } from "./file-indexer.js";
 import { fileService } from "./files.js";
+import { estimateCostUsd } from "./token-cost-estimator.js";
 import { getJobQueue } from "./job-queue.js";
 import { workflowEngine as createWorkflowEngine } from "./workflow-engine.js";
 
@@ -972,7 +973,20 @@ export function heartbeatService(db: Db) {
     const outputTokens = usage?.outputTokens ?? 0;
     const cachedInputTokens = usage?.cachedInputTokens ?? 0;
     // Use ceil so sub-cent costs ($0.003) still register as 1 cent rather than rounding to 0
-    const rawCostUsd = result.costUsd ?? 0;
+    // If adapter didn't report costUsd, estimate from token counts using model pricing
+    let rawCostUsd = result.costUsd ?? 0;
+    if (rawCostUsd <= 0 && (inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0)) {
+      rawCostUsd = estimateCostUsd(
+        { inputTokens, outputTokens, cacheReadTokens: cachedInputTokens },
+        result.model ?? agent.adapterConfig?.model as string ?? null,
+      );
+      if (rawCostUsd > 0) {
+        logger.info(
+          { agentId: agent.id, inputTokens, outputTokens, cachedInputTokens, estimatedCostUsd: rawCostUsd },
+          "cost estimated from token counts (adapter did not report costUsd)",
+        );
+      }
+    }
     const additionalCostCents = rawCostUsd > 0 ? Math.max(1, Math.ceil(rawCostUsd * 100)) : 0;
     const hasTokenUsage = inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0;
 
