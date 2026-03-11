@@ -21,7 +21,8 @@ export const filesApi = {
       `/companies/${companyId}/files/history?path=${encodeURIComponent(filePath)}`,
     ),
 
-  content: (hash: string) => api.get<FileContent>(`/files/content/${encodeURIComponent(hash)}`),
+  content: (companyId: string, hash: string) =>
+    api.get<FileContent>(`/companies/${companyId}/files/content/${encodeURIComponent(hash)}`),
 
   runFiles: (companyId: string, runId: string) =>
     api.get<FileSnapshot[]>(`/companies/${companyId}/runs/${runId}/files`),

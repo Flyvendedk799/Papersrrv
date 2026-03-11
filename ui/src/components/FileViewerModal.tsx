@@ -26,8 +26,8 @@ export function FileViewerModal({ companyId, filePath, onClose }: FileViewerModa
   const contentHash = selectedSnapshotHash ?? history?.[0]?.contentHash ?? null;
 
   const { data: content, isLoading: contentLoading } = useQuery({
-    queryKey: queryKeys.files.content(contentHash ?? ""),
-    queryFn: () => filesApi.content(contentHash!),
+    queryKey: queryKeys.files.content(companyId, contentHash ?? ""),
+    queryFn: () => filesApi.content(companyId, contentHash!),
     enabled: !!contentHash,
   });
 

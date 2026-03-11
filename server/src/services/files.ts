@@ -203,9 +203,25 @@ export function fileService(db: Db) {
     },
 
     /**
-     * Get file content by hash.
+     * Get file content by hash, optionally scoped to a company.
      */
-    async getContent(hash: string): Promise<FileContent | null> {
+    async getContent(hash: string, companyId?: string): Promise<FileContent | null> {
+      // When companyId is provided, verify the hash is referenced by a snapshot in that company
+      if (companyId) {
+        const snapshot = await db
+          .select({ id: agentFileSnapshots.id })
+          .from(agentFileSnapshots)
+          .where(
+            and(
+              eq(agentFileSnapshots.companyId, companyId),
+              eq(agentFileSnapshots.contentHash, hash),
+            ),
+          )
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        if (!snapshot) return null;
+      }
+
       const row = await db
         .select()
         .from(fileContents)
@@ -256,13 +272,16 @@ export function fileService(db: Db) {
       const root: FileTreeNode = { name: "", path: "", type: "directory", children: [] };
 
       for (const file of files) {
-        const parts = file.filePath.split("/").filter(Boolean);
+        // Normalize separators (Windows backslashes → forward slashes)
+        const normalized = file.filePath.replace(/\\/g, "/");
+        const parts = normalized.split("/").filter(Boolean);
         let current = root;
 
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
           const isFile = i === parts.length - 1;
-          const currentPath = parts.slice(0, i + 1).join("/");
+          // Preserve the original filePath for file nodes so lookups match the DB
+          const currentPath = isFile ? file.filePath : parts.slice(0, i + 1).join("/");
 
           if (isFile) {
             current.children!.push({

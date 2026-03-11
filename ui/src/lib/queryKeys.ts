@@ -75,7 +75,8 @@ export const queryKeys = {
     tree: (companyId: string) => ["files", companyId, "tree"] as const,
     history: (companyId: string, filePath: string) =>
       ["files", companyId, "history", filePath] as const,
-    content: (hash: string) => ["files", "content", hash] as const,
+    content: (companyId: string, hash: string) =>
+      ["files", companyId, "content", hash] as const,
     runFiles: (companyId: string, runId: string) =>
       ["files", companyId, "run", runId] as const,
   },

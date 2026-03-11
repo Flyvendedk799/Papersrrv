@@ -53,10 +53,13 @@ export function fileRoutes(db: Db) {
     res.json(history);
   });
 
-  // Get file content by hash
-  router.get("/files/content/:hash", async (req, res) => {
+  // Get file content by hash (scoped to company for multi-tenancy safety)
+  router.get("/companies/:companyId/files/content/:hash", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
     const hash = req.params.hash as string;
-    const content = await svc.getContent(hash);
+    const content = await svc.getContent(hash, companyId);
     if (!content) {
       res.status(404).json({ error: "Content not found" });
       return;
