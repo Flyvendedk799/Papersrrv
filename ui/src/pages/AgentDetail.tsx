@@ -331,13 +331,21 @@ export function AgentDetail() {
         case "terminate": return agentsApi.terminate(agentLookupRef, resolvedCompanyId ?? undefined);
       }
     },
-    onSuccess: (data, action) => {
+    onMutate: async (action) => {
+      // Optimistic update: immediately flip the agent status in cache
+      if (action === "invoke" || !agent) return;
+      const statusMap: Record<string, string> = { pause: "paused", resume: "active", terminate: "terminated" };
+      const newStatus = statusMap[action];
+      if (!newStatus) return;
+
+      const agentKey = [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null];
+      await queryClient.cancelQueries({ queryKey: agentKey });
+      const previous = queryClient.getQueryData(agentKey);
+      queryClient.setQueryData(agentKey, { ...agent, status: newStatus });
+      return { previous, agentKey };
+    },
+    onSuccess: (_data, action) => {
       setActionError(null);
-      // Optimistically update cache with the returned agent so UI updates immediately
-      if (data && typeof data === "object" && "status" in data && action !== "invoke") {
-        const agentKey = [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null];
-        queryClient.setQueryData(agentKey, data);
-      }
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentLookupRef) });
@@ -348,11 +356,15 @@ export function AgentDetail() {
           queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(resolvedCompanyId, agent.id) });
         }
       }
-      if (action === "invoke" && data && typeof data === "object" && "id" in data) {
-        navigate(`/agents/${canonicalAgentRef}/runs/${(data as HeartbeatRun).id}`);
+      if (action === "invoke" && _data && typeof _data === "object" && "id" in _data) {
+        navigate(`/agents/${canonicalAgentRef}/runs/${(_data as HeartbeatRun).id}`);
       }
     },
-    onError: (err) => {
+    onError: (err, _action, context) => {
+      // Roll back optimistic update on error
+      if (context?.previous && context?.agentKey) {
+        queryClient.setQueryData(context.agentKey, context.previous);
+      }
       setActionError(err instanceof Error ? err.message : "Action failed");
     },
   });
@@ -2077,9 +2089,12 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   }, [run.id, isLive, isStreamingConnected, events]);
 
   // Poll shell log for running runs
+  const logPollAbortedRef = useRef(false);
+  useEffect(() => { logPollAbortedRef.current = false; }, [run.id]);
   useEffect(() => {
     if (!isLive || isStreamingConnected) return;
     const interval = setInterval(async () => {
+      if (logPollAbortedRef.current) return;
       try {
         const result = await heartbeatsApi.log(run.id, logOffset, 256_000);
         if (result.content) {
@@ -2091,7 +2106,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           setLogOffset((prev) => prev + result.content.length);
         }
       } catch (err) {
-        if (isRunLogUnavailable(err)) return;
+        if (isRunLogUnavailable(err)) { logPollAbortedRef.current = true; return; }
         // ignore polling errors
       }
     }, 2000);

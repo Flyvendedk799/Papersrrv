@@ -1815,9 +1815,24 @@ export function agentRoutes(db: Db) {
       return;
     }
 
+    // Map adapter types to sensible default models so agents don't run with
+    // the previous adapter's model (e.g. "cursor" model on codex_local).
+    const defaultModelByAdapter: Record<string, string> = {
+      cursor: "auto",
+      codex_local: "gpt-5.3-codex",
+      claude_local: "claude-sonnet-4-5-20250929",
+      opencode_local: "auto",
+      pi_local: "auto",
+    };
+    const defaultModel = defaultModelByAdapter[adapterType] ?? "auto";
+
     const result = await db
       .update(agentsTable)
-      .set({ adapterType, updatedAt: new Date() })
+      .set({
+        adapterType,
+        adapterConfig: sql`jsonb_set(coalesce(${agentsTable.adapterConfig}, '{}'::jsonb), '{model}', ${JSON.stringify(defaultModel)}::jsonb)`,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(agentsTable.companyId, companyId),
