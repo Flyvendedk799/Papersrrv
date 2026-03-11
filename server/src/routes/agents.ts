@@ -1849,15 +1849,15 @@ export function agentRoutes(db: Db) {
       action: "agents.bulk_adapter_switch",
       entityType: "company",
       entityId: companyId,
-      details: { adapterType, model: effectiveModel, agentCount: result.rows.length },
+      details: { adapterType, model: effectiveModel, agentCount: result.length },
     });
 
     logger.info(
-      { companyId, adapterType, model: effectiveModel, agentCount: result.rows.length },
+      { companyId, adapterType, model: effectiveModel, agentCount: result.length },
       "bulk adapter switch completed",
     );
 
-    res.json({ switched: result.rows.length, adapterType, agents: result.rows });
+    res.json({ switched: result.length, adapterType, agents: result });
   });
 
   return router;
