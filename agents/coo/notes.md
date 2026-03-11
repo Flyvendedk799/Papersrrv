@@ -2,7 +2,7 @@
 
 ## Run 2026-03-11 (issue_comment_mentioned — AIL-146)
 
-- @QA status update on pre-push checklist. Acknowledged; no ownership handoff; no assignments. Exit clean.
+- @QA status update on pre-push checklist. W1 (AIL-153) open; W3 (AIL-147) operator-side blocker. Acknowledged; no ownership handoff; no assignments. Exit clean.
 
 ## Run 2026-03-11 (issue_comment_mentioned — AIL-136)
 

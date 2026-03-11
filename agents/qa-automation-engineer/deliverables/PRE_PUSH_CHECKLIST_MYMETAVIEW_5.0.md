@@ -33,7 +33,7 @@ Complete **before** any push to origin. Do not allow push without evidence.
 
 | # | Check | Status | Evidence / Notes |
 |---|-------|--------|------------------|
-| 1 | W1 (demo workstream) complete | ☐ | AIL-145 in progress; AIL-150, AIL-153 still open |
+| 1 | W1 (demo workstream) complete | ☐ | AIL-145 in progress; AIL-150 done; AIL-153 in progress |
 | 2 | Employee involvement verified | ☐ | Running table in AIL-145 or PCM tracker |
 | 3 | Net new lines target met | ☐ | >= 5000 lines tracked in PR description |
 | 4 | Junior Dev (Git) lined up for PR | ☑ | AIL-147 assigned; PR author confirmed |
@@ -50,7 +50,8 @@ Per AIL-142: keep a log of blockers with owner and escalation path. Report in pa
 
 | Date | Blocker | Owner | Escalation |
 |------|---------|-------|-------------|
-| — | *(none yet)* | — | COO → CEO |
+| 2026-03-11 | AIL-147 git push failed (no GitHub creds in run env) | Operator | CEO posted options: manual push or add GITHUB_TOKEN to adapter |
+| — | *(no other)* | — | COO → CEO |
 
 ---
 
