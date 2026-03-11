@@ -53,6 +53,7 @@ import {
   ChevronDown,
   ArrowLeft,
   Settings,
+  FileText,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
@@ -835,6 +836,13 @@ function AgentOverview({
 
 /* ---- Configuration Summary ---- */
 
+function resolveStandardsDir(instructionsPath: string): string | null {
+  const match = instructionsPath.match(/^(agents\/)[^/]+\//);
+  return match ? `${match[1]}standards` : null;
+}
+
+const STANDARD_FILES = ["general.md", "summaries.md", "communication.md"] as const;
+
 function ConfigSummary({
   agent,
   agentRouteId,
@@ -848,6 +856,9 @@ function ConfigSummary({
 }) {
   const config = agent.adapterConfig as Record<string, unknown>;
   const promptText = typeof config?.promptTemplate === "string" ? config.promptTemplate : "";
+  const instructionsPath = typeof config?.instructionsFilePath === "string" ? config.instructionsFilePath : "";
+  const standardsDir = instructionsPath ? resolveStandardsDir(instructionsPath) : null;
+  const [promptExpanded, setPromptExpanded] = useState(false);
 
   return (
     <div className="space-y-3">
@@ -909,6 +920,19 @@ function ConfigSummary({
                 <span className="text-muted-foreground">Nobody (top-level)</span>
               )}
             </SummaryRow>
+            <SummaryRow label="Instructions File">
+              {instructionsPath ? (
+                <Link
+                  to={`/files?file=${encodeURIComponent(instructionsPath)}`}
+                  className="inline-flex items-center gap-1.5 text-blue-600 hover:underline dark:text-blue-400 font-mono text-xs"
+                >
+                  <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+                  {instructionsPath}
+                </Link>
+              ) : (
+                <span className="text-muted-foreground">Not configured</span>
+              )}
+            </SummaryRow>
           </div>
           {directReports.length > 0 && (
             <div className="pt-1">
@@ -937,12 +961,58 @@ function ConfigSummary({
             </div>
           )}
         </div>
-        {promptText && (
+        {instructionsPath ? (
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <h4 className="text-xs text-muted-foreground font-medium">Agent Files</h4>
+            <div className="space-y-2">
+              <Link
+                to={`/files?file=${encodeURIComponent(instructionsPath)}`}
+                className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400 font-mono"
+              >
+                <FileText className="h-4 w-4 flex-shrink-0" />
+                {instructionsPath.split("/").pop()}
+              </Link>
+              {standardsDir && (
+                <>
+                  <div className="text-xs text-muted-foreground pt-1">Standards</div>
+                  {STANDARD_FILES.map((file) => {
+                    const filePath = `${standardsDir}/${file}`;
+                    return (
+                      <Link
+                        key={file}
+                        to={`/files?file=${encodeURIComponent(filePath)}`}
+                        className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400 font-mono"
+                      >
+                        <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                        ../standards/{file}
+                      </Link>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+            {promptText && (
+              <div className="pt-2 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setPromptExpanded(!promptExpanded)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+                >
+                  {promptExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  Prompt Template
+                </button>
+                {promptExpanded && (
+                  <pre className="text-xs text-muted-foreground mt-2 font-mono whitespace-pre-wrap">{promptText}</pre>
+                )}
+              </div>
+            )}
+          </div>
+        ) : promptText ? (
           <div className="border border-border rounded-lg p-4 space-y-2">
             <h4 className="text-xs text-muted-foreground font-medium">Prompt Template</h4>
             <pre className="text-xs text-muted-foreground line-clamp-[12] font-mono whitespace-pre-wrap">{promptText}</pre>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

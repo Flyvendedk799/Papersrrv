@@ -43,7 +43,9 @@ import {
   Paperclip,
   SlidersHorizontal,
   Trash2,
+  X,
 } from "lucide-react";
+import { MarkdownBody } from "../components/MarkdownBody";
 import type { ActivityEvent } from "@paperclipai/shared";
 import type { Agent, IssueAttachment, FileSnapshot } from "@paperclipai/shared";
 
@@ -144,6 +146,63 @@ function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<st
   return <Identity name={id || "Unknown"} size="sm" />;
 }
 
+function InlineFilePreview({
+  companyId,
+  filePath,
+  contentHash,
+  onClose,
+}: {
+  companyId: string;
+  filePath: string;
+  contentHash: string | null;
+  onClose: () => void;
+}) {
+  const isMd = /\.md$/i.test(filePath);
+
+  const { data: content, isLoading } = useQuery({
+    queryKey: queryKeys.files.content(companyId, contentHash ?? ""),
+    queryFn: () => filesApi.content(companyId, contentHash!),
+    enabled: !!contentHash,
+  });
+
+  return (
+    <div className="mt-2 border border-border rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="text-xs font-medium truncate font-mono">{filePath}</span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Link
+            to={`/files?file=${encodeURIComponent(filePath)}`}
+            className="text-[10px] text-blue-500 hover:text-blue-400 transition-colors px-1.5 py-0.5 rounded hover:bg-accent/20"
+          >
+            Open in Files
+          </Link>
+          <button
+            onClick={onClose}
+            className="p-0.5 rounded-sm hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+            aria-label="Close preview"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+      <div className="overflow-auto max-h-[400px] p-3">
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading...</p>
+        ) : !content ? (
+          <p className="text-xs text-muted-foreground">No content available.</p>
+        ) : isMd ? (
+          <MarkdownBody className="text-sm">{content.content}</MarkdownBody>
+        ) : (
+          <pre className="text-xs font-mono whitespace-pre-wrap break-words">{content.content}</pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
@@ -159,6 +218,7 @@ export function IssueDetail() {
     cost: false,
   });
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [viewingFile, setViewingFile] = useState<{path: string; hash: string | null} | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastMarkedReadIssueIdRef = useRef<string | null>(null);
 
@@ -874,24 +934,40 @@ export function IssueDetail() {
           {!issueFiles || issueFiles.length === 0 ? (
             <p className="text-xs text-muted-foreground">No files touched by runs on this issue.</p>
           ) : (
-            <div className="border border-border rounded-lg divide-y divide-border">
-              {issueFiles.map((snap) => {
-                const isMd = /\.md$/i.test(snap.filePath);
-                return (
-                  <Link
-                    key={snap.id}
-                    to={`/files?file=${encodeURIComponent(snap.filePath)}`}
-                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
-                  >
-                    <FileText className={cn("h-3.5 w-3.5 shrink-0", isMd ? "text-blue-500" : "text-muted-foreground")} />
-                    <span className="truncate font-mono text-xs">{snap.filePath}</span>
-                    <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
-                      {relativeTime(snap.capturedAt)}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
+            <>
+              <div className="border border-border rounded-lg divide-y divide-border">
+                {issueFiles.map((snap) => {
+                  const isMd = /\.md$/i.test(snap.filePath);
+                  const isActive = viewingFile?.path === snap.filePath;
+                  return (
+                    <button
+                      key={snap.id}
+                      onClick={() =>
+                        setViewingFile(isActive ? null : { path: snap.filePath, hash: snap.contentHash })
+                      }
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent/20 transition-colors text-left",
+                        isActive && "bg-accent/30"
+                      )}
+                    >
+                      <FileText className={cn("h-3.5 w-3.5 shrink-0", isMd ? "text-blue-500" : "text-muted-foreground")} />
+                      <span className="truncate font-mono text-xs">{snap.filePath}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
+                        {relativeTime(snap.capturedAt)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {viewingFile && selectedCompanyId && (
+                <InlineFilePreview
+                  companyId={selectedCompanyId}
+                  filePath={viewingFile.path}
+                  contentHash={viewingFile.hash}
+                  onClose={() => setViewingFile(null)}
+                />
+              )}
+            </>
           )}
         </TabsContent>
       </Tabs>

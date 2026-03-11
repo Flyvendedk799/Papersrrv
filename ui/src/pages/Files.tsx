@@ -67,6 +67,14 @@ function isMarkdownFile(path: string): boolean {
   return lower.endsWith(".md") || lower.endsWith(".mdx") || lower.endsWith(".markdown");
 }
 
+function isReferenceFile(path: string): boolean {
+  return /standards?\b/i.test(path)
+    || /handbooks?\b/i.test(path)
+    || /AGENTS\.md$/i.test(path)
+    || /HEARTBEAT\.md$/i.test(path)
+    || /README\.md$/i.test(path);
+}
+
 // --- Tree item ---
 
 function FileTreeItem({
@@ -153,12 +161,16 @@ function MarkdownPreview({
   contentHash,
   onClose,
   onOpenModal,
+  agentName,
+  operation,
 }: {
   companyId: string;
   filePath: string;
   contentHash: string | null;
   onClose: () => void;
   onOpenModal: () => void;
+  agentName?: string;
+  operation?: string;
 }) {
   const { data: content, isLoading } = useQuery({
     queryKey: queryKeys.files.content(companyId, contentHash ?? ""),
@@ -172,6 +184,15 @@ function MarkdownPreview({
         <div className="flex items-center gap-2 min-w-0">
           <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
           <span className="text-xs font-medium truncate">{filePath}</span>
+          {isReferenceFile(filePath) ? (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-600 shrink-0">
+              Reference document
+            </span>
+          ) : agentName ? (
+            <span className="text-[10px] text-muted-foreground shrink-0">
+              Modified by {agentName}{operation ? ` (${operation})` : ""}
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -424,6 +445,8 @@ export function Files() {
                   setSelectedFilePath(previewFile.path);
                   setPreviewFile(null);
                 }}
+                agentName={files?.find((f) => f.filePath === previewFile.path)?.latestSnapshot.agentName ?? undefined}
+                operation={files?.find((f) => f.filePath === previewFile.path)?.latestSnapshot.operation}
               />
             </div>
           )}
@@ -481,6 +504,7 @@ function CategorySection({
               file={file}
               onSelect={() => onSelect(file.filePath)}
               compact
+              hideOpBadgeForReference={category === "Standards" || category === "Handbooks" || category === "Documentation"}
             />
           ))}
         </div>
@@ -495,10 +519,12 @@ function FileListRow({
   file,
   onSelect,
   compact,
+  hideOpBadgeForReference,
 }: {
   file: FileWithHistory;
   onSelect: () => void;
   compact?: boolean;
+  hideOpBadgeForReference?: boolean;
 }) {
   const opBadge =
     file.latestSnapshot.operation === "write"
@@ -509,8 +535,18 @@ function FileListRow({
           ? "bg-red-500/10 text-red-600"
           : "bg-muted text-muted-foreground";
 
+  const borderColor =
+    file.latestSnapshot.operation === "write"
+      ? "border-l-green-500"
+      : file.latestSnapshot.operation === "edit"
+        ? "border-l-yellow-500"
+        : file.latestSnapshot.operation === "delete"
+          ? "border-l-red-500"
+          : "border-l-transparent";
+
   const Icon = fileIcon(file.filePath);
   const isMd = isMarkdownFile(file.filePath);
+  const isRef = isReferenceFile(file.filePath);
 
   return (
     <button
@@ -518,6 +554,8 @@ function FileListRow({
       className={cn(
         "flex items-center gap-3 w-full px-4 text-left hover:bg-accent/50 transition-colors",
         compact ? "py-1.5 pl-10" : "py-2.5",
+        !isRef && "border-l-2",
+        !isRef && borderColor,
       )}
     >
       <Icon className={cn("h-4 w-4 shrink-0", isMd ? "text-blue-500" : "text-muted-foreground")} />
@@ -539,9 +577,15 @@ function FileListRow({
           </div>
         )}
       </div>
-      <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0", opBadge)}>
-        {file.latestSnapshot.operation}
-      </span>
+      {isRef ? (
+        <span className="px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 bg-blue-500/10 text-blue-600">
+          Reference
+        </span>
+      ) : (
+        <span className={cn("px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0", opBadge)}>
+          {file.latestSnapshot.operation}
+        </span>
+      )}
     </button>
   );
 }
