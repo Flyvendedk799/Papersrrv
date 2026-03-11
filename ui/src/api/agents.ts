@@ -144,4 +144,17 @@ export const agentsApi = {
   ) => api.post<HeartbeatRun | { status: "skipped" }>(agentPath(id, companyId, "/wakeup"), data),
   loginWithClaude: (id: string, companyId?: string) =>
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
+
+  /** Read a file from an agent's workspace. Path is relative to the agent's cwd. */
+  readFile: (id: string, filePath: string, companyId?: string) =>
+    api.get<{ content: string; isMarkdown: boolean; size: number; path: string; agentId: string }>(
+      agentPath(id, companyId, `/files?path=${encodeURIComponent(filePath)}`),
+    ),
+
+  /** Write a file in an agent's workspace. Path is relative to the agent's cwd. */
+  writeFile: (id: string, filePath: string, content: string, companyId?: string) =>
+    api.put<{ ok: boolean; path: string; operation: string; agentId: string }>(
+      agentPath(id, companyId, "/files"),
+      { path: filePath, content },
+    ),
 };

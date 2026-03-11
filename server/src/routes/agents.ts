@@ -1,6 +1,7 @@
 import { Router, type Request } from "express";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import { agents as agentsTable, companies, heartbeatRuns } from "@paperclipai/db";
@@ -22,6 +23,7 @@ import {
   agentService,
   accessService,
   approvalService,
+  fileService,
   heartbeatService,
   issueApprovalService,
   issueService,
@@ -234,6 +236,7 @@ export function agentRoutes(db: Db) {
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
+  const fileSvc = fileService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
   function canCreateAgents(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
@@ -1084,6 +1087,120 @@ export function agentRoutes(db: Db) {
       adapterConfigKey,
       path: pathValue,
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cross-agent file read/write — lets any agent in the same company read or
+  // modify another agent's workspace files (AGENTS.md, HEARTBEAT.md, standards, etc.)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve a relative file path against an agent's workspace (cwd).
+   * Returns the absolute path if safe, or null if it escapes the workspace.
+   */
+  function resolveAgentWorkspacePath(
+    agent: { adapterConfig: Record<string, unknown> | null },
+    relativePath: string,
+  ): { absolute: string; cwd: string } | null {
+    const config = agent.adapterConfig as Record<string, unknown> | null;
+    const cwd = config?.cwd;
+    if (typeof cwd !== "string" || !path.isAbsolute(cwd)) return null;
+
+    const resolved = path.resolve(cwd, relativePath);
+    // Prevent directory traversal — resolved path must stay within the workspace
+    if (!resolved.startsWith(cwd + path.sep) && resolved !== cwd) return null;
+    return { absolute: resolved, cwd };
+  }
+
+  // GET /agents/:id/files?path=relative/path — read a file from another agent's workspace
+  router.get("/agents/:id/files", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+    assertCompanyAccess(req, agent.companyId);
+
+    const filePath = req.query.path as string | undefined;
+    if (!filePath) { res.status(400).json({ error: "path query parameter is required" }); return; }
+
+    const resolved = resolveAgentWorkspacePath(agent, filePath);
+    if (!resolved) {
+      res.status(400).json({ error: "Invalid file path or agent has no workspace configured" });
+      return;
+    }
+
+    try {
+      const stat = await fsPromises.stat(resolved.absolute);
+      if (stat.size > 2 * 1024 * 1024) {
+        res.status(413).json({ error: "File too large" });
+        return;
+      }
+      const content = await fsPromises.readFile(resolved.absolute, "utf-8");
+      const isMarkdown = /\.md$/i.test(resolved.absolute);
+      res.json({ content, isMarkdown, size: stat.size, path: filePath, agentId: id });
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") {
+        res.status(404).json({ error: "File not found in agent workspace" });
+        return;
+      }
+      res.status(500).json({ error: "Failed to read file" });
+    }
+  });
+
+  // PUT /agents/:id/files — write a file in another agent's workspace
+  router.put("/agents/:id/files", async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+    assertCompanyAccess(req, agent.companyId);
+
+    const { path: filePath, content } = req.body as { path?: string; content?: string };
+    if (!filePath || typeof content !== "string") {
+      res.status(400).json({ error: "path (string) and content (string) are required in the request body" });
+      return;
+    }
+
+    const resolved = resolveAgentWorkspacePath(agent, filePath);
+    if (!resolved) {
+      res.status(400).json({ error: "Invalid file path or agent has no workspace configured" });
+      return;
+    }
+
+    try {
+      // Ensure parent directories exist
+      await fsPromises.mkdir(path.dirname(resolved.absolute), { recursive: true });
+      const existed = fs.existsSync(resolved.absolute);
+      await fsPromises.writeFile(resolved.absolute, content, "utf-8");
+
+      // Record this as a file snapshot in CAS for history tracking
+      const actor = getActorInfo(req);
+      const operation = existed ? "edit" : "write";
+      await fileSvc.createSnapshot(agent.companyId, {
+        agentId: actor.agentId ?? id,
+        runId: actor.runId ?? randomUUID(), // use run context if available, otherwise synthetic
+        filePath: resolved.absolute,
+        content,
+        operation,
+      });
+
+      await logActivity(db, {
+        companyId: agent.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "agent.file_written",
+        entityType: "agent",
+        entityId: id,
+        details: { filePath, operation, targetAgentId: id },
+      });
+
+      res.json({ ok: true, path: filePath, operation, agentId: id });
+    } catch (err: unknown) {
+      res.status(500).json({ error: "Failed to write file" });
+    }
   });
 
   router.patch("/agents/:id", validate(updateAgentSchema), async (req, res) => {
