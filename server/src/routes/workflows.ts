@@ -528,18 +528,23 @@ export function workflowRoutes(db: Db) {
         return;
       }
 
-      const positions = req.body.positions as Array<{
-        stepId: string;
-        position: { x: number; y: number };
-      }>;
+      // Accept either array format [{stepId, position}] or object map {stepId: {x,y}}
+      let positionEntries: Array<{ stepId: string; position: { x: number; y: number } }>;
 
-      if (!Array.isArray(positions)) {
-        res.status(400).json({ error: "positions array is required" });
+      if (Array.isArray(req.body.positions)) {
+        positionEntries = req.body.positions;
+      } else if (req.body.positions && typeof req.body.positions === "object") {
+        positionEntries = Object.entries(req.body.positions).map(([stepId, position]) => ({
+          stepId,
+          position: position as { x: number; y: number },
+        }));
+      } else {
+        res.status(400).json({ error: "positions is required (array or object)" });
         return;
       }
 
       const updated: unknown[] = [];
-      for (const { stepId, position } of positions) {
+      for (const { stepId, position } of positionEntries) {
         const [result] = await db
           .update(workflowSteps)
           .set({ position, updatedAt: new Date() })
@@ -689,10 +694,22 @@ export function workflowRoutes(db: Db) {
         return;
       }
 
-      const stepRuns = await db
+      const rawStepRuns = await db
         .select()
         .from(workflowStepRuns)
         .where(eq(workflowStepRuns.workflowRunId, runId));
+
+      // Join step definitions so frontend can display step names/types
+      const steps = await db
+        .select()
+        .from(workflowSteps)
+        .where(eq(workflowSteps.workflowId, run.workflowId));
+
+      const stepMap = new Map(steps.map(s => [s.id, s]));
+      const stepRuns = rawStepRuns.map(sr => ({
+        ...sr,
+        step: stepMap.get(sr.stepId) ?? null,
+      }));
 
       res.json({ ...run, stepRuns });
     } catch (err: unknown) {

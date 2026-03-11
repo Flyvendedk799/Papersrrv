@@ -143,6 +143,63 @@ export function fileRoutes(db: Db) {
     }
   });
 
+  // Write/save file content from UI (writes to disk within allowed roots)
+  router.put("/companies/:companyId/files/content", async (req, res) => {
+    try {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+
+      const { filePath: rawPath, content } = req.body as { filePath?: string; content?: string };
+      if (!rawPath || content === undefined) {
+        res.status(400).json({ error: "filePath and content are required" });
+        return;
+      }
+
+      // Resolve and validate path within allowed roots
+      const resolved = path.resolve(rawPath);
+      const serverRoot = process.cwd();
+      const paperclipHome = path.join(process.env.HOME ?? process.env.USERPROFILE ?? serverRoot, ".paperclip");
+      const allowedRoots = [serverRoot, paperclipHome];
+      const isAllowed = allowedRoots.some(
+        (root) => resolved === root || resolved.startsWith(root + path.sep),
+      );
+
+      if (!isAllowed) {
+        res.status(403).json({ error: "File path is outside allowed directories" });
+        return;
+      }
+
+      // Resolve symlinks to prevent escaping
+      try {
+        const parentDir = path.dirname(resolved);
+        const realParent = await fs.realpath(parentDir);
+        const realAllowed = await Promise.all(
+          allowedRoots.map((r) => fs.realpath(r).catch(() => r)),
+        );
+        if (!realAllowed.some((r) => realParent === r || realParent.startsWith(r + path.sep))) {
+          res.status(403).json({ error: "File path resolves outside allowed directories" });
+          return;
+        }
+      } catch {
+        res.status(404).json({ error: "Parent directory not found" });
+        return;
+      }
+
+      await fs.writeFile(resolved, content, "utf-8");
+      const stat = await fs.stat(resolved);
+      const isMarkdown = /\.(md|mdx|markdown)$/i.test(resolved);
+
+      res.json({ path: rawPath, size: stat.size, isMarkdown, saved: true });
+    } catch (err: unknown) {
+      if (err instanceof Error && "statusCode" in err) {
+        res.status((err as any).statusCode).json({ error: err.message });
+        return;
+      }
+      logger.error({ err }, "Failed to save file content");
+      res.status(500).json({ error: "Failed to save file" });
+    }
+  });
+
   // Get files for a specific run
   router.get("/companies/:companyId/runs/:runId/files", async (req, res) => {
     const companyId = req.params.companyId as string;

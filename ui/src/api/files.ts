@@ -54,4 +54,11 @@ export const filesApi = {
     api.get<{ content: string; isMarkdown: boolean; size: number; path: string }>(
       `/companies/${companyId}/files/raw?path=${encodeURIComponent(filePath)}`,
     ),
+
+  /** Save file content (writes to disk). */
+  saveContent: (companyId: string, filePath: string, content: string) =>
+    api.put<{ path: string; size: number; isMarkdown: boolean; saved: boolean }>(
+      `/companies/${companyId}/files/content`,
+      { filePath, content },
+    ),
 };

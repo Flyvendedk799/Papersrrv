@@ -4,14 +4,18 @@ import {
   Search, File, Folder, FolderOpen, ChevronRight, ChevronDown,
   Clock, User, FileQuestion, RefreshCw, FileCode, FileText,
   FileJson, BookOpen, Settings, LayoutGrid, List, FolderTree, X,
+  Bot,
 } from "lucide-react";
 import { useSearchParams } from "@/lib/router";
 import { filesApi } from "../api/files";
+import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompany } from "../context/CompanyContext";
+import { useToast } from "../context/ToastContext";
 import { EmptyState } from "../components/EmptyState";
 import { FileViewerModal } from "../components/FileViewerModal";
 import { MarkdownBody } from "../components/MarkdownBody";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { cn } from "../lib/utils";
 import type { FileTreeNode, FileWithHistory } from "@paperclipai/shared";
 
@@ -46,7 +50,6 @@ function categorizeFiles(files: FileWithHistory[]): Map<string, FileWithHistory[
     }
   }
 
-  // Remove empty categories
   for (const [key, value] of groups) {
     if (value.length === 0) groups.delete(key);
   }
@@ -107,6 +110,9 @@ function FileTreeItem({
             <Folder className="h-4 w-4 text-blue-500 shrink-0" />
           )}
           <span className="truncate font-medium">{node.name}</span>
+          {node.children && (
+            <span className="ml-auto text-[10px] text-muted-foreground">{node.children.length}</span>
+          )}
         </button>
         {expanded && node.children && (
           <div>
@@ -145,7 +151,7 @@ function FileTreeItem({
       <Icon className={cn("h-4 w-4 shrink-0", opColor)} />
       <span className="truncate">{node.name}</span>
       {node.lastAgent && (
-        <span className="ml-auto text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity truncate max-w-[120px]">
+        <span className="ml-auto text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity truncate max-w-[120px]">
           {node.lastAgent}
         </span>
       )}
@@ -178,7 +184,6 @@ function MarkdownPreview({
     enabled: !!contentHash,
   });
 
-  // Fallback: read from filesystem when no indexed content exists
   const needsRawFallback = !contentLoading && !content && !contentHash;
   const { data: rawContent, isLoading: rawLoading } = useQuery({
     queryKey: queryKeys.files.raw(companyId, filePath),
@@ -198,11 +203,11 @@ function MarkdownPreview({
           <span className="text-xs font-medium truncate">{filePath}</span>
           {isReferenceFile(filePath) ? (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-600 shrink-0">
-              Reference document
+              Reference
             </span>
           ) : agentName ? (
             <span className="text-[10px] text-muted-foreground shrink-0">
-              Modified by {agentName}{operation ? ` (${operation})` : ""}
+              by {agentName}{operation ? ` (${operation})` : ""}
             </span>
           ) : null}
         </div>
@@ -253,18 +258,20 @@ function MarkdownPreview({
 
 export function Files() {
   const { selectedCompanyId } = useCompany();
+  const { pushToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<{ path: string; hash: string | null } | null>(null);
   const [viewMode, setViewMode] = useState<"tree" | "list" | "categories">("tree");
-
+  const [agentFilter, setAgentFilter] = useState<string | null>(null);
   const [runIdFilter, setRunIdFilter] = useState<string | null>(null);
 
   // Open file from URL params: ?file= or ?runId=
   useEffect(() => {
     const fileParam = searchParams.get("file");
     const runIdParam = searchParams.get("runId");
+    const agentParam = searchParams.get("agentId");
     if (fileParam) {
       setSelectedFilePath(fileParam);
       setSearchParams({}, { replace: true });
@@ -274,17 +281,31 @@ export function Files() {
       setViewMode("list");
       setSearchParams({}, { replace: true });
     }
+    if (agentParam) {
+      setAgentFilter(agentParam);
+      setSearchParams({}, { replace: true });
+    }
   }, [searchParams, setSearchParams]);
 
+  // Fetch agents for filter
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
   const { data: tree, isLoading: treeLoading } = useQuery({
-    queryKey: queryKeys.files.tree(selectedCompanyId!),
-    queryFn: () => filesApi.tree(selectedCompanyId!),
+    queryKey: [...queryKeys.files.tree(selectedCompanyId!), agentFilter],
+    queryFn: () => filesApi.tree(selectedCompanyId!, agentFilter ?? undefined),
     enabled: !!selectedCompanyId,
   });
 
   const { data: files, isLoading: filesLoading } = useQuery({
-    queryKey: [...queryKeys.files.list(selectedCompanyId!), runIdFilter],
-    queryFn: () => filesApi.list(selectedCompanyId!, { runId: runIdFilter ?? undefined }),
+    queryKey: [...queryKeys.files.list(selectedCompanyId!), agentFilter, runIdFilter],
+    queryFn: () => filesApi.list(selectedCompanyId!, {
+      agentId: agentFilter ?? undefined,
+      runId: runIdFilter ?? undefined,
+    }),
     enabled: !!selectedCompanyId,
   });
 
@@ -302,14 +323,21 @@ export function Files() {
 
   const backfillMutation = useMutation({
     mutationFn: () => filesApi.backfill(selectedCompanyId!),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.files.tree(selectedCompanyId!) });
       queryClient.invalidateQueries({ queryKey: queryKeys.files.list(selectedCompanyId!) });
+      pushToast({
+        title: "Indexing complete",
+        body: `${data.totalIndexed} files from ${data.runsProcessed} runs${data.failed > 0 ? ` (${data.failed} failed)` : ""}`,
+        tone: data.failed > 0 ? "warn" : "success",
+      });
+    },
+    onError: (err) => {
+      pushToast({ title: "Indexing failed", body: (err as Error).message, tone: "error" });
     },
   });
 
   const handleFileSelect = (path: string) => {
-    // For markdown files, show inline preview; for others, open modal
     if (isMarkdownFile(path)) {
       const file = files?.find((f) => f.filePath === path);
       setPreviewFile({ path, hash: file?.latestSnapshot.contentHash ?? null });
@@ -318,85 +346,125 @@ export function Files() {
     }
   };
 
+  const selectedAgentName = agents?.find(a => a.id === agentFilter)?.name;
   const showPreview = previewFile !== null;
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold">Files</h1>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search files..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-8 w-64 rounded-md border border-input bg-background pl-8 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
-          <div className="flex rounded-md border border-input overflow-hidden">
-            <button
-              onClick={() => setViewMode("tree")}
-              className={cn(
-                "px-2.5 py-1.5 text-xs font-medium transition-colors flex items-center gap-1",
-                viewMode === "tree"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Tree view"
-            >
-              <FolderTree className="h-3.5 w-3.5" />
-              Tree
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "px-2.5 py-1.5 text-xs font-medium transition-colors border-l border-input flex items-center gap-1",
-                viewMode === "list"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title="List view"
-            >
-              <List className="h-3.5 w-3.5" />
-              List
-            </button>
-            <button
-              onClick={() => setViewMode("categories")}
-              className={cn(
-                "px-2.5 py-1.5 text-xs font-medium transition-colors border-l border-input flex items-center gap-1",
-                viewMode === "categories"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Category view"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Categories
-            </button>
-          </div>
-          <button
-            onClick={() => backfillMutation.mutate()}
-            disabled={backfillMutation.isPending}
-            className="h-8 px-3 rounded-md border border-input bg-background text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50 flex items-center gap-1.5"
-            title="Index files from past agent runs"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", backfillMutation.isPending && "animate-spin")} />
-            {backfillMutation.isPending ? "Indexing..." : "Index past runs"}
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => backfillMutation.mutate()}
+                disabled={backfillMutation.isPending}
+                className="h-8 px-3 rounded-md border border-input bg-background text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", backfillMutation.isPending && "animate-spin")} />
+                {backfillMutation.isPending ? "Indexing..." : "Reindex"}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Scan past agent runs and index any new files</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
-      {runIdFilter && (
-        <div className="mb-4 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 flex items-center justify-between">
-          <span>Showing files from run <code className="font-mono">{runIdFilter.slice(0, 8)}</code></span>
+      {/* Filter bar */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        {/* Agent filter pills */}
+        <div className="flex items-center gap-1 flex-wrap">
           <button
-            onClick={() => setRunIdFilter(null)}
-            className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            onClick={() => setAgentFilter(null)}
+            className={cn(
+              "px-2.5 py-1 text-xs font-medium rounded-full border transition-colors",
+              !agentFilter
+                ? "bg-foreground text-background border-foreground"
+                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/50",
+            )}
           >
-            Show all files
+            All Agents
           </button>
+          {agents?.filter(a => a.status !== "terminated").map(agent => (
+            <button
+              key={agent.id}
+              onClick={() => setAgentFilter(agentFilter === agent.id ? null : agent.id)}
+              className={cn(
+                "px-2.5 py-1 text-xs font-medium rounded-full border transition-colors flex items-center gap-1",
+                agentFilter === agent.id
+                  ? "bg-foreground text-background border-foreground"
+                  : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/50",
+              )}
+            >
+              <Bot className="h-3 w-3" />
+              {agent.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search files..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="h-8 w-56 rounded-md border border-input bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+
+        {/* View mode */}
+        <div className="flex rounded-md border border-input overflow-hidden">
+          {([
+            { mode: "tree" as const, icon: FolderTree, label: "Tree", tip: "Browse files as a folder tree" },
+            { mode: "list" as const, icon: List, label: "List", tip: "View files as a flat list" },
+            { mode: "categories" as const, icon: LayoutGrid, label: "Type", tip: "Group files by type" },
+          ]).map(({ mode, icon: Icon, tip }) => (
+            <Tooltip key={mode}>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setViewMode(mode)}
+                  className={cn(
+                    "px-2 py-1.5 text-xs font-medium transition-colors flex items-center gap-1",
+                    mode !== "tree" && "border-l border-input",
+                    viewMode === mode
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{tip}</TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+      </div>
+
+      {/* Active filters */}
+      {(runIdFilter || agentFilter) && (
+        <div className="mb-4 flex items-center gap-2 flex-wrap">
+          {runIdFilter && (
+            <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-1.5 text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
+              <span>Run <code className="font-mono">{runIdFilter.slice(0, 8)}</code></span>
+              <button onClick={() => setRunIdFilter(null)} className="hover:text-blue-900 dark:hover:text-blue-100">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+          {agentFilter && selectedAgentName && (
+            <div className="rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 px-3 py-1.5 text-xs text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+              <Bot className="h-3 w-3" />
+              <span>{selectedAgentName}</span>
+              <button onClick={() => setAgentFilter(null)} className="hover:text-indigo-900 dark:hover:text-indigo-100">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -410,14 +478,26 @@ export function Files() {
       {isLoading ? (
         <div className="text-sm text-muted-foreground py-8 text-center">Loading files...</div>
       ) : !files?.length ? (
-        <EmptyState icon={FileQuestion} message="No files indexed yet. Files will appear here as agents read and write files during their runs." />
+        <EmptyState
+          icon={FileQuestion}
+          message={agentFilter
+            ? `No files found for ${selectedAgentName ?? "this agent"}. Files appear as agents read and write during runs.`
+            : "No files indexed yet. Files will appear here as agents read and write files during their runs."
+          }
+        />
       ) : (
-        <div className={cn("flex gap-0", showPreview ? "h-[calc(100vh-180px)]" : "")}>
-          {/* File browser (left side) */}
+        <div className={cn("flex gap-0", showPreview ? "h-[calc(100vh-220px)]" : "")}>
+          {/* File browser */}
           <div className={cn(
             "rounded-lg border border-border bg-card overflow-auto",
             showPreview ? "w-2/5 shrink-0" : "w-full",
           )}>
+            {/* File count */}
+            <div className="px-3 py-2 border-b border-border bg-muted/30 text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>{filteredFiles.length} file{filteredFiles.length !== 1 ? "s" : ""}</span>
+              {searchTerm && <span>matching &quot;{searchTerm}&quot;</span>}
+            </div>
+
             {viewMode === "tree" ? (
               <div className="p-2">
                 {tree?.map((node) => (
@@ -454,7 +534,7 @@ export function Files() {
             )}
           </div>
 
-          {/* Markdown preview (right side) */}
+          {/* Markdown preview */}
           {showPreview && selectedCompanyId && (
             <div className="flex-1 min-w-0 rounded-lg border border-border bg-card overflow-hidden ml-0 border-l-0 rounded-l-none">
               <MarkdownPreview
@@ -525,7 +605,6 @@ function CategorySection({
               file={file}
               onSelect={() => onSelect(file.filePath)}
               compact
-              hideOpBadgeForReference={category === "Standards" || category === "Handbooks" || category === "Documentation"}
             />
           ))}
         </div>
@@ -540,12 +619,10 @@ function FileListRow({
   file,
   onSelect,
   compact,
-  hideOpBadgeForReference,
 }: {
   file: FileWithHistory;
   onSelect: () => void;
   compact?: boolean;
-  hideOpBadgeForReference?: boolean;
 }) {
   const opBadge =
     file.latestSnapshot.operation === "write"
@@ -594,7 +671,7 @@ function FileListRow({
               <Clock className="h-3 w-3" />
               {new Date(file.latestSnapshot.capturedAt).toLocaleString()}
             </span>
-            <span>{file.snapshotCount} snapshot{file.snapshotCount !== 1 ? "s" : ""}</span>
+            <span>{file.snapshotCount} version{file.snapshotCount !== 1 ? "s" : ""}</span>
           </div>
         )}
       </div>
