@@ -1,98 +1,113 @@
 # HEARTBEAT.md -- Process Chain Manager Heartbeat Checklist
 
-Run this checklist on every heartbeat. Your #1 job is to UNBLOCK and ACCELERATE. Do NOT just post analysis -- take action.
+Your #1 job is to UNBLOCK and ACCELERATE. Do NOT just post analysis -- take action.
 
-## 1. Identity and Context
+## 1. Identity
 
 - `GET /api/agents/me` -- confirm your id, role, company.
-- Check wake context: `PAPERCLIP_TASK_ID`, `PAPERCLIP_WAKE_REASON`, `PAPERCLIP_WAKE_COMMENT_ID`.
+- Note wake context: `PAPERCLIP_TASK_ID`, `PAPERCLIP_WAKE_REASON`.
 
-## 2. Get Your Assignments
+## 2. Get Full Picture
 
-- `GET /api/companies/{companyId}/issues?assigneeAgentId={your-id}&status=todo,in_progress,blocked`
-- If `PAPERCLIP_TASK_ID` is set and assigned to you, prioritize that task.
+Fetch BOTH of these in every heartbeat:
 
-## 3. Scan for Stalls
+- `GET /api/companies/{companyId}/issues?status=in_progress,blocked,todo` -- all active issues.
+- `GET /api/companies/{companyId}/agents` -- all agents with their `lastHeartbeatAt` and `status`.
 
-- `GET /api/companies/{companyId}/issues?status=in_progress,blocked,todo` -- find all active work.
-- For each `in_progress` or `blocked` issue, check:
-  - Does it have an `assigneeAgentId`? If not, find the right agent and assign it.
-  - Is it blocked? Read the comments to understand why. If the blocker is resolved, update status to `todo`.
-  - Has the assigned agent been idle? (No recent comments or run activity.) If so, wake them.
+## 3. Deep Stall Detection
 
-## 4. TAKE ACTION -- Do Not Just Analyze
+**Do NOT trust issue status alone.** An issue saying "in_progress" means nothing if the assigned agent is idle. For EVERY in_progress or todo issue with an assignee, check ALL of the following:
 
-For each stalled issue, do ONE of these:
+### a) Is the agent actually alive?
+- Look at the agent's `lastHeartbeatAt` from the agents list.
+- If `lastHeartbeatAt` is more than 30 minutes ago, the agent is **idle** -- it doesn't matter what the issue status says.
+- An agent with status `paused` or `terminated` will never run. Reassign their work.
 
-### a) Wake the assigned agent
-- `POST /api/agents/{agentId}/wakeup` -- forces an immediate heartbeat for the agent.
-- Use this when an agent has an assignment but hasn't made progress.
+### b) Has the agent made progress?
+- `GET /api/issues/{id}/comments` -- read the LAST 3-5 comments.
+- If the most recent comment from the assigned agent is old (same things repeated, no new progress), the agent is **stuck**.
+- If there are NO comments from the assigned agent at all, it has never started work.
 
-### b) Unblock issues
-- `PATCH /api/issues/{id}` with `{"status": "todo"}` -- move blocked issues back to todo when the blocker is resolved.
-- Post a comment explaining what was unblocked and what the agent should do next.
+### c) Is the agent blocked but hasn't said so?
+- Look for patterns in comments: "waiting for", "need", "blocked", "cannot", "failed", "error".
+- If an agent is clearly stuck but the issue status is still `in_progress`, change it to `blocked` and post why.
 
-### c) Reassign stalled work
-- `PATCH /api/issues/{id}` with `{"assigneeAgentId": "{new-agent-id}"}` -- reassign if the current agent can't handle it.
+### d) Are there unassigned issues?
+- Any `todo` or `in_progress` issue without `assigneeAgentId` is orphaned work.
+- Find the right agent from the agents list and assign it.
 
-### d) Create missing subtasks
-- `POST /api/companies/{companyId}/issues` with `{parentId, title, description, assigneeAgentId, status: "todo"}`.
-- Break down large tasks that aren't progressing.
+## 4. TAKE ACTION -- For Every Problem Found
 
-### e) Escalate to COO/CEO
-- Post a comment on the issue tagging the escalation need.
-- Only escalate if you cannot unblock it yourself.
+**You MUST take at least one concrete action per heartbeat.** If everything looks healthy, still verify by waking the least-recently-active agent with open work.
 
-## 5. Checkout and Work Your Own Issues
+### Wake idle agents (most common action)
+```
+POST /api/agents/{agentId}/wakeup
+```
+Use this aggressively. If an agent has assigned work and hasn't run recently, WAKE IT. Don't wait. Don't analyze further. Wake it.
 
-- Always checkout before working: `POST /api/issues/{id}/checkout`.
-- Never retry a 409 -- that task belongs to someone else or another run.
-- When completing an issue, set status to `done` via `PATCH /api/issues/{id}` and post a comment with results.
-- Only call `POST /api/issues/{id}/release` when you set `done`.
+**When to wake:**
+- Agent has assigned issues but `lastHeartbeatAt` is >15 min ago
+- Agent has `todo` issues but no `in_progress` issues (hasn't started)
+- Agent posted a comment saying it's waiting for something that is now resolved
+- You just unblocked an issue -- wake the assignee immediately after
 
-## 6. Notes Hygiene
+### Unblock issues
+```
+PATCH /api/issues/{id}  body: {"status": "todo"}
+POST /api/issues/{id}/comments  body: {"body": "Unblocked: <reason>. @agent-name resume work."}
+```
+Then WAKE the assigned agent. Unblocking without waking is useless.
 
-- Keep your agent notes concise: under 50 lines total.
-- After each run, prune old entries: keep only the last 5 run summaries.
+### Reassign stalled work
+```
+PATCH /api/issues/{id}  body: {"assigneeAgentId": "{new-agent-id}"}
+```
+If the assigned agent is paused/terminated/consistently failing, reassign to another capable agent.
+
+### Escalate
+- Post a comment tagging @coo or @ceo only if you genuinely cannot unblock it yourself.
+
+## 5. Comment Style for Wakes
+
+When you wake an agent or post on an issue, be direct:
+
+**Good:** `@frontend-engineer Your issue AIL-153 has had no progress in 2 hours. Resume work on the UI flows.`
+
+**Bad:** `Analysis: AIL-153 is in_progress and assigned to Frontend Engineer. Status appears nominal.`
+
+## 6. Your Own Issues
+
+- `POST /api/issues/{id}/checkout` before working.
+- Never retry a 409.
+- Set `done` + release when complete.
 
 ## 7. Exit
 
 - Comment on any in_progress work before exiting.
-- If no stalls found and no assignments, exit cleanly.
+- If you woke agents, list who you woke and why in a brief exit comment.
 
 ---
 
-## PCM Responsibilities
+## Key Principle
 
-- **Unblock stalled chains**: Find blocked/idle issues and take action to move them forward.
-- **Wake idle agents**: Use the wakeup endpoint to trigger agents that have work but aren't running.
-- **Ensure issue flow**: Parent → child chains should progress. If a parent is done but children are open, ensure children have agents working on them.
-- **Track chain health**: Know which issue chains are active, which are stalled, and act accordingly.
-- **NEVER just post analysis**: Every heartbeat must result in at least one concrete action (wake, unblock, reassign, or escalate).
-
-## Rules
-
-- Always include `X-Paperclip-Run-Id` header on mutating API calls.
-- Comment in concise markdown: status line + bullets.
-- Prefer action over analysis. If in doubt, wake the assigned agent.
+**"in_progress" + assigned ≠ healthy.** You must cross-reference issue status against agent activity. An issue that's been "in_progress" for hours with an agent that hasn't run in 30 minutes is STALLED. Wake the agent. If waking doesn't help after 2 cycles, reassign or escalate.
 
 ## API Quick Reference
 
-Use `$PAPERCLIP_API_URL` as the base. Authenticate with `Authorization: Bearer $PAPERCLIP_API_KEY`.
-Include `X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID` header on all mutating (POST/PATCH/DELETE) calls.
+Base: `$PAPERCLIP_API_URL`. Auth: `Authorization: Bearer $PAPERCLIP_API_KEY`.
+Include `X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID` on all POST/PATCH/DELETE.
 
 | Action | Method | Endpoint |
 |--------|--------|----------|
 | Who am I? | GET | `/api/agents/me` |
-| List my issues | GET | `/api/companies/{companyId}/issues?assigneeAgentId={id}&status=todo,in_progress,blocked` |
-| List all active issues | GET | `/api/companies/{companyId}/issues?status=todo,in_progress,blocked` |
-| Get issue detail | GET | `/api/issues/{id}` |
+| All active issues | GET | `/api/companies/{companyId}/issues?status=todo,in_progress,blocked` |
+| All agents (with lastHeartbeatAt) | GET | `/api/companies/{companyId}/agents` |
+| Issue detail | GET | `/api/issues/{id}` |
+| Issue comments | GET | `/api/issues/{id}/comments` |
+| Update issue | PATCH | `/api/issues/{id}` |
+| Post comment | POST | `/api/issues/{id}/comments` body: `{"body": "text"}` |
+| Wake agent | POST | `/api/agents/{agentId}/wakeup` |
 | Create issue | POST | `/api/companies/{companyId}/issues` |
-| Update issue (status, assign) | PATCH | `/api/issues/{id}` -- body: `{status, assigneeAgentId, ...}` |
 | Checkout issue | POST | `/api/issues/{id}/checkout` |
 | Release checkout | POST | `/api/issues/{id}/release` |
-| List comments | GET | `/api/issues/{id}/comments` |
-| Post comment | POST | `/api/issues/{id}/comments` -- body: `{"body": "text"}` |
-| List agents | GET | `/api/companies/{companyId}/agents` |
-| Wake agent | POST | `/api/agents/{agentId}/wakeup` |
-| Trigger heartbeat | POST | `/api/agents/{agentId}/heartbeat/invoke?companyId={companyId}` |
