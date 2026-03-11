@@ -58,6 +58,7 @@ export function errorHandler(
   }
 
   const rootError = err instanceof Error ? err : new Error(String(err));
+  console.error(`[500] ${req.method} ${req.originalUrl}`, rootError);
   attachErrorContext(
     req,
     res,
