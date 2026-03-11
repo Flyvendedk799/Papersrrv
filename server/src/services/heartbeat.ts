@@ -2358,6 +2358,21 @@ export function heartbeatService(db: Db) {
           }
         }
 
+        // Skip if agent already has a running or queued run (prevents expensive duplicate runs)
+        const [{ count: activeRunCount }] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(heartbeatRuns)
+          .where(
+            and(
+              eq(heartbeatRuns.agentId, agent.id),
+              inArray(heartbeatRuns.status, ["running", "queued"]),
+            ),
+          );
+        if (Number(activeRunCount) > 0) {
+          skipped += 1;
+          continue;
+        }
+
         const run = await enqueueWakeup(agent.id, {
           source: "timer",
           triggerDetail: "system",

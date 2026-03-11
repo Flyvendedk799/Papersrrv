@@ -44,6 +44,11 @@ const PRICING: Record<string, PricingTier> = {
   "gpt-4.1": { inputPerMTok: 2, outputPerMTok: 8, cacheReadPerMTok: 0.5 },
   "gpt-4.1-mini": { inputPerMTok: 0.4, outputPerMTok: 1.6, cacheReadPerMTok: 0.1 },
   "gpt-4.1-nano": { inputPerMTok: 0.1, outputPerMTok: 0.4, cacheReadPerMTok: 0.025 },
+  // OpenAI Codex models
+  "gpt-5.3-codex": { inputPerMTok: 1.75, outputPerMTok: 14, cacheReadPerMTok: 0.4375 },
+  "gpt-5.2-codex": { inputPerMTok: 1.75, outputPerMTok: 14, cacheReadPerMTok: 0.4375 },
+  "gpt-5-codex": { inputPerMTok: 1.25, outputPerMTok: 10, cacheReadPerMTok: 0.3125 },
+  "gpt-5.1-codex-mini": { inputPerMTok: 0.3, outputPerMTok: 1.2, cacheReadPerMTok: 0.075 },
   // Gemini
   "gemini-2.5-pro": { inputPerMTok: 1.25, outputPerMTok: 10, cacheReadPerMTok: 0.315 },
   "gemini-2.5-flash": { inputPerMTok: 0.15, outputPerMTok: 0.6, cacheReadPerMTok: 0.0375 },
@@ -76,6 +81,8 @@ function resolvePricing(model?: string | null): PricingTier {
   if (lower.includes("gpt-4o")) return PRICING["gpt-4o"];
   if (lower.includes("gemini") && lower.includes("flash")) return PRICING["gemini-2.5-flash"];
   if (lower.includes("gemini")) return PRICING["gemini-2.5-pro"];
+  if (lower.includes("codex") && lower.includes("mini")) return PRICING["gpt-5.1-codex-mini"];
+  if (lower.includes("codex")) return PRICING["gpt-5.3-codex"];
 
   return DEFAULT_PRICING;
 }

@@ -46,7 +46,7 @@ const SERVER_URL = process.env.PAPERCLIP_SERVER_URL;
 const RUNNER_TOKEN = process.env.PAPERCLIP_RUNNER_TOKEN;
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL_MS || "3000", 10);
 const ADAPTER_TYPES = process.env.ADAPTER_TYPES || "cursor,codex_local,claude_local,opencode_local,pi_local";
-const MAX_CONCURRENT_RUNS = parseInt(process.env.MAX_CONCURRENT_RUNS || "8", 10);
+const MAX_CONCURRENT_RUNS = parseInt(process.env.MAX_CONCURRENT_RUNS || "3", 10);
 const WSL_DISTRO = process.env.WSL_DISTRO || "Ubuntu";
 const WORKSPACE_ROOT = process.env.PAPERCLIP_WORKSPACE_ROOT || "/root/paperclip-agents";
 
@@ -155,7 +155,7 @@ const DEFAULT_COMMANDS = {
 
 const DEFAULT_MODELS = {
   cursor: "composer-1.5",
-  codex_local: "gpt-5.3-codex",
+  codex_local: "gpt-4.1-mini",
   claude_local: "claude-sonnet-4-5-20250929",
 };
 
@@ -468,16 +468,18 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
   const promptTemplate = config.promptTemplate || defaultTemplate;
   const renderedPrompt = renderTemplate(promptTemplate, templateData);
 
-  // Build env note — list all PAPERCLIP_* and AGENT_HOME vars for the agent
-  const envPairs = Object.entries(env)
-    .filter(([k]) =>
-      (k.startsWith("PAPERCLIP_") || k === "AGENT_HOME") &&
-      k !== "PAPERCLIP_RUNNER_TOKEN" &&
-      k !== "PAPERCLIP_SERVER_URL",
-    )
-    .map(([k, v]) => `${k}=${k === "PAPERCLIP_API_KEY" ? "<redacted>" : v}`)
-    .join("\n");
-  const envNote = `The following environment variables are set in this run:\n\`\`\`\n${envPairs}\n\`\`\`\n\n`;
+  // Build compact env note — only include key operational vars to save tokens
+  // (all vars are already available in the process environment)
+  const keyVars = [
+    `PAPERCLIP_API_URL=${SERVER_URL}`,
+    `PAPERCLIP_AGENT_ID=${agent.id}`,
+    `PAPERCLIP_RUN_ID=${runId}`,
+    `AGENT_HOME=${agentHome}`,
+    issueId ? `PAPERCLIP_TASK_ID=${issueId}` : null,
+    wakeReason !== "heartbeat_timer" ? `PAPERCLIP_WAKE_REASON=${wakeReason}` : null,
+    wakeCommentId ? `PAPERCLIP_WAKE_COMMENT_ID=${wakeCommentId}` : null,
+  ].filter(Boolean).join("\n");
+  const envNote = `Environment:\n\`\`\`\n${keyVars}\n\`\`\`\n\n`;
 
   const prompt = `${instructionsPrefix}${envNote}${renderedPrompt}`;
 
@@ -491,9 +493,9 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     // Codex CLI: codex exec --json -C <workspace> --skip-git-repo-check --model <model> [resume <sessionId>] -
     args = [...parts.slice(1), "exec", "--json", "-C", workspaceDir, "--skip-git-repo-check"];
     if (model) args.push("--model", model);
-    if (config.modelReasoningEffort) {
-      args.push("-c", `model_reasoning_effort=${JSON.stringify(config.modelReasoningEffort)}`);
-    }
+    // Default reasoning effort to "low" for cost savings — agents mostly do API calls, not deep reasoning
+    const reasoningEffort = config.modelReasoningEffort || "low";
+    args.push("-c", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
     if (config.search) args.push("--search");
     if (config.dangerouslyBypassApprovalsAndSandbox !== false) {
       args.push("--dangerously-bypass-approvals-and-sandbox");
@@ -552,7 +554,7 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     let stderrBuf = "";
     let timedOut = false;
 
-    const timeoutSec = config.timeoutSec || 600;
+    const timeoutSec = config.timeoutSec || 180;
     const timeoutTimer = timeoutSec > 0
       ? setTimeout(() => {
         timedOut = true;
@@ -654,7 +656,7 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
           sessionParams,
           sessionDisplayId: sessionId ? sessionId.slice(0, 12) : null,
           summary: summary || null,
-          billingType: adapterType === "codex_local" ? "subscription" : null,
+          billingType: adapterType === "codex_local" ? "api" : null,
           stdoutExcerpt: stdoutBuf.slice(-4096),
           stderrExcerpt: stderrBuf.slice(-4096),
         };
@@ -676,6 +678,9 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
 
 // ─── Poll & Claim ───────────────────────────────────────────────────────────
 
+// Track which agents currently have active runs (prevents claiming duplicate runs)
+const activeAgentIds = new Set();
+
 async function pollAndClaim(activeRunIds) {
   try {
     const pollResult = await apiFetch(`/runner/poll?adapterTypes=${ADAPTER_TYPES}`);
@@ -683,6 +688,9 @@ async function pollAndClaim(activeRunIds) {
 
     const { runId, agentId } = pollResult.run;
     if (activeRunIds.has(runId)) return false;
+
+    // Skip if this agent already has an active run (prevent concurrent runs for same agent)
+    if (activeAgentIds.has(agentId)) return false;
 
     console.log(`📥 Pickup: ${runId} (Agent ${agentId})`);
     const claimResult = await apiFetch(`/runner/claim/${runId}`, { method: "POST" });
@@ -692,6 +700,7 @@ async function pollAndClaim(activeRunIds) {
     const mdl = (agent.adapterConfig?.model) || DEFAULT_MODELS[adType] || "auto";
     console.log(`✅ Claimed: ${agent.name} [${adType}/${mdl}] [Running: ${activeRunIds.size + 1}/${MAX_CONCURRENT_RUNS}]`);
     activeRunIds.add(runId);
+    activeAgentIds.add(agent.id);
 
     executeRun(runId, agent, run.contextSnapshot || {}, authToken, runtime)
       .then(async (result) => {
@@ -711,6 +720,7 @@ async function pollAndClaim(activeRunIds) {
       })
       .finally(() => {
         activeRunIds.delete(runId);
+        activeAgentIds.delete(agent.id);
       });
 
     return true;
