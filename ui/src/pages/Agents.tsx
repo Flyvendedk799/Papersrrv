@@ -66,6 +66,7 @@ const SWITCHABLE_ADAPTERS = [
   { value: "cursor", label: "Cursor", model: undefined },
   { value: "codex_local", label: "Codex (High)", model: "gpt-5.3-codex" },
   { value: "codex_local", label: "Codex (Low)", model: "gpt-5.1-codex-mini" },
+  { value: "codex_local", label: "Codex (GPT Mini)", model: "gpt-4.1-mini" },
   { value: "claude_local", label: "Claude", model: undefined },
   { value: "opencode_local", label: "OpenCode", model: undefined },
 ] as const;
