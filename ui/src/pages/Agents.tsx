@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
@@ -17,7 +17,7 @@ import { relativeTime, cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Bot, Plus, List, GitBranch, SlidersHorizontal } from "lucide-react";
+import { Bot, Plus, List, GitBranch, SlidersHorizontal, RefreshCw } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
 
 const adapterLabels: Record<string, string> = {
@@ -62,6 +62,13 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab, showTerminated: boolean
   }, []);
 }
 
+const SWITCHABLE_ADAPTERS = [
+  { value: "cursor", label: "Cursor" },
+  { value: "codex_local", label: "Codex" },
+  { value: "claude_local", label: "Claude" },
+  { value: "opencode_local", label: "OpenCode" },
+] as const;
+
 export function Agents() {
   const { selectedCompanyId } = useCompany();
   const { openNewAgent } = useDialog();
@@ -69,6 +76,7 @@ export function Agents() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isMobile } = useSidebar();
+  const queryClient = useQueryClient();
   const pathSegment = location.pathname.split("/").pop() ?? "all";
   const tab: FilterTab = (pathSegment === "all" || pathSegment === "active" || pathSegment === "paused" || pathSegment === "error") ? pathSegment : "all";
   const [view, setView] = useState<"list" | "org">("org");
@@ -76,6 +84,16 @@ export function Agents() {
   const effectiveView: "list" | "org" = forceListView ? "list" : view;
   const [showTerminated, setShowTerminated] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [adapterMenuOpen, setAdapterMenuOpen] = useState(false);
+
+  const bulkSwitch = useMutation({
+    mutationFn: (adapterType: string) => agentsApi.bulkSwitchAdapter(selectedCompanyId!, adapterType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.org(selectedCompanyId!) });
+      setAdapterMenuOpen(false);
+    },
+  });
 
   const { data: agents, isLoading, error } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -148,6 +166,51 @@ export function Agents() {
           />
         </Tabs>
         <div className="flex items-center gap-2">
+          {/* Bulk adapter switch */}
+          <div className="relative">
+            <button
+              className={cn(
+                "flex items-center gap-1.5 px-2 py-1.5 text-xs transition-colors border border-border",
+                adapterMenuOpen ? "text-foreground bg-accent" : "text-muted-foreground hover:bg-accent/50"
+              )}
+              onClick={() => setAdapterMenuOpen(!adapterMenuOpen)}
+              disabled={bulkSwitch.isPending}
+            >
+              {bulkSwitch.isPending ? (
+                <RefreshCw className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              {bulkSwitch.isPending ? "Switching..." : "Switch All Adapters"}
+            </button>
+            {adapterMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-52 border border-border bg-popover shadow-md p-1">
+                <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">Switch all agents to:</div>
+                {SWITCHABLE_ADAPTERS.map((adapter) => {
+                  const isCurrent = agents?.length && agents.every((a) => a.adapterType === adapter.value);
+                  return (
+                    <button
+                      key={adapter.value}
+                      className={cn(
+                        "flex items-center justify-between w-full px-2 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors",
+                        isCurrent && "text-foreground font-medium"
+                      )}
+                      onClick={() => bulkSwitch.mutate(adapter.value)}
+                      disabled={bulkSwitch.isPending}
+                    >
+                      <span>{adapter.label}</span>
+                      {isCurrent && <span className="text-[10px] text-muted-foreground">current</span>}
+                    </button>
+                  );
+                })}
+                {bulkSwitch.isError && (
+                  <div className="px-2 py-1 text-[10px] text-destructive">
+                    {bulkSwitch.error instanceof Error ? bulkSwitch.error.message : "Failed"}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           {/* Filters */}
           <div className="relative">
             <button

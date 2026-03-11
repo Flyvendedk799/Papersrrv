@@ -1783,5 +1783,56 @@ export function agentRoutes(db: Db) {
     });
   });
 
+  // ── Bulk adapter switch ─────────────────────────────────────────────────────
+  // POST /companies/:companyId/agents/bulk-switch-adapter
+  // Body: { adapterType: "cursor" | "codex_local" | ... }
+  // Switches ALL non-terminated agents in the company to the given adapter type.
+  router.post("/companies/:companyId/agents/bulk-switch-adapter", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const { adapterType } = req.body as { adapterType?: string };
+    if (!adapterType || typeof adapterType !== "string") {
+      res.status(422).json({ error: "adapterType is required" });
+      return;
+    }
+
+    const { AGENT_ADAPTER_TYPES } = await import("@paperclipai/shared");
+    if (!AGENT_ADAPTER_TYPES.includes(adapterType as any)) {
+      res.status(422).json({ error: `Invalid adapterType: ${adapterType}` });
+      return;
+    }
+
+    const result = await db
+      .update(agentsTable)
+      .set({ adapterType, updatedAt: new Date() })
+      .where(
+        and(
+          eq(agentsTable.companyId, companyId),
+          not(eq(agentsTable.status, "terminated")),
+        ),
+      )
+      .returning({ id: agentsTable.id, name: agentsTable.name });
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      action: "agents.bulk_adapter_switch",
+      entityType: "company",
+      entityId: companyId,
+      details: { adapterType, agentCount: result.length },
+    });
+
+    logger.info(
+      { companyId, adapterType, agentCount: result.length },
+      "bulk adapter switch completed",
+    );
+
+    res.json({ switched: result.length, adapterType, agents: result });
+  });
+
   return router;
 }
