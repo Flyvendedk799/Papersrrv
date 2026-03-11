@@ -333,6 +333,11 @@ export function AgentDetail() {
     },
     onSuccess: (data, action) => {
       setActionError(null);
+      // Optimistically update cache with the returned agent so UI updates immediately
+      if (data && typeof data === "object" && "status" in data && action !== "invoke") {
+        const agentKey = [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null];
+        queryClient.setQueryData(agentKey, data);
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentLookupRef) });

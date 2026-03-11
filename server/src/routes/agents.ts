@@ -1331,18 +1331,24 @@ export function agentRoutes(db: Db) {
       return;
     }
 
-    await heartbeat.cancelActiveForAgent(id);
-
-    await logActivity(db, {
-      companyId: agent.companyId,
-      actorType: "user",
-      actorId: req.actor.userId ?? "board",
-      action: "agent.paused",
-      entityType: "agent",
-      entityId: agent.id,
-    });
-
+    // Send response immediately so UI updates, then do side effects
     res.json(agent);
+
+    try { await heartbeat.cancelActiveForAgent(id); } catch (err) {
+      console.error("Failed to cancel active runs after pause:", err);
+    }
+    try {
+      await logActivity(db, {
+        companyId: agent.companyId,
+        actorType: "user",
+        actorId: req.actor.userId ?? "board",
+        action: "agent.paused",
+        entityType: "agent",
+        entityId: agent.id,
+      });
+    } catch (err) {
+      console.error("Failed to log pause activity:", err);
+    }
   });
 
   router.post("/agents/:id/resume", async (req, res) => {
@@ -1354,16 +1360,21 @@ export function agentRoutes(db: Db) {
       return;
     }
 
-    await logActivity(db, {
-      companyId: agent.companyId,
-      actorType: "user",
-      actorId: req.actor.userId ?? "board",
-      action: "agent.resumed",
-      entityType: "agent",
-      entityId: agent.id,
-    });
-
+    // Send response immediately so UI updates
     res.json(agent);
+
+    try {
+      await logActivity(db, {
+        companyId: agent.companyId,
+        actorType: "user",
+        actorId: req.actor.userId ?? "board",
+        action: "agent.resumed",
+        entityType: "agent",
+        entityId: agent.id,
+      });
+    } catch (err) {
+      console.error("Failed to log resume activity:", err);
+    }
   });
 
   router.post("/agents/:id/terminate", async (req, res) => {
