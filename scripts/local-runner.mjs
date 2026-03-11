@@ -460,6 +460,21 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     }
   }
 
+  // ── Git credential setup ──
+  // If GITHUB_TOKEN is in env, configure git to use it for authentication
+  const ghToken = env.GITHUB_TOKEN || env.GH_TOKEN;
+  if (ghToken && isWsl) {
+    // Set GH_TOKEN for gh CLI compatibility
+    if (!env.GH_TOKEN) env.GH_TOKEN = ghToken;
+    // Configure git credential helper to use the token for github.com
+    try {
+      execSync(
+        `wsl -d ${WSL_DISTRO} -- bash -c "git config --global credential.helper store && printf 'https://x-access-token:${ghToken.replace(/'/g, "\\'")}@github.com\\n' > ~/.git-credentials"`,
+        { stdio: "ignore" },
+      );
+    } catch { /* best-effort */ }
+  }
+
   // ── WSLENV forwarding ──
   // All PAPERCLIP_* vars + AGENT_HOME + API keys + config env must be forwarded
 
@@ -469,7 +484,7 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     const apiKeys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"].filter((k) => env[k]);
     const extraKeys = ["AGENT_HOME"];
     const existing = env.WSLENV || process.env.WSLENV || "";
-    const allKeys = [...new Set([...paperclipKeys, ...configEnvKeys, ...apiKeys, ...extraKeys])];
+    const allKeys = [...new Set([...paperclipKeys, ...configEnvKeys, ...apiKeys, ...extraKeys, ...(ghToken ? ["GH_TOKEN"] : [])])];
     env.WSLENV = [...(existing ? [existing] : []), ...allKeys].join(":");
   }
 
