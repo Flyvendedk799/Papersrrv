@@ -63,10 +63,11 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab, showTerminated: boolean
 }
 
 const SWITCHABLE_ADAPTERS = [
-  { value: "cursor", label: "Cursor" },
-  { value: "codex_local", label: "Codex" },
-  { value: "claude_local", label: "Claude" },
-  { value: "opencode_local", label: "OpenCode" },
+  { value: "cursor", label: "Cursor", model: undefined },
+  { value: "codex_local", label: "Codex (High)", model: "gpt-5.3-codex" },
+  { value: "codex_local", label: "Codex (Low)", model: "gpt-5.3-codex-spark" },
+  { value: "claude_local", label: "Claude", model: undefined },
+  { value: "opencode_local", label: "OpenCode", model: undefined },
 ] as const;
 
 export function Agents() {
@@ -87,7 +88,8 @@ export function Agents() {
   const [adapterMenuOpen, setAdapterMenuOpen] = useState(false);
 
   const bulkSwitch = useMutation({
-    mutationFn: (adapterType: string) => agentsApi.bulkSwitchAdapter(selectedCompanyId!, adapterType),
+    mutationFn: ({ adapterType, model }: { adapterType: string; model?: string }) =>
+      agentsApi.bulkSwitchAdapter(selectedCompanyId!, adapterType, model),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
       queryClient.invalidateQueries({ queryKey: queryKeys.org(selectedCompanyId!) });
@@ -187,15 +189,18 @@ export function Agents() {
               <div className="absolute right-0 top-full mt-1 z-50 w-52 border border-border bg-popover shadow-md p-1">
                 <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">Switch all agents to:</div>
                 {SWITCHABLE_ADAPTERS.map((adapter) => {
-                  const isCurrent = agents?.length && agents.every((a) => a.adapterType === adapter.value);
+                  const isCurrent = agents?.length && agents.every((a) =>
+                    a.adapterType === adapter.value &&
+                    (!adapter.model || (a.adapterConfig as Record<string, unknown>)?.model === adapter.model)
+                  );
                   return (
                     <button
-                      key={adapter.value}
+                      key={adapter.label}
                       className={cn(
                         "flex items-center justify-between w-full px-2 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors",
                         isCurrent && "text-foreground font-medium"
                       )}
-                      onClick={() => bulkSwitch.mutate(adapter.value)}
+                      onClick={() => bulkSwitch.mutate({ adapterType: adapter.value, model: adapter.model ?? undefined })}
                       disabled={bulkSwitch.isPending}
                     >
                       <span>{adapter.label}</span>

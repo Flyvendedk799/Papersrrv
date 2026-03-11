@@ -1803,7 +1803,7 @@ export function agentRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
 
-    const { adapterType } = req.body as { adapterType?: string };
+    const { adapterType, model: requestedModel } = req.body as { adapterType?: string; model?: string };
     if (!adapterType || typeof adapterType !== "string") {
       res.status(422).json({ error: "adapterType is required" });
       return;
@@ -1815,8 +1815,7 @@ export function agentRoutes(db: Db) {
       return;
     }
 
-    // Map adapter types to sensible default models so agents don't run with
-    // the previous adapter's model (e.g. "cursor" model on codex_local).
+    // Use explicit model if provided, otherwise fall back to adapter default.
     const defaultModelByAdapter: Record<string, string> = {
       cursor: "auto",
       codex_local: "gpt-5.3-codex",
@@ -1824,13 +1823,13 @@ export function agentRoutes(db: Db) {
       opencode_local: "auto",
       pi_local: "auto",
     };
-    const defaultModel = defaultModelByAdapter[adapterType] ?? "auto";
+    const effectiveModel = (typeof requestedModel === "string" && requestedModel) || defaultModelByAdapter[adapterType] || "auto";
 
     const result = await db
       .update(agentsTable)
       .set({
         adapterType,
-        adapterConfig: sql`jsonb_set(coalesce(${agentsTable.adapterConfig}, '{}'::jsonb), '{model}', ${JSON.stringify(defaultModel)}::jsonb)`,
+        adapterConfig: sql`jsonb_set(coalesce(${agentsTable.adapterConfig}, '{}'::jsonb), '{model}', ${JSON.stringify(effectiveModel)}::jsonb)`,
         updatedAt: new Date(),
       })
       .where(

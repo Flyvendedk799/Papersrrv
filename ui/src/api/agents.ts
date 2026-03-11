@@ -158,9 +158,9 @@ export const agentsApi = {
       { path: filePath, content },
     ),
 
-  bulkSwitchAdapter: (companyId: string, adapterType: string) =>
+  bulkSwitchAdapter: (companyId: string, adapterType: string, model?: string) =>
     api.post<{ switched: number; adapterType: string; agents: { id: string; name: string }[] }>(
       `/companies/${companyId}/agents/bulk-switch-adapter`,
-      { adapterType },
+      { adapterType, ...(model ? { model } : {}) },
     ),
 };
