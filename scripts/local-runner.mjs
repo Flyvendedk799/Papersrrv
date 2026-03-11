@@ -180,8 +180,10 @@ async function executeRun(runId, agent, context, authToken) {
   if (command.toLowerCase().startsWith("wsl ")) {
     const paperclipKeys = Object.keys(env).filter((k) => k.startsWith("PAPERCLIP_"));
     const configEnvKeys = config.env ? Object.keys(config.env) : [];
+    // Forward common API keys so adapters can authenticate inside WSL
+    const apiKeys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"].filter((k) => env[k]);
     const existing = env.WSLENV || process.env.WSLENV || "";
-    const allKeys = [...new Set([...paperclipKeys, ...configEnvKeys])];
+    const allKeys = [...new Set([...paperclipKeys, ...configEnvKeys, ...apiKeys])];
     env.WSLENV = [...(existing ? [existing] : []), ...allKeys].join(":");
   }
 
