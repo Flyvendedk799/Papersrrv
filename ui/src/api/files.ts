@@ -48,4 +48,10 @@ export const filesApi = {
 
   removeIssueSummaryFile: (companyId: string, issueId: string, summaryFileId: string) =>
     api.delete<void>(`/companies/${companyId}/issues/${issueId}/summary-files/${summaryFileId}`),
+
+  /** Read a file directly from the filesystem (fallback for unindexed files). */
+  rawContent: (companyId: string, filePath: string) =>
+    api.get<{ content: string; isMarkdown: boolean; size: number; path: string }>(
+      `/companies/${companyId}/files/raw?path=${encodeURIComponent(filePath)}`,
+    ),
 };

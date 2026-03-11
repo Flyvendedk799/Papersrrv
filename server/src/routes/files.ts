@@ -1,4 +1,6 @@
 import { Router } from "express";
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import { heartbeatRuns } from "@paperclipai/db";
 import { eq } from "drizzle-orm";
@@ -65,6 +67,46 @@ export function fileRoutes(db: Db) {
       return;
     }
     res.json(content);
+  });
+
+  // Read a file directly from the filesystem (fallback for unindexed files)
+  router.get("/companies/:companyId/files/raw", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const filePath = req.query.path as string | undefined;
+    if (!filePath) {
+      res.status(400).json({ error: "path query parameter is required" });
+      return;
+    }
+
+    // Sanitize: resolve to absolute and ensure it doesn't escape via traversal
+    const resolved = path.resolve(filePath);
+    // Block obvious traversal attempts
+    if (resolved !== filePath && !path.isAbsolute(filePath)) {
+      res.status(400).json({ error: "Invalid file path" });
+      return;
+    }
+
+    try {
+      const stat = await fs.stat(resolved);
+      // Limit to reasonable file sizes (2MB)
+      if (stat.size > 2 * 1024 * 1024) {
+        res.status(413).json({ error: "File too large to serve raw" });
+        return;
+      }
+      const content = await fs.readFile(resolved, "utf-8");
+      const isMarkdown = /\.md$/i.test(resolved);
+      res.json({ content, isMarkdown, size: stat.size, path: filePath });
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") {
+        res.status(404).json({ error: "File not found on disk" });
+        return;
+      }
+      logger.warn({ err, filePath: resolved }, "Failed to read raw file");
+      res.status(500).json({ error: "Failed to read file" });
+    }
   });
 
   // Get files for a specific run

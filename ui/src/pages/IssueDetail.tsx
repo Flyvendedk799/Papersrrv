@@ -159,11 +159,23 @@ function InlineFilePreview({
 }) {
   const isMd = /\.md$/i.test(filePath);
 
-  const { data: content, isLoading } = useQuery({
+  const { data: content, isLoading: contentLoading } = useQuery({
     queryKey: queryKeys.files.content(companyId, contentHash ?? ""),
     queryFn: () => filesApi.content(companyId, contentHash!),
     enabled: !!contentHash,
   });
+
+  // Fallback: read from filesystem when no indexed content exists
+  const needsRawFallback = !contentLoading && !content && !contentHash;
+  const { data: rawContent, isLoading: rawLoading } = useQuery({
+    queryKey: ["files", "raw", companyId, filePath],
+    queryFn: () => filesApi.rawContent(companyId, filePath),
+    enabled: needsRawFallback,
+    retry: false,
+  });
+
+  const displayContent = content?.content ?? rawContent?.content ?? null;
+  const isLoading = contentLoading || (needsRawFallback && rawLoading);
 
   return (
     <div className="mt-2 border border-border rounded-lg overflow-hidden">
@@ -191,12 +203,21 @@ function InlineFilePreview({
       <div className="overflow-auto max-h-[400px] p-3">
         {isLoading ? (
           <p className="text-xs text-muted-foreground">Loading...</p>
-        ) : !content ? (
+        ) : !displayContent ? (
           <p className="text-xs text-muted-foreground">No content available.</p>
-        ) : isMd ? (
-          <MarkdownBody className="text-sm">{content.content}</MarkdownBody>
         ) : (
-          <pre className="text-xs font-mono whitespace-pre-wrap break-words">{content.content}</pre>
+          <>
+            {needsRawFallback && (
+              <p className="text-[10px] text-muted-foreground italic mb-2">
+                From disk — not yet indexed by an agent run.
+              </p>
+            )}
+            {isMd ? (
+              <MarkdownBody className="text-sm">{displayContent}</MarkdownBody>
+            ) : (
+              <pre className="text-xs font-mono whitespace-pre-wrap break-words">{displayContent}</pre>
+            )}
+          </>
         )}
       </div>
     </div>

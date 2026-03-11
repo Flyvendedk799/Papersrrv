@@ -31,6 +31,18 @@ export function FileViewerModal({ companyId, filePath, onClose }: FileViewerModa
     enabled: !!contentHash,
   });
 
+  // Fallback: read from filesystem when no indexed content exists
+  const needsRawFallback = !contentLoading && !content && !contentHash;
+  const { data: rawContent, isLoading: rawLoading } = useQuery({
+    queryKey: ["files", "raw", companyId, filePath],
+    queryFn: () => filesApi.rawContent(companyId, filePath),
+    enabled: needsRawFallback,
+    retry: false,
+  });
+
+  const displayContent = content ?? (rawContent ? { content: rawContent.content, isMarkdown: rawContent.isMarkdown } : null);
+  const isLoading = contentLoading || (needsRawFallback && rawLoading);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <button
@@ -83,22 +95,34 @@ export function FileViewerModal({ companyId, filePath, onClose }: FileViewerModa
         <div className="flex-1 overflow-auto min-h-0">
           {activeTab === "content" ? (
             <div className="p-4">
-              {contentLoading ? (
+              {isLoading ? (
                 <div className="text-sm text-muted-foreground py-8 text-center">
                   Loading content...
                 </div>
-              ) : !content ? (
+              ) : !displayContent ? (
                 <div className="text-sm text-muted-foreground py-8 text-center">
                   No content available for this file.
                 </div>
-              ) : content.isMarkdown ? (
+              ) : displayContent.isMarkdown ? (
                 <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <MarkdownBody>{content.content}</MarkdownBody>
+                  {needsRawFallback && (
+                    <div className="text-xs text-muted-foreground mb-3 italic">
+                      Showing file from disk — not yet indexed by an agent run.
+                    </div>
+                  )}
+                  <MarkdownBody>{displayContent.content}</MarkdownBody>
                 </div>
               ) : (
-                <pre className="text-xs font-mono bg-muted/30 rounded-md p-4 overflow-x-auto whitespace-pre-wrap break-words">
-                  {content.content}
-                </pre>
+                <>
+                  {needsRawFallback && (
+                    <div className="text-xs text-muted-foreground mb-3 italic">
+                      Showing file from disk — not yet indexed by an agent run.
+                    </div>
+                  )}
+                  <pre className="text-xs font-mono bg-muted/30 rounded-md p-4 overflow-x-auto whitespace-pre-wrap break-words">
+                    {displayContent.content}
+                  </pre>
+                </>
               )}
             </div>
           ) : (
