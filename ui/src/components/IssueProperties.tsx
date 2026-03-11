@@ -6,6 +6,7 @@ import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
+import { filesApi } from "../api/files";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
@@ -13,11 +14,12 @@ import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
+import { MarkdownBody } from "./MarkdownBody";
 import { formatDate, cn, projectUrl } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2 } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, FileText, ChevronDown, ChevronRight, X } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 
 interface IssuePropertiesProps {
@@ -542,6 +544,120 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
           <span className="text-sm">{timeAgo(issue.updatedAt)}</span>
         </PropertyRow>
       </div>
+
+      {/* Summary files section */}
+      {companyId && (
+        <IssueSummarySection issueId={issue.id} companyId={companyId} />
+      )}
+    </div>
+  );
+}
+
+function IssueSummarySection({ issueId, companyId }: { issueId: string; companyId: string }) {
+  const [expanded, setExpanded] = useState(true);
+  const queryClient = useQueryClient();
+
+  const { data: summaryFiles } = useQuery({
+    queryKey: queryKeys.files.summaryFiles(companyId, issueId),
+    queryFn: () => filesApi.issueSummaryFiles(companyId, issueId),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (summaryFileId: string) =>
+      filesApi.removeIssueSummaryFile(companyId, issueId, summaryFileId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.files.summaryFiles(companyId, issueId) });
+    },
+  });
+
+  if (!summaryFiles || summaryFiles.length === 0) return null;
+
+  return (
+    <>
+      <Separator />
+      <div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 w-full py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          <FileText className="h-3.5 w-3.5" />
+          Summary ({summaryFiles.length})
+        </button>
+        {expanded && (
+          <div className="space-y-3 mt-1">
+            {summaryFiles.map((sf) => (
+              <SummaryFileCard
+                key={sf.id}
+                summaryFile={sf}
+                companyId={companyId}
+                onRemove={() => removeMutation.mutate(sf.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function SummaryFileCard({
+  summaryFile,
+  companyId,
+  onRemove,
+}: {
+  summaryFile: { id: string; filePath: string; contentHash: string | null; agentName?: string; createdAt: string };
+  companyId: string;
+  onRemove: () => void;
+}) {
+  const { data: content } = useQuery({
+    queryKey: queryKeys.files.content(companyId, summaryFile.contentHash ?? ""),
+    queryFn: () => filesApi.content(companyId, summaryFile.contentHash!),
+    enabled: !!summaryFile.contentHash,
+  });
+
+  const fileName = summaryFile.filePath.split("/").pop() ?? summaryFile.filePath;
+
+  return (
+    <div className="rounded-md border border-border bg-muted/20 overflow-hidden">
+      <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-border/50 bg-muted/30">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <FileText className="h-3 w-3 text-blue-500 shrink-0" />
+          <Link
+            to={`/files?file=${encodeURIComponent(summaryFile.filePath)}`}
+            className="text-[11px] font-medium truncate hover:underline"
+          >
+            {fileName}
+          </Link>
+        </div>
+        <button
+          onClick={onRemove}
+          className="p-0.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground shrink-0"
+          title="Remove summary"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      <div className="px-2.5 py-2 max-h-[300px] overflow-auto">
+        {content?.isMarkdown ? (
+          <div className="text-[11px] leading-relaxed">
+            <MarkdownBody className="prose-xs [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-[11px] [&_p]:text-[11px] [&_li]:text-[11px] [&_code]:text-[10px]">
+              {content.content}
+            </MarkdownBody>
+          </div>
+        ) : content ? (
+          <pre className="text-[10px] font-mono whitespace-pre-wrap break-words text-muted-foreground">
+            {content.content.slice(0, 2000)}
+          </pre>
+        ) : (
+          <div className="text-[11px] text-muted-foreground">Loading...</div>
+        )}
+      </div>
+      {summaryFile.agentName && (
+        <div className="px-2.5 py-1 border-t border-border/50 text-[10px] text-muted-foreground">
+          by {summaryFile.agentName} &middot; {timeAgo(summaryFile.createdAt)}
+        </div>
+      )}
     </div>
   );
 }

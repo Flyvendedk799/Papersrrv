@@ -67,6 +67,7 @@ export type {
   FileContent,
   FileTreeNode,
   FileWithHistory,
+  IssueSummaryFile,
 } from "./types/index.js";
 
 export type {

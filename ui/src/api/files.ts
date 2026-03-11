@@ -1,4 +1,4 @@
-import type { FileSnapshot, FileContent, FileTreeNode, FileWithHistory } from "@paperclipai/shared";
+import type { FileSnapshot, FileContent, FileTreeNode, FileWithHistory, IssueSummaryFile } from "@paperclipai/shared";
 import { api } from "./client";
 
 export const filesApi = {
@@ -38,4 +38,14 @@ export const filesApi = {
       `/companies/${companyId}/files/backfill`,
       {},
     ),
+
+  // Issue summary files
+  issueSummaryFiles: (companyId: string, issueId: string) =>
+    api.get<IssueSummaryFile[]>(`/companies/${companyId}/issues/${issueId}/summary-files`),
+
+  addIssueSummaryFile: (companyId: string, issueId: string, snapshotId: string) =>
+    api.post<IssueSummaryFile>(`/companies/${companyId}/issues/${issueId}/summary-files`, { snapshotId }),
+
+  removeIssueSummaryFile: (companyId: string, issueId: string, summaryFileId: string) =>
+    api.delete<void>(`/companies/${companyId}/issues/${issueId}/summary-files/${summaryFileId}`),
 };

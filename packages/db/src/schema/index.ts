@@ -33,3 +33,4 @@ export { companySecrets } from "./company_secrets.js";
 export { companySecretVersions } from "./company_secret_versions.js";
 export { fileContents } from "./file_contents.js";
 export { agentFileSnapshots } from "./agent_file_snapshots.js";
+export { issueSummaryFiles } from "./issue_summary_files.js";

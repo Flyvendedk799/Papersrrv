@@ -79,6 +79,8 @@ export const queryKeys = {
       ["files", companyId, "content", hash] as const,
     runFiles: (companyId: string, runId: string) =>
       ["files", companyId, "run", runId] as const,
+    summaryFiles: (companyId: string, issueId: string) =>
+      ["files", companyId, "summary", issueId] as const,
   },
   org: (companyId: string) => ["org", companyId] as const,
 };

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, sql, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agentFileSnapshots, fileContents, agents } from "@paperclipai/db";
-import type { FileSnapshot, FileContent, FileTreeNode, FileWithHistory } from "@paperclipai/shared";
+import { agentFileSnapshots, fileContents, agents, issueSummaryFiles } from "@paperclipai/db";
+import type { FileSnapshot, FileContent, FileTreeNode, FileWithHistory, IssueSummaryFile } from "@paperclipai/shared";
 
 function sha256(content: string): string {
   return createHash("sha256").update(content, "utf8").digest("hex");
@@ -343,6 +343,143 @@ export function fileService(db: Db) {
       const agentNameMap = new Map(agentRows.map((a) => [a.id, a.name]));
 
       return rows.map((r) => toSnapshot(r, agentNameMap.get(r.agentId)));
+    },
+
+    /**
+     * Get summary files linked to an issue.
+     */
+    async getIssueSummaryFiles(issueId: string): Promise<IssueSummaryFile[]> {
+      const rows = await db
+        .select({
+          id: issueSummaryFiles.id,
+          issueId: issueSummaryFiles.issueId,
+          snapshotId: issueSummaryFiles.snapshotId,
+          filePath: agentFileSnapshots.filePath,
+          contentHash: agentFileSnapshots.contentHash,
+          agentId: agentFileSnapshots.agentId,
+          createdAt: issueSummaryFiles.createdAt,
+        })
+        .from(issueSummaryFiles)
+        .innerJoin(agentFileSnapshots, eq(issueSummaryFiles.snapshotId, agentFileSnapshots.id))
+        .where(eq(issueSummaryFiles.issueId, issueId))
+        .orderBy(desc(issueSummaryFiles.createdAt));
+
+      if (rows.length === 0) return [];
+
+      // Load agent names
+      const agentIds = [...new Set(rows.map((r) => r.agentId))];
+      const agentRows = agentIds.length > 0
+        ? await db.select({ id: agents.id, name: agents.name }).from(agents).where(inArray(agents.id, agentIds))
+        : [];
+      const agentNameMap = new Map(agentRows.map((a) => [a.id, a.name]));
+
+      return rows.map((r) => ({
+        id: r.id,
+        issueId: r.issueId,
+        snapshotId: r.snapshotId,
+        filePath: r.filePath,
+        contentHash: r.contentHash,
+        agentName: agentNameMap.get(r.agentId),
+        createdAt: r.createdAt.toISOString(),
+      }));
+    },
+
+    /**
+     * Link a file snapshot as a summary for an issue.
+     */
+    async addIssueSummaryFile(issueId: string, snapshotId: string): Promise<IssueSummaryFile> {
+      const row = await db
+        .insert(issueSummaryFiles)
+        .values({ issueId, snapshotId })
+        .onConflictDoNothing()
+        .returning()
+        .then((rows) => rows[0]);
+
+      if (!row) {
+        // Already exists — fetch it
+        const existing = await db
+          .select({
+            id: issueSummaryFiles.id,
+            issueId: issueSummaryFiles.issueId,
+            snapshotId: issueSummaryFiles.snapshotId,
+            filePath: agentFileSnapshots.filePath,
+            contentHash: agentFileSnapshots.contentHash,
+            createdAt: issueSummaryFiles.createdAt,
+          })
+          .from(issueSummaryFiles)
+          .innerJoin(agentFileSnapshots, eq(issueSummaryFiles.snapshotId, agentFileSnapshots.id))
+          .where(and(eq(issueSummaryFiles.issueId, issueId), eq(issueSummaryFiles.snapshotId, snapshotId)))
+          .then((rows) => rows[0]);
+
+        return {
+          id: existing!.id,
+          issueId: existing!.issueId,
+          snapshotId: existing!.snapshotId,
+          filePath: existing!.filePath,
+          contentHash: existing!.contentHash,
+          createdAt: existing!.createdAt.toISOString(),
+        };
+      }
+
+      // Fetch with snapshot details
+      const full = await db
+        .select({
+          filePath: agentFileSnapshots.filePath,
+          contentHash: agentFileSnapshots.contentHash,
+        })
+        .from(agentFileSnapshots)
+        .where(eq(agentFileSnapshots.id, snapshotId))
+        .then((rows) => rows[0]);
+
+      return {
+        id: row.id,
+        issueId: row.issueId,
+        snapshotId: row.snapshotId,
+        filePath: full?.filePath ?? "",
+        contentHash: full?.contentHash ?? null,
+        createdAt: row.createdAt.toISOString(),
+      };
+    },
+
+    /**
+     * Remove a summary file link from an issue.
+     */
+    async removeIssueSummaryFile(issueId: string, summaryFileId: string): Promise<void> {
+      await db
+        .delete(issueSummaryFiles)
+        .where(and(eq(issueSummaryFiles.issueId, issueId), eq(issueSummaryFiles.id, summaryFileId)));
+    },
+
+    /**
+     * Auto-detect and link summary files for an issue by searching file snapshots
+     * for markdown files associated with runs that touched the issue.
+     */
+    async autoLinkSummaryFiles(issueId: string, runId: string, companyId: string): Promise<number> {
+      // Find markdown file snapshots from the run that look like summaries
+      const snapshots = await db
+        .select({ id: agentFileSnapshots.id, filePath: agentFileSnapshots.filePath })
+        .from(agentFileSnapshots)
+        .where(
+          and(
+            eq(agentFileSnapshots.companyId, companyId),
+            eq(agentFileSnapshots.runId, runId),
+          ),
+        );
+
+      let linked = 0;
+      for (const snap of snapshots) {
+        const lower = snap.filePath.toLowerCase();
+        const isSummary = (lower.endsWith(".md") || lower.endsWith(".mdx")) &&
+          (lower.includes("summary") || lower.includes("report") || lower.includes("overview"));
+        if (isSummary) {
+          await db
+            .insert(issueSummaryFiles)
+            .values({ issueId, snapshotId: snap.id })
+            .onConflictDoNothing();
+          linked++;
+        }
+      }
+      return linked;
     },
   };
 }

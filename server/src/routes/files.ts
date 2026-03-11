@@ -137,6 +137,70 @@ export function fileRoutes(db: Db) {
     },
   );
 
+  // Get summary files linked to an issue
+  router.get("/companies/:companyId/issues/:issueId/summary-files", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const issueId = req.params.issueId as string;
+    const summaryFiles = await svc.getIssueSummaryFiles(issueId);
+    res.json(summaryFiles);
+  });
+
+  // Link a file snapshot as a summary for an issue
+  router.post("/companies/:companyId/issues/:issueId/summary-files", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const issueId = req.params.issueId as string;
+    const { snapshotId } = req.body as { snapshotId: string };
+    if (!snapshotId) {
+      res.status(400).json({ error: "snapshotId is required" });
+      return;
+    }
+
+    const result = await svc.addIssueSummaryFile(issueId, snapshotId);
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "file.summary_linked",
+      entityType: "issue",
+      entityId: issueId,
+      details: { snapshotId, filePath: result.filePath },
+    });
+
+    res.status(201).json(result);
+  });
+
+  // Remove a summary file link from an issue
+  router.delete("/companies/:companyId/issues/:issueId/summary-files/:summaryFileId", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const issueId = req.params.issueId as string;
+    const summaryFileId = req.params.summaryFileId as string;
+
+    await svc.removeIssueSummaryFile(issueId, summaryFileId);
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "file.summary_unlinked",
+      entityType: "issue",
+      entityId: issueId,
+      details: { summaryFileId },
+    });
+
+    res.status(204).end();
+  });
+
   // Backfill: re-index files from all completed runs for a company
   router.post("/companies/:companyId/files/backfill", async (req, res) => {
     const companyId = req.params.companyId as string;

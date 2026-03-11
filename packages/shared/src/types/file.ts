@@ -34,3 +34,13 @@ export interface FileWithHistory {
   content: FileContent | null;
   snapshotCount: number;
 }
+
+export interface IssueSummaryFile {
+  id: string;
+  issueId: string;
+  snapshotId: string;
+  filePath: string;
+  contentHash: string | null;
+  agentName?: string;
+  createdAt: string;
+}

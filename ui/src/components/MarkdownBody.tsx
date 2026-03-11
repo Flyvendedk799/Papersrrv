@@ -4,10 +4,15 @@ import remarkGfm from "remark-gfm";
 import { parseProjectMentionHref } from "@paperclipai/shared";
 import { cn } from "../lib/utils";
 import { useTheme } from "../context/ThemeContext";
+import { FileText } from "lucide-react";
 
 interface MarkdownBodyProps {
   children: string;
   className?: string;
+  /** Company ID for clickable file references. If not provided, file links will be disabled. */
+  companyId?: string;
+  /** Company prefix for routing (e.g. "ACME"). If not provided, file links use relative paths. */
+  companyPrefix?: string;
 }
 
 let mermaidLoaderPromise: Promise<typeof import("mermaid").default> | null = null;
@@ -55,6 +60,25 @@ function mentionChipStyle(color: string | null): CSSProperties | undefined {
     backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.22)`,
     color: luminance > 0.55 ? "#111827" : "#f8fafc",
   };
+}
+
+/**
+ * Detect if text looks like a file path.
+ * Must start with /, ./, ../, ~/ or look like a path with extensions.
+ * Excludes URLs and common non-path patterns.
+ */
+function isLikelyFilePath(text: string): boolean {
+  const trimmed = text.trim();
+  // Exclude URLs
+  if (/^https?:\/\//i.test(trimmed)) return false;
+  if (/^mailto:/i.test(trimmed)) return false;
+  // Exclude single words without path separators
+  if (!trimmed.includes("/") && !trimmed.includes("\\")) return false;
+  // Must look like a path: starts with / or ./ or ~/ OR contains a file extension
+  if (/^(\.{0,2}\/|~\/|\/)/i.test(trimmed)) return true;
+  // Has path separators and a file extension
+  if (/\/[\w@.-]+\.\w{1,10}$/.test(trimmed)) return true;
+  return false;
 }
 
 function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: boolean }) {
@@ -112,8 +136,14 @@ function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: b
   );
 }
 
-export function MarkdownBody({ children, className }: MarkdownBodyProps) {
+export function MarkdownBody({ children, className, companyId, companyPrefix }: MarkdownBodyProps) {
   const { theme } = useTheme();
+
+  const filePathUrl = (filePath: string) => {
+    const base = companyPrefix ? `/${companyPrefix}/files` : "/files";
+    return `${base}?file=${encodeURIComponent(filePath)}`;
+  };
+
   return (
     <div
       className={cn(
@@ -132,6 +162,27 @@ export function MarkdownBody({ children, className }: MarkdownBodyProps) {
             }
             return <pre {...preProps}>{preChildren}</pre>;
           },
+          // Inline code: detect file paths and make them clickable
+          code: ({ node: _node, children: codeChildren, className: codeCn, ...codeProps }) => {
+            // Don't touch code blocks (they have a language-* class from <pre><code>)
+            if (codeCn && /^language-/.test(codeCn)) {
+              return <code className={codeCn} {...codeProps}>{codeChildren}</code>;
+            }
+            const text = flattenText(codeChildren);
+            if (isLikelyFilePath(text)) {
+              return (
+                <a
+                  href={filePathUrl(text)}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-accent/60 hover:bg-accent text-xs font-mono no-underline transition-colors cursor-pointer border border-border/50"
+                  title={`Open ${text}`}
+                >
+                  <FileText className="h-3 w-3 shrink-0 text-blue-500" />
+                  <span className="truncate max-w-[300px]">{text}</span>
+                </a>
+              );
+            }
+            return <code className={codeCn} {...codeProps}>{codeChildren}</code>;
+          },
           a: ({ href, children: linkChildren }) => {
             const parsed = href ? parseProjectMentionHref(href) : null;
             if (parsed) {
@@ -143,6 +194,32 @@ export function MarkdownBody({ children, className }: MarkdownBodyProps) {
                   style={mentionChipStyle(parsed.color)}
                 >
                   {label}
+                </a>
+              );
+            }
+            // Check if href or link text looks like a file path
+            const linkText = flattenText(linkChildren);
+            if (href && isLikelyFilePath(href)) {
+              return (
+                <a
+                  href={filePathUrl(href)}
+                  className="inline-flex items-center gap-1 no-underline hover:underline"
+                  title={`Open ${href}`}
+                >
+                  <FileText className="h-3 w-3 shrink-0 text-blue-500 inline" />
+                  {linkChildren}
+                </a>
+              );
+            }
+            if (isLikelyFilePath(linkText) && (!href || href === linkText)) {
+              return (
+                <a
+                  href={filePathUrl(linkText)}
+                  className="inline-flex items-center gap-1 no-underline hover:underline"
+                  title={`Open ${linkText}`}
+                >
+                  <FileText className="h-3 w-3 shrink-0 text-blue-500 inline" />
+                  {linkChildren}
                 </a>
               );
             }
