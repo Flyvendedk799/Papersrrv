@@ -1,10 +1,10 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { agentWakeupRequests, agents, heartbeatRuns, heartbeatRunEvents } from "@paperclipai/db";
-import { eq, and, desc, sql, isNotNull } from "drizzle-orm";
+import { eq, and, asc, desc, sql, isNotNull } from "drizzle-orm";
 import { assertCompanyAccess } from "./authz.js";
 import { getRunLogStore } from "../services/run-log-store.js";
-import { extractFileOpsFromLog } from "../services/file-indexer.js";
+import { extractFileOpsFromLog, extractFileOpsFromChunks } from "../services/file-indexer.js";
 
 export function debugRoutes(db: Db) {
   const router = Router();
@@ -267,7 +267,7 @@ export function debugRoutes(db: Db) {
     }
 
     // Also show run events from the DB as fallback data source
-    const events = await db
+    const allEvents = await db
       .select({
         seq: heartbeatRunEvents.seq,
         stream: heartbeatRunEvents.stream,
@@ -275,15 +275,29 @@ export function debugRoutes(db: Db) {
       })
       .from(heartbeatRunEvents)
       .where(eq(heartbeatRunEvents.runId, runId))
-      .orderBy(heartbeatRunEvents.seq)
-      .limit(10);
+      .orderBy(asc(heartbeatRunEvents.seq));
 
-    result.dbEventsCount = events.length;
-    result.dbEventsSample = events.map((e) => ({
+    result.dbEventsTotal = allEvents.length;
+    result.dbEventsSample = allEvents.slice(0, 10).map((e) => ({
       seq: e.seq,
       stream: e.stream,
-      messagePreview: (e.message ?? "").slice(0, 300),
+      messagePreview: (e.message ?? "").slice(0, 500),
     }));
+
+    // Try parsing stdout events through the file-indexer (DB event fallback)
+    const stdoutEvents = allEvents.filter((e) => e.stream === "stdout");
+    result.dbStdoutEventsCount = stdoutEvents.length;
+    if (stdoutEvents.length > 0) {
+      const chunks = stdoutEvents.map((e) => e.message ?? "").filter(Boolean);
+      const dbFileOps = extractFileOpsFromChunks(chunks);
+      result.dbExtractedFileOps = dbFileOps.length;
+      result.dbFileOpsSample = dbFileOps.slice(0, 20).map((op) => ({
+        filePath: op.filePath,
+        operation: op.operation,
+        hasContent: !!op.content,
+        contentLength: op.content?.length,
+      }));
+    }
 
     res.json(result);
   });

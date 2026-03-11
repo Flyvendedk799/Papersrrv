@@ -231,12 +231,19 @@ export function extractFileOpsFromLog(logContent: string): ExtractedFileOp[] {
   const seenPaths = new Map<string, Set<string>>(); // path -> set of operations
 
   let pendingToolCall: { name: string; input: unknown } | null = null;
+  let totalEvents = 0;
+  let toolCallEvents = 0;
+  let toolResultEvents = 0;
+  const toolNamesSeen = new Set<string>();
 
   for (const line of lines) {
     const events = parseLogLine(line);
 
     for (const event of events) {
+      totalEvents++;
       if ("toolCall" in event) {
+        toolCallEvents++;
+        toolNamesSeen.add(event.toolCall.name);
         // Process the pending tool call if we get a new one without a result
         if (pendingToolCall) {
           const op = resolveFileOp(pendingToolCall, undefined);
@@ -244,6 +251,7 @@ export function extractFileOpsFromLog(logContent: string): ExtractedFileOp[] {
         }
         pendingToolCall = event.toolCall;
       } else if ("toolResult" in event && pendingToolCall) {
+        toolResultEvents++;
         const op = resolveFileOp(pendingToolCall, event.toolResult.content);
         if (op) addOp(ops, seenPaths, op);
         pendingToolCall = null;
@@ -256,6 +264,16 @@ export function extractFileOpsFromLog(logContent: string): ExtractedFileOp[] {
     const op = resolveFileOp(pendingToolCall, undefined);
     if (op) addOp(ops, seenPaths, op);
   }
+
+  logger.info({
+    ndjsonLines: lines.length,
+    totalEvents,
+    toolCallEvents,
+    toolResultEvents,
+    toolNamesSeen: [...toolNamesSeen],
+    fileOpsFound: ops.length,
+    sampleLine: lines[0]?.slice(0, 300),
+  }, "extractFileOpsFromLog diagnostic");
 
   return ops;
 }
@@ -321,6 +339,13 @@ export function extractFileOpsFromChunks(chunks: string[]): ExtractedFileOp[] {
   const ops: ExtractedFileOp[] = [];
   const seenPaths = new Map<string, Set<string>>();
   let pendingToolCall: { name: string; input: unknown } | null = null;
+  let totalEvents = 0;
+  let toolCallEvents = 0;
+  let toolResultEvents = 0;
+  let parsedJsonCount = 0;
+  let parseFailCount = 0;
+  const toolNamesSeen = new Set<string>();
+  const eventTypesSeen = new Set<string>();
 
   for (const chunk of chunks) {
     // Each chunk may contain multiple newline-separated JSON objects
@@ -336,23 +361,29 @@ export function extractFileOpsFromChunks(chunks: string[]): ExtractedFileOp[] {
       try {
         const parsed = asRecord(JSON.parse(trimmed));
         if (!parsed) continue;
+        parsedJsonCount++;
+        if (typeof parsed.type === "string") eventTypesSeen.add(parsed.type);
         const events = parseAdapterJson(parsed);
 
         for (const event of events) {
+          totalEvents++;
           if ("toolCall" in event) {
+            toolCallEvents++;
+            toolNamesSeen.add(event.toolCall.name);
             if (pendingToolCall) {
               const op = resolveFileOp(pendingToolCall, undefined);
               if (op) addOp(ops, seenPaths, op);
             }
             pendingToolCall = event.toolCall;
           } else if ("toolResult" in event && pendingToolCall) {
+            toolResultEvents++;
             const op = resolveFileOp(pendingToolCall, event.toolResult.content);
             if (op) addOp(ops, seenPaths, op);
             pendingToolCall = null;
           }
         }
       } catch {
-        // Not valid JSON — skip
+        parseFailCount++;
       }
     }
   }
@@ -361,6 +392,19 @@ export function extractFileOpsFromChunks(chunks: string[]): ExtractedFileOp[] {
     const op = resolveFileOp(pendingToolCall, undefined);
     if (op) addOp(ops, seenPaths, op);
   }
+
+  logger.info({
+    chunkCount: chunks.length,
+    parsedJsonCount,
+    parseFailCount,
+    totalEvents,
+    toolCallEvents,
+    toolResultEvents,
+    toolNamesSeen: [...toolNamesSeen],
+    eventTypesSeen: [...eventTypesSeen],
+    fileOpsFound: ops.length,
+    sampleChunk: chunks[0]?.slice(0, 300),
+  }, "extractFileOpsFromChunks diagnostic");
 
   return ops;
 }
