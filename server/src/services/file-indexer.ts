@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { fileContents, agentFileSnapshots } from "@paperclipai/db";
+import { fileContents, agentFileSnapshots, heartbeatRunEvents } from "@paperclipai/db";
 import { getRunLogStore } from "./run-log-store.js";
-import { eq } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import pino from "pino";
 
 const logger = pino({ name: "file-indexer" });
@@ -314,7 +314,78 @@ function resolveFileOp(
 }
 
 /**
+ * Extract file ops from raw chunk strings (e.g. from DB heartbeat_run_events.message).
+ * Each chunk is the raw adapter stdout — may contain multiple newline-separated JSON objects.
+ */
+export function extractFileOpsFromChunks(chunks: string[]): ExtractedFileOp[] {
+  const ops: ExtractedFileOp[] = [];
+  const seenPaths = new Map<string, Set<string>>();
+  let pendingToolCall: { name: string; input: unknown } | null = null;
+
+  for (const chunk of chunks) {
+    // Each chunk may contain multiple newline-separated JSON objects
+    const subLines = chunk.split("\n");
+    for (const subLine of subLines) {
+      let trimmed = subLine.trim();
+      if (!trimmed) continue;
+
+      // Handle Cursor "stdout: {json}" or "stdout={json}" prefix
+      const prefixed = trimmed.match(/^(?:stdout|stderr)\s*[:=]?\s*([\[{].*)$/i);
+      if (prefixed) trimmed = prefixed[1]!.trim();
+
+      try {
+        const parsed = asRecord(JSON.parse(trimmed));
+        if (!parsed) continue;
+        const events = parseAdapterJson(parsed);
+
+        for (const event of events) {
+          if ("toolCall" in event) {
+            if (pendingToolCall) {
+              const op = resolveFileOp(pendingToolCall, undefined);
+              if (op) addOp(ops, seenPaths, op);
+            }
+            pendingToolCall = event.toolCall;
+          } else if ("toolResult" in event && pendingToolCall) {
+            const op = resolveFileOp(pendingToolCall, event.toolResult.content);
+            if (op) addOp(ops, seenPaths, op);
+            pendingToolCall = null;
+          }
+        }
+      } catch {
+        // Not valid JSON — skip
+      }
+    }
+  }
+
+  if (pendingToolCall) {
+    const op = resolveFileOp(pendingToolCall, undefined);
+    if (op) addOp(ops, seenPaths, op);
+  }
+
+  return ops;
+}
+
+/**
+ * Read file ops from DB run events (heartbeat_run_events) as a fallback
+ * when NDJSON log files are unavailable (e.g. after Railway redeploy).
+ */
+async function extractFileOpsFromDbEvents(db: Db, runId: string): Promise<ExtractedFileOp[]> {
+  const events = await db
+    .select({ stream: heartbeatRunEvents.stream, message: heartbeatRunEvents.message })
+    .from(heartbeatRunEvents)
+    .where(and(eq(heartbeatRunEvents.runId, runId), eq(heartbeatRunEvents.stream, "stdout")))
+    .orderBy(asc(heartbeatRunEvents.seq));
+
+  if (events.length === 0) return [];
+
+  const chunks = events.map((e) => e.message ?? "").filter(Boolean);
+  logger.info({ runId, dbEventCount: chunks.length }, "extracting file ops from DB events (NDJSON file unavailable)");
+  return extractFileOpsFromChunks(chunks);
+}
+
+/**
  * Index files from a completed run by reading its NDJSON log.
+ * Falls back to DB events if the log file is unavailable.
  * This is the main entry point called after run completion.
  */
 export async function indexRunFromLog(
@@ -327,27 +398,31 @@ export async function indexRunFromLog(
     logRef?: string | null;
   },
 ): Promise<number> {
-  if (!run.logRef) return 0;
-
   try {
-    const logStore = getRunLogStore();
-    const handle = { store: (run.logStore ?? "local_file") as "local_file", logRef: run.logRef };
+    let fileOps: ExtractedFileOp[] = [];
 
-    // Read the entire log (up to 10MB) — gracefully handle missing files
-    let logContent: string;
-    try {
-      const result = await logStore.read(handle, { offset: 0, limitBytes: 10_000_000 });
-      logContent = result.content;
-    } catch {
-      // Log file missing (common on ephemeral filesystems after redeploy)
-      return 0;
+    // Strategy 1: Read from NDJSON log file
+    if (run.logRef) {
+      try {
+        const logStore = getRunLogStore();
+        const handle = { store: (run.logStore ?? "local_file") as "local_file", logRef: run.logRef };
+        const result = await logStore.read(handle, { offset: 0, limitBytes: 10_000_000 });
+        if (result.content) {
+          logger.info({ runId: run.id, logBytes: result.content.length }, "reading run log for file indexing");
+          fileOps = extractFileOpsFromLog(result.content);
+        }
+      } catch {
+        // Log file missing — fall through to DB events
+        logger.info({ runId: run.id }, "NDJSON log file unavailable, falling back to DB events");
+      }
     }
-    if (!logContent) return 0;
 
-    logger.info({ runId: run.id, logBytes: logContent.length }, "reading run log for file indexing");
+    // Strategy 2: Fall back to DB events if NDJSON produced nothing
+    if (fileOps.length === 0) {
+      fileOps = await extractFileOpsFromDbEvents(db, run.id);
+    }
 
-    const fileOps = extractFileOpsFromLog(logContent);
-    logger.info({ runId: run.id, fileOpsCount: fileOps.length, sample: fileOps.slice(0, 3).map(o => `${o.operation}:${o.filePath}`) }, "extracted file ops from log");
+    logger.info({ runId: run.id, fileOpsCount: fileOps.length, sample: fileOps.slice(0, 3).map(o => `${o.operation}:${o.filePath}`) }, "extracted file ops");
     if (fileOps.length === 0) return 0;
 
     let indexed = 0;

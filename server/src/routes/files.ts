@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { heartbeatRuns } from "@paperclipai/db";
-import { eq, and, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createFileSnapshotSchema, indexRunFilesSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { fileService, logActivity } from "../services/index.js";
@@ -148,12 +148,7 @@ export function fileRoutes(db: Db) {
         logRef: heartbeatRuns.logRef,
       })
       .from(heartbeatRuns)
-      .where(
-        and(
-          eq(heartbeatRuns.companyId, companyId),
-          isNotNull(heartbeatRuns.logRef),
-        ),
-      );
+      .where(eq(heartbeatRuns.companyId, companyId));
 
     let totalIndexed = 0;
     let failed = 0;
