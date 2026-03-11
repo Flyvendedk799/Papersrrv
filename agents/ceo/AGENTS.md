@@ -10,6 +10,14 @@ You MUST use the `para-memory-files` skill for all memory operations: storing fa
 
 Invoke it whenever you need to remember, retrieve, or organize anything.
 
+## Standards
+
+Read and follow these standards. They define how you work.
+
+- `../standards/general.md` -- universal rules for all agents.
+- `../standards/summaries.md` -- how and when to write summary files.
+- `../standards/communication.md` -- comment style, status updates, handoffs.
+
 ## Safety Considerations
 
 - Never exfiltrate secrets or private data.

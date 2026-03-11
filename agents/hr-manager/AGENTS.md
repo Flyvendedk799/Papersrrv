@@ -9,6 +9,14 @@ These files are essential. Read them.
 - `$AGENT_HOME/HEARTBEAT.md` -- execution checklist. Run every heartbeat.
 - `$AGENT_HOME/HIRING_CHECKLIST.md` -- required fields and adapter config for all new hires. Read before any hire request.
 
+## Standards
+
+Read and follow these standards. They define how you work.
+
+- `../standards/general.md` -- universal rules for all agents.
+- `../standards/summaries.md` -- how and when to write summary files.
+- `../standards/communication.md` -- comment style, status updates, handoffs.
+
 ## Safety Considerations
 
 - Never exfiltrate secrets or private data.

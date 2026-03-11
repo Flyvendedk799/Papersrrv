@@ -25,6 +25,7 @@ import { secretService } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import { needsRemoteRunner } from "../routes/runner.js";
 import { indexRunFromLog } from "./file-indexer.js";
+import { fileService } from "./files.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -1396,6 +1397,19 @@ export function heartbeatService(db: Db) {
             agentId: finalizedRun.agentId,
             logStore: handle.store,
             logRef: handle.logRef,
+          }).then(async (indexed) => {
+            if (indexed > 0 && outcome === "succeeded") {
+              // Auto-link summary files to the issue if one exists
+              const ctx = finalizedRun.contextSnapshot as Record<string, unknown> | null;
+              const issueId = typeof ctx?.issueId === "string" ? ctx.issueId : null;
+              if (issueId) {
+                const svc = fileService(db);
+                const linked = await svc.autoLinkSummaryFiles(issueId, finalizedRun.id, finalizedRun.companyId);
+                if (linked > 0) {
+                  logger.info({ runId, issueId, linked }, "auto-linked summary files to issue");
+                }
+              }
+            }
           }).catch((indexErr) => {
             logger.warn({ err: indexErr, runId }, "background file indexing failed");
           });
