@@ -34,7 +34,7 @@ export function FileViewerModal({ companyId, filePath, onClose }: FileViewerModa
   // Fallback: read from filesystem when no indexed content exists
   const needsRawFallback = !contentLoading && !content && !contentHash;
   const { data: rawContent, isLoading: rawLoading } = useQuery({
-    queryKey: ["files", "raw", companyId, filePath],
+    queryKey: queryKeys.files.raw(companyId, filePath),
     queryFn: () => filesApi.rawContent(companyId, filePath),
     enabled: needsRawFallback,
     retry: false,

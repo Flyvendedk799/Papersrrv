@@ -69,34 +69,57 @@ export function fileRoutes(db: Db) {
     res.json(content);
   });
 
-  // Read a file directly from the filesystem (fallback for unindexed files)
+  // Read a file directly from the filesystem (fallback for unindexed files).
+  // Scoped to the server's working directory to prevent arbitrary file reads.
   router.get("/companies/:companyId/files/raw", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
 
     const filePath = req.query.path as string | undefined;
-    if (!filePath) {
+    if (!filePath || !filePath.trim()) {
       res.status(400).json({ error: "path query parameter is required" });
       return;
     }
 
-    // Sanitize: resolve to absolute and ensure it doesn't escape via traversal
+    // Resolve the path and ensure it stays within allowed roots.
+    // Allowed roots: the server's cwd (where agents/ scaffolding lives) and
+    // the ~/.paperclip directory (where agent workspaces live).
     const resolved = path.resolve(filePath);
-    // Block obvious traversal attempts
-    if (resolved !== filePath && !path.isAbsolute(filePath)) {
-      res.status(400).json({ error: "Invalid file path" });
+    const serverRoot = process.cwd();
+    const paperclipHome = path.join(process.env.HOME ?? process.env.USERPROFILE ?? serverRoot, ".paperclip");
+    const allowedRoots = [serverRoot, paperclipHome];
+
+    const isAllowed = allowedRoots.some(
+      (root) => resolved === root || resolved.startsWith(root + path.sep),
+    );
+    if (!isAllowed) {
+      res.status(403).json({ error: "File path is outside allowed directories" });
       return;
     }
 
     try {
-      const stat = await fs.stat(resolved);
+      // Resolve symlinks to prevent escaping allowed roots
+      const realPath = await fs.realpath(resolved);
+      const realAllowed = await Promise.all(
+        allowedRoots.map((r) => fs.realpath(r).catch(() => r)),
+      );
+      if (!realAllowed.some((r) => realPath === r || realPath.startsWith(r + path.sep))) {
+        res.status(403).json({ error: "File path resolves outside allowed directories" });
+        return;
+      }
+
+      const stat = await fs.stat(realPath);
+      if (!stat.isFile()) {
+        res.status(400).json({ error: "Path is not a file" });
+        return;
+      }
       // Limit to reasonable file sizes (2MB)
       if (stat.size > 2 * 1024 * 1024) {
         res.status(413).json({ error: "File too large to serve raw" });
         return;
       }
-      const content = await fs.readFile(resolved, "utf-8");
-      const isMarkdown = /\.md$/i.test(resolved);
+      const content = await fs.readFile(realPath, "utf-8");
+      const isMarkdown = /\.(md|mdx|markdown)$/i.test(realPath);
       res.json({ content, isMarkdown, size: stat.size, path: filePath });
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException).code;

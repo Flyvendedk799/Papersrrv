@@ -31,6 +31,7 @@ import {
   secretService,
 } from "../services/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { logger } from "../middleware/logger.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
@@ -1098,18 +1099,31 @@ export function agentRoutes(db: Db) {
    * Resolve a relative file path against an agent's workspace (cwd).
    * Returns the absolute path if safe, or null if it escapes the workspace.
    */
-  function resolveAgentWorkspacePath(
+  async function resolveAgentWorkspacePath(
     agent: { adapterConfig: Record<string, unknown> | null },
     relativePath: string,
-  ): { absolute: string; cwd: string } | null {
+  ): Promise<{ absolute: string; cwd: string } | null> {
+    if (!relativePath || !relativePath.trim()) return null;
+
     const config = agent.adapterConfig as Record<string, unknown> | null;
     const cwd = config?.cwd;
     if (typeof cwd !== "string" || !path.isAbsolute(cwd)) return null;
 
     const resolved = path.resolve(cwd, relativePath);
-    // Prevent directory traversal — resolved path must stay within the workspace
+    // Preliminary string check before hitting the filesystem
     if (!resolved.startsWith(cwd + path.sep) && resolved !== cwd) return null;
-    return { absolute: resolved, cwd };
+
+    // Resolve symlinks to prevent escaping the workspace
+    try {
+      const realCwd = await fsPromises.realpath(cwd);
+      const realResolved = await fsPromises.realpath(path.dirname(resolved))
+        .then((dir) => path.join(dir, path.basename(resolved)));
+      if (!realResolved.startsWith(realCwd + path.sep) && realResolved !== realCwd) return null;
+      return { absolute: realResolved, cwd: realCwd };
+    } catch {
+      // Parent dir doesn't exist yet — fall back to string check only (safe for writes)
+      return { absolute: resolved, cwd };
+    }
   }
 
   // GET /agents/:id/files?path=relative/path — read a file from another agent's workspace
@@ -1121,9 +1135,12 @@ export function agentRoutes(db: Db) {
     assertCompanyAccess(req, agent.companyId);
 
     const filePath = req.query.path as string | undefined;
-    if (!filePath) { res.status(400).json({ error: "path query parameter is required" }); return; }
+    if (!filePath || !filePath.trim()) {
+      res.status(400).json({ error: "path query parameter is required" });
+      return;
+    }
 
-    const resolved = resolveAgentWorkspacePath(agent, filePath);
+    const resolved = await resolveAgentWorkspacePath(agent, filePath);
     if (!resolved) {
       res.status(400).json({ error: "Invalid file path or agent has no workspace configured" });
       return;
@@ -1131,12 +1148,16 @@ export function agentRoutes(db: Db) {
 
     try {
       const stat = await fsPromises.stat(resolved.absolute);
+      if (!stat.isFile()) {
+        res.status(400).json({ error: "Path is not a file" });
+        return;
+      }
       if (stat.size > 2 * 1024 * 1024) {
         res.status(413).json({ error: "File too large" });
         return;
       }
       const content = await fsPromises.readFile(resolved.absolute, "utf-8");
-      const isMarkdown = /\.md$/i.test(resolved.absolute);
+      const isMarkdown = /\.(md|mdx|markdown)$/i.test(resolved.absolute);
       res.json({ content, isMarkdown, size: stat.size, path: filePath, agentId: id });
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException).code;
@@ -1157,12 +1178,12 @@ export function agentRoutes(db: Db) {
     assertCompanyAccess(req, agent.companyId);
 
     const { path: filePath, content } = req.body as { path?: string; content?: string };
-    if (!filePath || typeof content !== "string") {
-      res.status(400).json({ error: "path (string) and content (string) are required in the request body" });
+    if (!filePath || !filePath.trim() || typeof content !== "string") {
+      res.status(400).json({ error: "path (non-empty string) and content (string) are required in the request body" });
       return;
     }
 
-    const resolved = resolveAgentWorkspacePath(agent, filePath);
+    const resolved = await resolveAgentWorkspacePath(agent, filePath);
     if (!resolved) {
       res.status(400).json({ error: "Invalid file path or agent has no workspace configured" });
       return;
@@ -1171,7 +1192,8 @@ export function agentRoutes(db: Db) {
     try {
       // Ensure parent directories exist
       await fsPromises.mkdir(path.dirname(resolved.absolute), { recursive: true });
-      const existed = fs.existsSync(resolved.absolute);
+      // Check existence via async stat to avoid race condition
+      const existed = await fsPromises.stat(resolved.absolute).then(() => true, () => false);
       await fsPromises.writeFile(resolved.absolute, content, "utf-8");
 
       // Record this as a file snapshot in CAS for history tracking
@@ -1199,6 +1221,7 @@ export function agentRoutes(db: Db) {
 
       res.json({ ok: true, path: filePath, operation, agentId: id });
     } catch (err: unknown) {
+      logger.warn({ err, filePath: resolved.absolute, agentId: id }, "Failed to write agent file");
       res.status(500).json({ error: "Failed to write file" });
     }
   });

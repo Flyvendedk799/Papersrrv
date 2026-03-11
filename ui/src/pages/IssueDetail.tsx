@@ -157,8 +157,6 @@ function InlineFilePreview({
   contentHash: string | null;
   onClose: () => void;
 }) {
-  const isMd = /\.md$/i.test(filePath);
-
   const { data: content, isLoading: contentLoading } = useQuery({
     queryKey: queryKeys.files.content(companyId, contentHash ?? ""),
     queryFn: () => filesApi.content(companyId, contentHash!),
@@ -168,13 +166,14 @@ function InlineFilePreview({
   // Fallback: read from filesystem when no indexed content exists
   const needsRawFallback = !contentLoading && !content && !contentHash;
   const { data: rawContent, isLoading: rawLoading } = useQuery({
-    queryKey: ["files", "raw", companyId, filePath],
+    queryKey: queryKeys.files.raw(companyId, filePath),
     queryFn: () => filesApi.rawContent(companyId, filePath),
     enabled: needsRawFallback,
     retry: false,
   });
 
   const displayContent = content?.content ?? rawContent?.content ?? null;
+  const isMd = content?.isMarkdown ?? rawContent?.isMarkdown ?? /\.(md|mdx|markdown)$/i.test(filePath);
   const isLoading = contentLoading || (needsRawFallback && rawLoading);
 
   return (
@@ -952,7 +951,9 @@ export function IssueDetail() {
         </TabsContent>
 
         <TabsContent value="files">
-          {!issueFiles || issueFiles.length === 0 ? (
+          {!linkedRuns ? (
+            <p className="text-xs text-muted-foreground">Loading runs...</p>
+          ) : !issueFiles || issueFiles.length === 0 ? (
             <p className="text-xs text-muted-foreground">No files touched by runs on this issue.</p>
           ) : (
             <>

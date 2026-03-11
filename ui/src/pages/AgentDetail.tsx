@@ -837,7 +837,8 @@ function AgentOverview({
 /* ---- Configuration Summary ---- */
 
 function resolveStandardsDir(instructionsPath: string): string | null {
-  const match = instructionsPath.match(/^(agents\/)[^/]+\//);
+  // Match "agents/{slug}/" anywhere in the path (works with both absolute and relative paths)
+  const match = instructionsPath.match(/(.*\/agents\/)[^/]+\//);
   return match ? `${match[1]}standards` : null;
 }
 

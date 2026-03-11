@@ -172,11 +172,23 @@ function MarkdownPreview({
   agentName?: string;
   operation?: string;
 }) {
-  const { data: content, isLoading } = useQuery({
+  const { data: content, isLoading: contentLoading } = useQuery({
     queryKey: queryKeys.files.content(companyId, contentHash ?? ""),
     queryFn: () => filesApi.content(companyId, contentHash!),
     enabled: !!contentHash,
   });
+
+  // Fallback: read from filesystem when no indexed content exists
+  const needsRawFallback = !contentLoading && !content && !contentHash;
+  const { data: rawContent, isLoading: rawLoading } = useQuery({
+    queryKey: queryKeys.files.raw(companyId, filePath),
+    queryFn: () => filesApi.rawContent(companyId, filePath),
+    enabled: needsRawFallback,
+    retry: false,
+  });
+
+  const displayContent = content ?? (rawContent ? { content: rawContent.content, isMarkdown: rawContent.isMarkdown } : null);
+  const isLoading = contentLoading || (needsRawFallback && rawLoading);
 
   return (
     <div className="flex flex-col h-full border-l border-border">
@@ -212,16 +224,25 @@ function MarkdownPreview({
       <div className="flex-1 overflow-auto p-4">
         {isLoading ? (
           <div className="text-sm text-muted-foreground py-8 text-center">Loading...</div>
-        ) : !content ? (
+        ) : !displayContent ? (
           <div className="text-sm text-muted-foreground py-8 text-center">No content available.</div>
-        ) : content.isMarkdown ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            <MarkdownBody>{content.content}</MarkdownBody>
-          </div>
         ) : (
-          <pre className="text-xs font-mono bg-muted/30 rounded-md p-4 overflow-x-auto whitespace-pre-wrap break-words">
-            {content.content}
-          </pre>
+          <>
+            {needsRawFallback && (
+              <div className="text-xs text-muted-foreground mb-3 italic">
+                Showing file from disk — not yet indexed by an agent run.
+              </div>
+            )}
+            {displayContent.isMarkdown ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <MarkdownBody>{displayContent.content}</MarkdownBody>
+              </div>
+            ) : (
+              <pre className="text-xs font-mono bg-muted/30 rounded-md p-4 overflow-x-auto whitespace-pre-wrap break-words">
+                {displayContent.content}
+              </pre>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -34,7 +34,7 @@ export const filesApi = {
     api.post<{ indexed: number }>(`/companies/${companyId}/files/index`, data),
 
   backfill: (companyId: string) =>
-    api.post<{ runsProcessed: number; totalIndexed: number; failed: number }>(
+    api.post<{ runsProcessed: number; totalIndexed: number; failed: number; missingLogs: number }>(
       `/companies/${companyId}/files/backfill`,
       {},
     ),
