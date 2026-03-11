@@ -566,6 +566,121 @@ engine.recoverInFlightRuns().catch((err) => {
   logger.warn({ err }, "workflow recovery failed");
 });
 
+// One-time cost backfill: fix historical runs where costCents was rounded to 0
+// Safe to run on every startup — idempotent, only creates/updates missing events
+(async () => {
+  try {
+    const { costEvents, heartbeatRuns, agents: agentsTable, companies: companiesTable } = await import("@paperclipai/db");
+    const { and: _and, eq: _eq, isNotNull, sql: _sql } = await import("drizzle-orm");
+
+    // Check if there are runs with costUsd > 0 but no matching cost_event
+    const runsWithCost = await (db as any)
+      .select({
+        id: heartbeatRuns.id,
+        agentId: heartbeatRuns.agentId,
+        companyId: heartbeatRuns.companyId,
+        costUsd: _sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric`,
+        inputTokens: _sql`coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0)`,
+        outputTokens: _sql`coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0)`,
+        finishedAt: heartbeatRuns.finishedAt,
+      })
+      .from(heartbeatRuns)
+      .where(
+        _and(
+          isNotNull(heartbeatRuns.usageJson),
+          _sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric > 0`,
+        ),
+      );
+
+    if (runsWithCost.length === 0) {
+      logger.info("cost-backfill: no runs with costUsd found, skipping");
+      return;
+    }
+
+    let created = 0;
+    let updated = 0;
+    for (const run of runsWithCost) {
+      const costUsd = Number(run.costUsd);
+      if (!costUsd || costUsd <= 0) continue;
+      const costCents = Math.max(1, Math.ceil(costUsd * 100));
+
+      const existing = await (db as any)
+        .select({ id: costEvents.id, costCents: costEvents.costCents })
+        .from(costEvents)
+        .where(
+          _and(
+            _eq(costEvents.companyId, run.companyId),
+            _eq(costEvents.agentId, run.agentId),
+            _eq(costEvents.occurredAt, run.finishedAt),
+          ),
+        )
+        .then((rows: any[]) => rows[0] ?? null);
+
+      if (existing) {
+        if (existing.costCents === 0 && costCents > 0) {
+          await (db as any).update(costEvents).set({ costCents }).where(_eq(costEvents.id, existing.id));
+          updated++;
+        }
+      } else {
+        await (db as any).insert(costEvents).values({
+          companyId: run.companyId,
+          agentId: run.agentId,
+          provider: "unknown",
+          model: "unknown",
+          inputTokens: Number(run.inputTokens) || 0,
+          outputTokens: Number(run.outputTokens) || 0,
+          costCents,
+          occurredAt: run.finishedAt ?? new Date(),
+        });
+        created++;
+      }
+    }
+
+    // Recalculate spentMonthlyCents for all companies
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const companyTotals = await (db as any)
+      .select({
+        companyId: costEvents.companyId,
+        total: _sql`coalesce(sum(${costEvents.costCents}), 0)::int`,
+      })
+      .from(costEvents)
+      .where(_sql`${costEvents.occurredAt} >= ${monthStart}`)
+      .groupBy(costEvents.companyId);
+
+    for (const { companyId, total } of companyTotals) {
+      await (db as any)
+        .update(companiesTable)
+        .set({ spentMonthlyCents: Number(total), updatedAt: now })
+        .where(_eq(companiesTable.id, companyId));
+    }
+
+    const agentTotals = await (db as any)
+      .select({
+        agentId: costEvents.agentId,
+        total: _sql`coalesce(sum(${costEvents.costCents}), 0)::int`,
+      })
+      .from(costEvents)
+      .where(_sql`${costEvents.occurredAt} >= ${monthStart}`)
+      .groupBy(costEvents.agentId);
+
+    for (const { agentId, total } of agentTotals) {
+      await (db as any)
+        .update(agentsTable)
+        .set({ spentMonthlyCents: Number(total), updatedAt: now })
+        .where(_eq(agentsTable.id, agentId));
+    }
+
+    logger.info(
+      { runsScanned: runsWithCost.length, created, updated, companiesUpdated: companyTotals.length, agentsUpdated: agentTotals.length },
+      "cost-backfill: completed",
+    );
+  } catch (err) {
+    logger.warn({ err }, "cost-backfill: failed (non-fatal)");
+  }
+})();
+
 server.listen(listenPort, config.host, () => {
   logger.info(`Server listening on ${config.host}:${listenPort}`);
   if (process.env.PAPERCLIP_OPEN_ON_LISTEN === "true") {
