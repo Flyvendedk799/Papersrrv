@@ -378,6 +378,29 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     injectSkillsIfNeeded(adapterType);
   }
 
+  // ── Write per-agent skills from adapterConfig.skills ──
+
+  if (isWsl && Array.isArray(config.skills) && config.skills.length > 0) {
+    const agentSkillsBase = `${agentHome}/.claude/skills`;
+    try {
+      execSync(`wsl -d ${WSL_DISTRO} -- bash -c "mkdir -p '${agentSkillsBase}'"`, { stdio: "ignore" });
+      for (const skill of config.skills) {
+        if (!skill.name || !skill.content) continue;
+        const skillDir = `${agentSkillsBase}/${skill.name}`;
+        const skillFile = `${skillDir}/SKILL.md`;
+        // Write skill content to SKILL.md (create dir + file)
+        const escaped = skill.content.replace(/'/g, "'\\''");
+        execSync(
+          `wsl -d ${WSL_DISTRO} -- bash -c "mkdir -p '${skillDir}' && cat > '${skillFile}' << 'SKILLEOF'\n${skill.content}\nSKILLEOF"`,
+          { stdio: "ignore" },
+        );
+      }
+      console.log(`🔧 Wrote ${config.skills.length} per-agent skills for ${agent.name}: ${config.skills.map((s) => s.name).join(", ")}`);
+    } catch (err) {
+      console.warn(`⚠ Failed to write per-agent skills: ${err.message}`);
+    }
+  }
+
   // ── Model ──
 
   const model = config.model || DEFAULT_MODELS[adapterType] || "auto";
@@ -509,12 +532,25 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     // Claude CLI: claude -p --output-format stream-json --cwd <workspace> --model <model>
     args = [...parts.slice(1), "-p", "--output-format", "stream-json", "--cwd", workspaceDir];
     if (model) args.push("--model", model);
-    if (config.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
+    // Default to skip permissions for headless agent use (like codex bypass)
+    if (config.dangerouslySkipPermissions !== false) args.push("--dangerously-skip-permissions");
+    if (config.effort) args.push("--effort", config.effort);
+    if (config.chrome) args.push("--chrome");
+    if (config.maxTurnsPerRun) args.push("--max-turns", String(config.maxTurnsPerRun));
+    // Inject per-agent skills via --add-dir (agent-specific skills directory)
+    const agentSkillsDir = `${agentHome}/.claude/skills`;
+    try {
+      const hasSkills = execSync(
+        `wsl -d ${WSL_DISTRO} -- bash -c "[ -d '${agentSkillsDir}' ] && ls '${agentSkillsDir}' | head -1"`,
+        { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] },
+      ).trim();
+      if (hasSkills) args.push("--add-dir", agentHome);
+    } catch { /* no agent-specific skills */ }
     if (config.extraArgs?.length) args.push(...config.extraArgs);
 
   } else {
     // Cursor CLI (default): agent -p --output-format stream-json --workspace <dir>
-    args = [...parts.slice(1), "-p", "--output-format", "stream-json", "--workspace", workspaceDir];
+    args = [...parts.slice(1), "-p", "--output-format", "stream-json", "--trust", "--workspace", workspaceDir];
     if (model) args.push("--model", model);
     if (config.dangerouslyBypassApprovalsAndSandbox) args.push("--yolo");
     if (config.extraArgs?.length) args.push(...config.extraArgs);
@@ -554,13 +590,13 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     let stderrBuf = "";
     let timedOut = false;
 
-    const timeoutSec = config.timeoutSec || 180;
+    const timeoutSec = config.timeoutSec != null ? config.timeoutSec : 180;
     const timeoutTimer = timeoutSec > 0
       ? setTimeout(() => {
         timedOut = true;
         child.kill("SIGTERM");
         // Force kill after grace period
-        const graceSec = config.graceSec || 20;
+        const graceSec = config.graceSec != null ? config.graceSec : 20;
         setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, graceSec * 1000);
       }, timeoutSec * 1000)
       : null;

@@ -173,11 +173,12 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "overview" | "configure" | "runs";
+type AgentDetailView = "overview" | "configure" | "runs" | "skills";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "configure" || value === "configuration") return "configure";
   if (value === "runs") return value;
+  if (value === "skills") return value;
   return "overview";
 }
 
@@ -432,6 +433,8 @@ export function AgentDetail() {
         crumbs.push({ label: "Configure" });
       } else if (activeView === "runs") {
         crumbs.push({ label: "Runs" });
+      } else if (activeView === "skills") {
+        crumbs.push({ label: "Skills & Plugins" });
       }
     }
     setBreadcrumbs(crumbs);
@@ -547,6 +550,16 @@ export function AgentDetail() {
               >
                 <Settings className="h-3 w-3" />
                 Configure Agent
+              </button>
+              <button
+                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                onClick={() => {
+                  navigate(`/agents/${canonicalAgentRef}/skills`);
+                  setMoreOpen(false);
+                }}
+              >
+                <FileText className="h-3 w-3" />
+                Skills & Plugins
               </button>
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
@@ -681,6 +694,13 @@ export function AgentDetail() {
           agentRouteId={canonicalAgentRef}
           selectedRunId={urlRunId ?? null}
           adapterType={agent.adapterType}
+        />
+      )}
+
+      {activeView === "skills" && (
+        <SkillsPluginsTab
+          agent={agent}
+          companyId={resolvedCompanyId ?? undefined}
         />
       )}
     </div>
@@ -1126,6 +1146,221 @@ function CostsSection({
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---- Skills & Plugins Tab ---- */
+
+interface AgentSkill {
+  name: string;
+  content: string;
+}
+
+function SkillsPluginsTab({
+  agent,
+  companyId,
+}: {
+  agent: Agent;
+  companyId?: string;
+}) {
+  const queryClient = useQueryClient();
+  const config = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+  const savedSkills = (config.skills ?? []) as AgentSkill[];
+
+  const [skills, setSkills] = useState<AgentSkill[]>(savedSkills);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+
+  const isDirty = JSON.stringify(skills) !== JSON.stringify(savedSkills);
+
+  const save = async () => {
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      await agentsApi.update(
+        agent.id,
+        { adapterConfig: { ...config, skills } },
+        companyId,
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) });
+      setSaveMsg("Saved");
+      setTimeout(() => setSaveMsg(null), 2000);
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addSkill = () => {
+    const trimmed = newName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    if (!trimmed) return;
+    if (skills.some((s) => s.name === trimmed)) return;
+    const defaultContent = `---
+name: "${trimmed}"
+description: "TODO: describe what this skill does"
+---
+
+# ${trimmed}
+
+TODO: Add skill instructions here.
+`;
+    setSkills([...skills, { name: trimmed, content: defaultContent }]);
+    setExpandedIdx(skills.length);
+    setNewName("");
+    setShowAdd(false);
+  };
+
+  const removeSkill = (idx: number) => {
+    setSkills(skills.filter((_, i) => i !== idx));
+    if (expandedIdx === idx) setExpandedIdx(null);
+    else if (expandedIdx !== null && expandedIdx > idx) setExpandedIdx(expandedIdx - 1);
+  };
+
+  const updateContent = (idx: number, content: string) => {
+    setSkills(skills.map((s, i) => (i === idx ? { ...s, content } : s)));
+  };
+
+  const isClaudeAdapter = agent.adapterType === "claude_local";
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-base font-semibold">Skills & Plugins</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Define Claude Code skills for this agent. Each skill is a SKILL.md file
+          with YAML frontmatter that gets injected into the agent's skills directory at runtime.
+        </p>
+        {!isClaudeAdapter && (
+          <p className="text-sm text-amber-500 mt-2">
+            This agent uses the <strong>{agent.adapterType}</strong> adapter. Skills are currently
+            only injected for <strong>claude_local</strong> agents.
+          </p>
+        )}
+      </div>
+
+      {/* Skills list */}
+      <div className="space-y-3">
+        {skills.length === 0 && (
+          <div className="border border-dashed border-border rounded-lg p-6 text-center text-sm text-muted-foreground">
+            No skills configured. Add a skill to enhance this agent's capabilities.
+          </div>
+        )}
+
+        {skills.map((skill, idx) => (
+          <div key={skill.name} className="border border-border rounded-lg overflow-hidden">
+            <button
+              className="flex items-center justify-between w-full px-4 py-2.5 text-left hover:bg-accent/30 transition-colors"
+              onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
+            >
+              <div className="flex items-center gap-2">
+                {expandedIdx === idx
+                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                <span className="text-sm font-mono font-medium">{skill.name}</span>
+                <span className="text-xs text-muted-foreground">SKILL.md</span>
+              </div>
+              <button
+                className="text-xs text-destructive hover:text-destructive/80 px-2 py-0.5 rounded hover:bg-destructive/10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeSkill(idx);
+                }}
+              >
+                Remove
+              </button>
+            </button>
+
+            {expandedIdx === idx && (
+              <div className="px-4 pb-4">
+                <textarea
+                  className="w-full rounded-md border border-border px-3 py-2 bg-transparent text-sm font-mono placeholder:text-muted-foreground/40 outline-none resize-y min-h-[200px]"
+                  style={{ minHeight: 200 }}
+                  value={skill.content}
+                  onChange={(e) => updateContent(idx, e.target.value)}
+                  placeholder="---\nname: my-skill\n---\n\n# Skill instructions..."
+                  spellCheck={false}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add skill */}
+      {showAdd ? (
+        <div className="flex items-center gap-2">
+          <input
+            className="flex-1 rounded-md border border-border px-2.5 py-1.5 bg-transparent text-sm font-mono placeholder:text-muted-foreground/40 outline-none"
+            placeholder="skill-name (lowercase, hyphens ok)"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addSkill();
+              if (e.key === "Escape") { setShowAdd(false); setNewName(""); }
+            }}
+            autoFocus
+          />
+          <Button size="sm" onClick={addSkill} disabled={!newName.trim()}>
+            Add
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setShowAdd(false); setNewName(""); }}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowAdd(true)}
+          className="gap-1.5"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add Skill
+        </Button>
+      )}
+
+      {/* Save bar */}
+      {isDirty && (
+        <div className="flex items-center gap-3 pt-2">
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving ? "Saving..." : "Save Skills"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setSkills(savedSkills);
+              setExpandedIdx(null);
+            }}
+            disabled={saving}
+          >
+            Discard
+          </Button>
+          {saveMsg && (
+            <span className={cn("text-xs", saveMsg === "Saved" ? "text-green-500" : "text-destructive")}>
+              {saveMsg}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="border border-border/50 rounded-lg p-4 space-y-3 text-xs text-muted-foreground">
+        <p className="font-medium text-foreground text-sm">How skills work</p>
+        <ul className="space-y-1.5 list-disc pl-4">
+          <li>Each skill is a <code className="text-[11px] bg-muted px-1 py-0.5 rounded">SKILL.md</code> file with YAML frontmatter defining name, description, and optional triggers.</li>
+          <li>Skills are written to the agent's <code className="text-[11px] bg-muted px-1 py-0.5 rounded">~/.claude/skills/</code> directory before each run.</li>
+          <li>The agent can invoke skills via <code className="text-[11px] bg-muted px-1 py-0.5 rounded">/skill-name</code> or they activate automatically based on triggers.</li>
+          <li>Use skills to give agents specialized capabilities like testing sites, generating visual reports, etc.</li>
+        </ul>
+      </div>
     </div>
   );
 }
