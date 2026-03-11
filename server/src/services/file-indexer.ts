@@ -469,37 +469,51 @@ export async function indexRunFromLog(
     logger.info({ runId: run.id, fileOpsCount: fileOps.length, sample: fileOps.slice(0, 3).map(o => `${o.operation}:${o.filePath}`) }, "extracted file ops");
     if (fileOps.length === 0) return 0;
 
-    let indexed = 0;
-    for (const op of fileOps) {
-      let contentHash: string | null = null;
+    // Prepare content entries for batch insert (deduplicated by hash)
+    const contentValues: Array<{ hash: string; content: string; size: number; isMarkdown: boolean }> = [];
+    const seenHashes = new Set<string>();
+    const opContentHashes: Array<string | null> = [];
 
+    for (const op of fileOps) {
       if (op.content && op.operation !== "delete") {
         const hash = sha256(op.content);
-        contentHash = hash;
-
-        await db
-          .insert(fileContents)
-          .values({
+        opContentHashes.push(hash);
+        if (!seenHashes.has(hash)) {
+          seenHashes.add(hash);
+          contentValues.push({
             hash,
             content: op.content,
             size: Buffer.byteLength(op.content, "utf8"),
             isMarkdown: isMarkdownPath(op.filePath),
-          })
-          .onConflictDoNothing({ target: fileContents.hash });
+          });
+        }
+      } else {
+        opContentHashes.push(null);
       }
-
-      await db.insert(agentFileSnapshots).values({
-        companyId: run.companyId,
-        agentId: run.agentId,
-        runId: run.id,
-        filePath: op.filePath,
-        contentHash,
-        operation: op.operation,
-      });
-
-      indexed++;
     }
 
+    // Batch insert file contents in chunks of 100
+    for (let i = 0; i < contentValues.length; i += 100) {
+      const chunk = contentValues.slice(i, i + 100);
+      await db.insert(fileContents).values(chunk).onConflictDoNothing({ target: fileContents.hash });
+    }
+
+    // Batch insert snapshots in chunks of 100
+    const snapshotValues = fileOps.map((op, idx) => ({
+      companyId: run.companyId,
+      agentId: run.agentId,
+      runId: run.id,
+      filePath: op.filePath,
+      contentHash: opContentHashes[idx] ?? null,
+      operation: op.operation,
+    }));
+
+    for (let i = 0; i < snapshotValues.length; i += 100) {
+      const chunk = snapshotValues.slice(i, i + 100);
+      await db.insert(agentFileSnapshots).values(chunk);
+    }
+
+    const indexed = fileOps.length;
     logger.info({ runId: run.id, indexed }, "indexed files from run log");
     return indexed;
   } catch (err) {

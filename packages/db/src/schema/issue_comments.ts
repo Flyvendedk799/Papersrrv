@@ -29,5 +29,6 @@ export const issueComments = pgTable(
       table.issueId,
       table.createdAt,
     ),
+    authorAgentIdx: index("issue_comments_author_agent_idx").on(table.authorAgentId),
   }),
 );

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -12,7 +12,9 @@ import {
   heartbeatRuns,
 } from "@paperclipai/db";
 import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
+import { getCache, cacheKeys } from "./cache.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { decodeCursor } from "../lib/pagination.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
 
@@ -197,11 +199,16 @@ export function agentService(db: Db) {
   }
 
   async function getById(id: string) {
+    const cache = getCache();
+    const cached = await cache.get<typeof agents.$inferSelect>(cacheKeys.agentConfig(id));
+    if (cached) return normalizeAgentRow(cached);
+
     const row = await db
       .select()
       .from(agents)
       .where(eq(agents.id, id))
       .then((rows) => rows[0] ?? null);
+    if (row) await cache.set(cacheKeys.agentConfig(id), row, 120); // 2 min TTL
     return row ? normalizeAgentRow(row) : null;
   }
 
@@ -292,6 +299,8 @@ export function agentService(db: Db) {
       normalizedPatch.permissions = normalizeAgentPermissions(data.permissions, role);
     }
 
+    await getCache().del(cacheKeys.agentConfig(id));
+
     const shouldRecordRevision = Boolean(options?.recordRevision) && hasConfigPatchFields(normalizedPatch);
     const beforeConfig = shouldRecordRevision ? buildConfigSnapshot(existing) : null;
 
@@ -325,12 +334,26 @@ export function agentService(db: Db) {
   }
 
   return {
-    list: async (companyId: string, options?: { includeTerminated?: boolean }) => {
+    list: async (companyId: string, options?: { includeTerminated?: boolean; limit?: number; cursor?: string }) => {
       const conditions = [eq(agents.companyId, companyId)];
       if (!options?.includeTerminated) {
         conditions.push(ne(agents.status, "terminated"));
       }
-      const rows = await db.select().from(agents).where(and(...conditions));
+
+      // Cursor-based pagination: cursor encodes { createdAt, id }
+      if (options?.cursor) {
+        const decoded = decodeCursor(options.cursor);
+        if (decoded?.createdAt && decoded?.id) {
+          conditions.push(
+            sql`(${agents.createdAt}, ${agents.id}) < (${new Date(decoded.createdAt as string)}, ${decoded.id as string})`
+          );
+        }
+      }
+
+      const fetchLimit = (options?.limit ?? 200) + 1; // fetch one extra for hasMore
+      const rows = await db.select().from(agents).where(and(...conditions))
+        .orderBy(desc(agents.createdAt), desc(agents.id))
+        .limit(fetchLimit);
       return rows.map(normalizeAgentRow);
     },
 
@@ -392,6 +415,8 @@ export function agentService(db: Db) {
       const existing = await getById(id);
       if (!existing) return null;
 
+      await getCache().del(cacheKeys.agentConfig(id));
+
       await db
         .update(agents)
         .set({ status: "terminated", updatedAt: new Date() })
@@ -408,6 +433,8 @@ export function agentService(db: Db) {
     remove: async (id: string) => {
       const existing = await getById(id);
       if (!existing) return null;
+
+      await getCache().del(cacheKeys.agentConfig(id));
 
       return db.transaction(async (tx) => {
         await tx.update(agents).set({ reportsTo: null }).where(eq(agents.reportsTo, id));

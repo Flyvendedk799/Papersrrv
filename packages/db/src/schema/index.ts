@@ -33,4 +33,18 @@ export { companySecrets } from "./company_secrets.js";
 export { companySecretVersions } from "./company_secret_versions.js";
 export { fileContents } from "./file_contents.js";
 export { agentFileSnapshots } from "./agent_file_snapshots.js";
+export { fileLocks } from "./file_locks.js";
 export { issueSummaryFiles } from "./issue_summary_files.js";
+export {
+  workflowTemplates,
+  workflows,
+  workflowSteps,
+  workflowEdges,
+  workflowRuns,
+  workflowStepRuns,
+} from "./workflows.js";
+export { agentMessages } from "./agent_messages.js";
+export { agentCapabilities } from "./agent_capabilities.js";
+export { agentTaskOutcomes } from "./agent_task_outcomes.js";
+export { knowledgeBaseEntries } from "./knowledge_base.js";
+export { auditLogEntries } from "./audit_log.js";

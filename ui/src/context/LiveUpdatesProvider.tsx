@@ -500,6 +500,66 @@ function handleLiveEvent(
       buildActivityToast(queryClient, expectedCompanyId, payload, currentActor) ??
       buildJoinRequestToast(payload);
     if (toast) gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
+    return;
+  }
+
+  // ── Workflow events ────────────────────────────────────────────────────────
+  if (event.type === "workflow.run.started") {
+    queryClient.invalidateQueries({ queryKey: queryKeys.workflows.list(expectedCompanyId) });
+    const workflowId = readString(payload.workflowId);
+    if (workflowId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflows.runs(expectedCompanyId, workflowId) });
+    }
+    const workflowName = readString(payload.workflowName) ?? "Workflow";
+    gatedPushToast(gate, pushToast, "workflow-run", {
+      title: `${workflowName} started`,
+      tone: "info",
+      dedupeKey: `workflow-run:${readString(payload.runId)}`,
+    });
+    return;
+  }
+
+  if (event.type === "workflow.run.status") {
+    queryClient.invalidateQueries({ queryKey: queryKeys.workflows.list(expectedCompanyId) });
+    const runId = readString(payload.runId);
+    if (runId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflows.run(expectedCompanyId, runId) });
+    }
+    const status = readString(payload.status);
+    if (status === "succeeded" || status === "failed" || status === "cancelled") {
+      const tone = status === "succeeded" ? "success" : status === "cancelled" ? "warn" : "error";
+      gatedPushToast(gate, pushToast, "workflow-run", {
+        title: `Workflow run ${status}`,
+        body: readString(payload.error) ?? undefined,
+        tone,
+        dedupeKey: `workflow-run:${runId}:${status}`,
+      });
+    }
+    return;
+  }
+
+  if (event.type === "workflow.step.status" || event.type === "workflow.step.output") {
+    const runId = readString(payload.workflowRunId);
+    if (runId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflows.run(expectedCompanyId, runId) });
+    }
+    return;
+  }
+
+  if (event.type === "workflow.approval.required") {
+    const runId = readString(payload.workflowRunId);
+    if (runId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflows.run(expectedCompanyId, runId) });
+    }
+    const stepName = readString(payload.stepName) ?? "Step";
+    const message = readString(payload.message) ?? "Approval required";
+    gatedPushToast(gate, pushToast, "workflow-approval", {
+      title: `Approval needed: ${stepName}`,
+      body: truncate(message, 96),
+      tone: "warn",
+      dedupeKey: `workflow-approval:${readString(payload.stepRunId)}`,
+    });
+    return;
   }
 }
 

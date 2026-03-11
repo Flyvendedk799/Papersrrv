@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
@@ -16,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search, ArrowDown } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclipai/shared";
@@ -275,6 +275,41 @@ export function IssuesList({
       items: groups[key]!,
     }));
   }, [filtered, viewState.groupBy, agents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Build a flat list of rows for the virtualizer: group headers + issue items
+  type VirtualRow =
+    | { type: "header"; groupKey: string; label: string; count: number; open: boolean }
+    | { type: "issue"; issue: Issue; groupKey: string };
+
+  const flatRows = useMemo<VirtualRow[]>(() => {
+    const rows: VirtualRow[] = [];
+    for (const group of groupedContent) {
+      if (group.label) {
+        const open = !viewState.collapsedGroups.includes(group.key);
+        rows.push({ type: "header", groupKey: group.key, label: group.label, count: group.items.length, open });
+        if (open) {
+          for (const issue of group.items) {
+            rows.push({ type: "issue", issue, groupKey: group.key });
+          }
+        }
+      } else {
+        // ungrouped – just issues
+        for (const issue of group.items) {
+          rows.push({ type: "issue", issue, groupKey: group.key });
+        }
+      }
+    }
+    return rows;
+  }, [groupedContent, viewState.collapsedGroups]);
+
+  const listParentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: flatRows.length,
+    getScrollElement: () => listParentRef.current,
+    estimateSize: (index) => (flatRows[index].type === "header" ? 36 : 44),
+    overscan: 10,
+  });
 
   const newIssueDefaults = (groupKey?: string) => {
     const defaults: Record<string, string> = {};
@@ -573,174 +608,211 @@ export function IssuesList({
           onUpdateIssue={onUpdateIssue}
         />
       ) : (
-        groupedContent.map((group) => (
-          <Collapsible
-            key={group.key}
-            open={!viewState.collapsedGroups.includes(group.key)}
-            onOpenChange={(open) => {
-              updateView({
-                collapsedGroups: open
-                  ? viewState.collapsedGroups.filter((k) => k !== group.key)
-                  : [...viewState.collapsedGroups, group.key],
-              });
+        <div
+          ref={listParentRef}
+          className="flex-1 overflow-auto"
+          style={{ height: "calc(100vh - 180px)" }}
+        >
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: "100%",
+              position: "relative",
             }}
           >
-            {group.label && (
-              <div className="flex items-center py-1.5 pl-1 pr-3">
-                <CollapsibleTrigger className="flex items-center gap-1.5">
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
-                  <span className="text-sm font-semibold uppercase tracking-wide">
-                    {group.label}
-                  </span>
-                </CollapsibleTrigger>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className="ml-auto text-muted-foreground"
-                  onClick={() => openNewIssue(newIssueDefaults(group.key))}
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
-            <CollapsibleContent>
-              {group.items.map((issue) => (
-                <Link
-                  key={issue.id}
-                  to={`/issues/${issue.identifier ?? issue.id}`}
-                  className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit"
-                >
-                  {/* Spacer matching caret width so status icon aligns with group title (hidden on mobile) */}
-                  <div className="w-3.5 shrink-0 hidden sm:block" />
-                  <div className="shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                    <StatusIcon
-                      status={issue.status}
-                      onChange={(s) => onUpdateIssue(issue.id, { status: s })}
-                    />
-                  </div>
-                  <span className="text-sm text-muted-foreground font-mono shrink-0">
-                    {issue.identifier ?? issue.id.slice(0, 8)}
-                  </span>
-                  <span className="truncate flex-1 min-w-0">{issue.title}</span>
-                  {(issue.labels ?? []).length > 0 && (
-                    <div className="hidden md:flex items-center gap-1 max-w-[240px] overflow-hidden">
-                      {(issue.labels ?? []).slice(0, 3).map((label) => (
-                        <span
-                          key={label.id}
-                          className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
-                          style={{
-                            borderColor: label.color,
-                            color: label.color,
-                            backgroundColor: `${label.color}1f`,
-                          }}
-                        >
-                          {label.name}
-                        </span>
-                      ))}
-                      {(issue.labels ?? []).length > 3 && (
-                        <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
-                    {liveIssueIds?.has(issue.id) && (
-                      <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
-                        <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                        </span>
-                        <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hidden sm:inline">Live</span>
-                      </span>
-                    )}
-                    <div className="hidden sm:block">
-                      <Popover
-                        open={assigneePickerIssueId === issue.id}
-                        onOpenChange={(open) => {
-                          setAssigneePickerIssueId(open ? issue.id : null);
-                          if (!open) setAssigneeSearch("");
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const row = flatRows[virtualRow.index];
+              if (row.type === "header") {
+                return (
+                  <div
+                    key={`header-${row.groupKey}`}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <div className="flex items-center py-1.5 pl-1 pr-3">
+                      <button
+                        className="flex items-center gap-1.5"
+                        onClick={() => {
+                          const open = row.open;
+                          updateView({
+                            collapsedGroups: open
+                              ? [...viewState.collapsedGroups, row.groupKey]
+                              : viewState.collapsedGroups.filter((k) => k !== row.groupKey),
+                          });
                         }}
                       >
-                        <PopoverTrigger asChild>
-                          <button
-                            className="flex w-[180px] shrink-0 items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
+                        <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform", row.open && "rotate-90")} />
+                        <span className="text-sm font-semibold uppercase tracking-wide">
+                          {row.label}
+                        </span>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="ml-auto text-muted-foreground"
+                        onClick={() => openNewIssue(newIssueDefaults(row.groupKey))}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
+              const issue = row.issue;
+              return (
+                <div
+                  key={issue.id}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <Link
+                    to={`/issues/${issue.identifier ?? issue.id}`}
+                    className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit h-full"
+                  >
+                    {/* Spacer matching caret width so status icon aligns with group title (hidden on mobile) */}
+                    <div className="w-3.5 shrink-0 hidden sm:block" />
+                    <div className="shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                      <StatusIcon
+                        status={issue.status}
+                        onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+                      />
+                    </div>
+                    <span className="text-sm text-muted-foreground font-mono shrink-0">
+                      {issue.identifier ?? issue.id.slice(0, 8)}
+                    </span>
+                    <span className="truncate flex-1 min-w-0">{issue.title}</span>
+                    {(issue.labels ?? []).length > 0 && (
+                      <div className="hidden md:flex items-center gap-1 max-w-[240px] overflow-hidden">
+                        {(issue.labels ?? []).slice(0, 3).map((label) => (
+                          <span
+                            key={label.id}
+                            className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+                            style={{
+                              borderColor: label.color,
+                              color: label.color,
+                              backgroundColor: `${label.color}1f`,
                             }}
                           >
-                            {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
-                              <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
-                                  <User className="h-3 w-3" />
-                                </span>
-                                Assignee
-                              </span>
-                            )}
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          className="w-56 p-1"
-                          align="end"
-                          onClick={(e) => e.stopPropagation()}
-                          onPointerDownOutside={() => setAssigneeSearch("")}
+                            {label.name}
+                          </span>
+                        ))}
+                        {(issue.labels ?? []).length > 3 && (
+                          <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+                      {liveIssueIds?.has(issue.id) && (
+                        <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                          </span>
+                          <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hidden sm:inline">Live</span>
+                        </span>
+                      )}
+                      <div className="hidden sm:block">
+                        <Popover
+                          open={assigneePickerIssueId === issue.id}
+                          onOpenChange={(open) => {
+                            setAssigneePickerIssueId(open ? issue.id : null);
+                            if (!open) setAssigneeSearch("");
+                          }}
                         >
-                          <input
-                            className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-                            placeholder="Search agents..."
-                            value={assigneeSearch}
-                            onChange={(e) => setAssigneeSearch(e.target.value)}
-                            autoFocus
-                          />
-                          <div className="max-h-48 overflow-y-auto overscroll-contain">
+                          <PopoverTrigger asChild>
                             <button
-                              className={cn(
-                                "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                                !issue.assigneeAgentId && "bg-accent"
-                              )}
+                              className="flex w-[180px] shrink-0 items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors"
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                assignIssue(issue.id, null);
                               }}
                             >
-                              No assignee
+                              {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
+                                <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
+                                    <User className="h-3 w-3" />
+                                  </span>
+                                  Assignee
+                                </span>
+                              )}
                             </button>
-                            {(agents ?? [])
-                              .filter((agent) => {
-                                if (!assigneeSearch.trim()) return true;
-                                return agent.name.toLowerCase().includes(assigneeSearch.toLowerCase());
-                              })
-                              .map((agent) => (
-                                <button
-                                  key={agent.id}
-                                  className={cn(
-                                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
-                                    issue.assigneeAgentId === agent.id && "bg-accent"
-                                  )}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    assignIssue(issue.id, agent.id);
-                                  }}
-                                >
-                                  <Identity name={agent.name} size="sm" className="min-w-0" />
-                                </button>
-                              ))}
-                          </div>
-                        </PopoverContent>
-                      </Popover>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            className="w-56 p-1"
+                            align="end"
+                            onClick={(e) => e.stopPropagation()}
+                            onPointerDownOutside={() => setAssigneeSearch("")}
+                          >
+                            <input
+                              className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+                              placeholder="Search agents..."
+                              value={assigneeSearch}
+                              onChange={(e) => setAssigneeSearch(e.target.value)}
+                              autoFocus
+                            />
+                            <div className="max-h-48 overflow-y-auto overscroll-contain">
+                              <button
+                                className={cn(
+                                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                                  !issue.assigneeAgentId && "bg-accent"
+                                )}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  assignIssue(issue.id, null);
+                                }}
+                              >
+                                No assignee
+                              </button>
+                              {(agents ?? [])
+                                .filter((agent) => {
+                                  if (!assigneeSearch.trim()) return true;
+                                  return agent.name.toLowerCase().includes(assigneeSearch.toLowerCase());
+                                })
+                                .map((agent) => (
+                                  <button
+                                    key={agent.id}
+                                    className={cn(
+                                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
+                                      issue.assigneeAgentId === agent.id && "bg-accent"
+                                    )}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      assignIssue(issue.id, agent.id);
+                                    }}
+                                  >
+                                    <Identity name={agent.name} size="sm" className="min-w-0" />
+                                  </button>
+                                ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <span className="text-xs text-muted-foreground hidden sm:inline">
+                        {formatDate(issue.createdAt)}
+                      </span>
                     </div>
-                    <span className="text-xs text-muted-foreground hidden sm:inline">
-                      {formatDate(issue.createdAt)}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </CollapsibleContent>
-          </Collapsible>
-        ))
+                  </Link>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
       {showScrollBottom && (
         <button

@@ -35,6 +35,7 @@ import { logger } from "../middleware/logger.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
+import { parsePaginationParams, buildPaginatedResponse } from "../lib/pagination.js";
 import { runClaudeLogin } from "@paperclipai/adapter-claude-local/server";
 import {
   DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
@@ -587,13 +588,25 @@ export function agentRoutes(db: Db) {
   router.get("/companies/:companyId/agents", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const result = await svc.list(companyId);
+
+    const wantsPagination = req.query.cursor !== undefined || req.query.limit !== undefined;
+    const { cursor, limit } = parsePaginationParams(req.query as Record<string, unknown>);
+    const result = await svc.list(companyId, { cursor, limit });
+
     const canReadConfigs = await actorCanReadConfigurationsForCompany(req, companyId);
-    if (canReadConfigs || req.actor.type === "board") {
-      res.json(result);
-      return;
+    const items = (canReadConfigs || req.actor.type === "board")
+      ? result
+      : result.map((agent) => redactForRestrictedAgentView(agent)).filter((a) => a !== null);
+
+    if (wantsPagination) {
+      const paginated = buildPaginatedResponse(items, limit, (agent) => ({
+        createdAt: agent.createdAt,
+        id: agent.id,
+      }));
+      res.json(paginated);
+    } else {
+      res.json(items);
     }
-    res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
   });
 
   router.get("/companies/:companyId/org", async (req, res) => {

@@ -21,5 +21,6 @@ export const issueReadStates = pgTable(
       table.issueId,
       table.userId,
     ),
+    userIssueIdx: index("issue_read_states_user_issue_idx").on(table.userId, table.issueId),
   }),
 );

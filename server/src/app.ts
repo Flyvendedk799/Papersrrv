@@ -6,6 +6,8 @@ import type { Db } from "@paperclipai/db";
 import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
+import { requestIdMiddleware } from "./middleware/request-id.js";
+import { rateLimiters } from "./middleware/rate-limit.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
@@ -26,7 +28,12 @@ import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { runnerRoutes } from "./routes/runner.js";
 import { fileRoutes } from "./routes/files.js";
+import { workflowRoutes } from "./routes/workflows.js";
+import { agentCollaborationRoutes } from "./routes/agent-collaboration.js";
 import { debugRoutes } from "./routes/debug.js";
+import { docsRoutes } from "./routes/docs.js";
+import { jobRoutes } from "./routes/jobs.js";
+import { auditRoutes } from "./routes/audit.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
 type UiMode = "none" | "static" | "vite-dev";
@@ -49,6 +56,7 @@ export async function createApp(
   const app = express();
 
   app.use(express.json());
+  app.use(requestIdMiddleware);
   app.use(httpLogger);
   const privateHostnameGateEnabled =
     opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private";
@@ -94,6 +102,7 @@ export async function createApp(
   // Mount API routes
   const api = Router();
   api.use(boardMutationGuard());
+  api.use(rateLimiters.general);
   api.use(
     "/health",
     healthRoutes(db, {
@@ -117,7 +126,12 @@ export async function createApp(
   api.use(sidebarBadgeRoutes(db));
   api.use(runnerRoutes(db));
   api.use(fileRoutes(db));
+  api.use(workflowRoutes(db));
+  api.use(agentCollaborationRoutes(db));
   api.use(debugRoutes(db));
+  api.use("/docs", docsRoutes());
+  api.use(jobRoutes());
+  api.use(auditRoutes(db));
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,

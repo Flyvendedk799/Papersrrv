@@ -8,6 +8,7 @@ import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { filesApi } from "../api/files";
+import { workflowsApi } from "../api/workflows";
 import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -43,6 +44,7 @@ import {
   Paperclip,
   SlidersHorizontal,
   Trash2,
+  Workflow,
   X,
 } from "lucide-react";
 import { MarkdownBody } from "../components/MarkdownBody";
@@ -512,6 +514,17 @@ export function IssueDetail() {
     },
   });
 
+  const convertToWorkflow = useMutation({
+    mutationFn: () =>
+      workflowsApi.generate(selectedCompanyId!, {
+        description: `${issue!.title}\n\n${issue!.description ?? ""}`.trim(),
+        issueId: issueId!,
+      }),
+    onSuccess: (workflow) => {
+      navigate(`/workflows/${workflow.id}`);
+    },
+  });
+
   const addComment = useMutation({
     mutationFn: ({ body, reopen }: { body: string; reopen?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen),
@@ -728,6 +741,16 @@ export function IssueDetail() {
               title="Show properties"
             >
               <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={convertToWorkflow.isPending}
+              onClick={() => convertToWorkflow.mutate()}
+            >
+              <Workflow className="h-4 w-4 mr-1" />
+              {convertToWorkflow.isPending ? "Converting..." : "Convert to Workflow"}
             </Button>
 
             <Popover open={moreOpen} onOpenChange={setMoreOpen}>

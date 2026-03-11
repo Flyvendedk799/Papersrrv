@@ -84,5 +84,13 @@ export const queryKeys = {
     raw: (companyId: string, filePath: string) =>
       ["files", "raw", companyId, filePath] as const,
   },
+  workflows: {
+    list: (companyId: string) => ["workflows", companyId] as const,
+    detail: (companyId: string, id: string) => ["workflows", "detail", companyId, id] as const,
+    runs: (companyId: string, workflowId: string) =>
+      ["workflows", "runs", companyId, workflowId] as const,
+    run: (companyId: string, runId: string) => ["workflows", "run", companyId, runId] as const,
+    templates: (companyId: string) => ["workflow-templates", companyId] as const,
+  },
   org: (companyId: string) => ["org", companyId] as const,
 };

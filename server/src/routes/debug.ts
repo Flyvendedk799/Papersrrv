@@ -343,5 +343,33 @@ export function debugRoutes(db: Db) {
     res.redirect(`/api/companies/${companyId}/debug/run-log/${run.id}`);
   });
 
+  /**
+   * GET /companies/:companyId/debug/events/replay
+   * Replay missed live events since a given event ID.
+   * Query params:
+   *   ?sinceId=123   (event ID to replay from)
+   */
+  router.get("/companies/:companyId/debug/events/replay", (req, res) => {
+    const companyId = req.params.companyId as string;
+    try {
+      assertCompanyAccess(req, companyId);
+    } catch (err: unknown) {
+      if (err instanceof Error && "statusCode" in err) {
+        res.status((err as any).statusCode).json({ error: err.message });
+        return;
+      }
+    }
+
+    const sinceId = Number(req.query.sinceId) || 0;
+
+    // Dynamic import to avoid circular deps
+    import("../services/live-events.js").then(({ replayEvents }) => {
+      const events = replayEvents(companyId, sinceId);
+      res.json({ events, count: events.length, sinceId });
+    }).catch(() => {
+      res.json({ events: [], count: 0, sinceId });
+    });
+  });
+
   return router;
 }

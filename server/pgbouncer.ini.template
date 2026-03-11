@@ -1,0 +1,38 @@
+; PgBouncer configuration template for Paperclip
+; Copy to pgbouncer.ini and adjust settings for your deployment
+;
+; Install: sudo apt install pgbouncer (or brew install pgbouncer)
+; Run: pgbouncer pgbouncer.ini
+
+[databases]
+paperclip = host=127.0.0.1 port=5432 dbname=paperclip
+
+[pgbouncer]
+listen_addr = 127.0.0.1
+listen_port = 6432
+auth_type = md5
+auth_file = /etc/pgbouncer/userlist.txt
+
+; Pool mode: transaction is recommended for web applications
+pool_mode = transaction
+
+; Pool size settings
+default_pool_size = 20
+min_pool_size = 5
+max_client_conn = 200
+max_db_connections = 50
+
+; Timeouts
+server_idle_timeout = 600
+client_idle_timeout = 0
+query_timeout = 30
+
+; Logging
+log_connections = 0
+log_disconnections = 0
+log_pooler_errors = 1
+
+; TLS (uncomment for production)
+; client_tls_sslmode = require
+; client_tls_cert_file = /path/to/cert.pem
+; client_tls_key_file = /path/to/key.pem

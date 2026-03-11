@@ -75,18 +75,36 @@ export function costService(db: Db) {
 
       if (!company) throw notFound("Company not found");
 
-      const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
-      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
-      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+      // Primary source: cost_events table (integer cents)
+      const ceConditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
+      if (range?.from) ceConditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) ceConditions.push(lte(costEvents.occurredAt, range.to));
 
-      const [{ total }] = await db
+      const [{ centsTotal }] = await db
         .select({
-          total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+          centsTotal: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
         })
         .from(costEvents)
-        .where(and(...conditions));
+        .where(and(...ceConditions));
 
-      const spendCents = Number(total);
+      // Secondary source: heartbeat_runs.usage_json->costUsd (higher precision float)
+      // This catches runs where costCents rounded to 0 but costUsd was non-zero
+      const hrConditions: ReturnType<typeof eq>[] = [eq(heartbeatRuns.companyId, companyId)];
+      if (range?.from) hrConditions.push(gte(heartbeatRuns.finishedAt, range.from));
+      if (range?.to) hrConditions.push(lte(heartbeatRuns.finishedAt, range.to));
+
+      const [{ usdTotal }] = await db
+        .select({
+          usdTotal: sql<number>`coalesce(sum(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0)), 0)::numeric`,
+        })
+        .from(heartbeatRuns)
+        .where(and(...hrConditions));
+
+      // Use the higher of the two sources (usageJson is more precise)
+      const fromEvents = Number(centsTotal);
+      const fromRuns = Math.round(Number(usdTotal) * 100);
+      const spendCents = Math.max(fromEvents, fromRuns);
+
       const utilization =
         company.budgetMonthlyCents > 0
           ? (spendCents / company.budgetMonthlyCents) * 100
@@ -127,6 +145,9 @@ export function costService(db: Db) {
       const runRows = await db
         .select({
           agentId: heartbeatRuns.agentId,
+          // Precise cost from usageJson (float USD -> cents)
+          preciseCostCents:
+            sql<number>`coalesce(round(sum(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0)) * 100), 0)::int`,
           apiRunCount:
             sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'api' then 1 else 0 end), 0)::int`,
           subscriptionRunCount:
@@ -143,8 +164,12 @@ export function costService(db: Db) {
       const runRowsByAgent = new Map(runRows.map((row) => [row.agentId, row]));
       return costRows.map((row) => {
         const runRow = runRowsByAgent.get(row.agentId);
+        // Use the higher of cost_events (ceil'd cents) vs heartbeat_runs (precise USD)
+        const preciseCents = runRow?.preciseCostCents ?? 0;
+        const costCents = Math.max(row.costCents, preciseCents);
         return {
           ...row,
+          costCents,
           apiRunCount: runRow?.apiRunCount ?? 0,
           subscriptionRunCount: runRow?.subscriptionRunCount ?? 0,
           subscriptionInputTokens: runRow?.subscriptionInputTokens ?? 0,

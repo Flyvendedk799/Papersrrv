@@ -140,7 +140,7 @@ export function fileService(db: Db) {
      */
     async listFiles(
       companyId: string,
-      filters?: { agentId?: string; runId?: string; search?: string },
+      filters?: { agentId?: string; runId?: string; search?: string; limit?: number },
     ): Promise<FileWithHistory[]> {
       // Get the latest snapshot per unique file path
       const conditions = [eq(agentFileSnapshots.companyId, companyId)];
@@ -165,7 +165,8 @@ export function fileService(db: Db) {
         .from(agentFileSnapshots)
         .where(and(...conditions))
         .groupBy(agentFileSnapshots.filePath)
-        .orderBy(sql`(array_agg(${agentFileSnapshots.capturedAt} ORDER BY ${agentFileSnapshots.capturedAt} DESC))[1] DESC`);
+        .orderBy(sql`(array_agg(${agentFileSnapshots.capturedAt} ORDER BY ${agentFileSnapshots.capturedAt} DESC))[1] DESC`)
+        .limit((filters?.limit ?? 100) + 1);
 
       if (latestSnapshots.length === 0) return [];
 

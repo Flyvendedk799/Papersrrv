@@ -7,6 +7,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  companies,
   heartbeatRunEvents,
   heartbeatRuns,
   costEvents,
@@ -15,6 +16,7 @@ import {
 } from "@paperclipai/db";
 import { conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
+import { getLockService, lockKeys } from "./distributed-lock.js";
 import { publishLiveEvent } from "./live-events.js";
 import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
 import { getServerAdapter, runningProcesses } from "../adapters/index.js";
@@ -26,13 +28,14 @@ import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import { needsRemoteRunner } from "../routes/runner.js";
 import { indexRunFromLog } from "./file-indexer.js";
 import { fileService } from "./files.js";
+import { getJobQueue } from "./job-queue.js";
+import { workflowEngine as createWorkflowEngine } from "./workflow-engine.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
 const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
-const startLocksByAgent = new Map<string, Promise<void>>();
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 
 function appendExcerpt(prev: string, chunk: string) {
@@ -45,21 +48,17 @@ function normalizeMaxConcurrentRuns(value: unknown) {
   return Math.max(HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT, Math.min(HEARTBEAT_MAX_CONCURRENT_RUNS_MAX, parsed));
 }
 
-async function withAgentStartLock<T>(agentId: string, fn: () => Promise<T>) {
-  const previous = startLocksByAgent.get(agentId) ?? Promise.resolve();
-  const run = previous.then(fn);
-  const marker = run.then(
-    () => undefined,
-    () => undefined,
+async function withAgentStartLock<T>(agentId: string, fn: () => Promise<T>): Promise<T> {
+  const lockService = getLockService();
+  const result = await lockService.withLock(
+    lockKeys.agentStart(agentId),
+    fn,
+    30_000, // 30s TTL
   );
-  startLocksByAgent.set(agentId, marker);
-  try {
-    return await run;
-  } finally {
-    if (startLocksByAgent.get(agentId) === marker) {
-      startLocksByAgent.delete(agentId);
-    }
+  if (result === null) {
+    throw conflict(`Agent ${agentId} start already in progress`);
   }
+  return result;
 }
 
 interface WakeupOptions {
@@ -972,7 +971,9 @@ export function heartbeatService(db: Db) {
     const inputTokens = usage?.inputTokens ?? 0;
     const outputTokens = usage?.outputTokens ?? 0;
     const cachedInputTokens = usage?.cachedInputTokens ?? 0;
-    const additionalCostCents = Math.max(0, Math.round((result.costUsd ?? 0) * 100));
+    // Use ceil so sub-cent costs ($0.003) still register as 1 cent rather than rounding to 0
+    const rawCostUsd = result.costUsd ?? 0;
+    const additionalCostCents = rawCostUsd > 0 ? Math.max(1, Math.ceil(rawCostUsd * 100)) : 0;
     const hasTokenUsage = inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0;
 
     await db
@@ -1012,6 +1013,38 @@ export function heartbeatService(db: Db) {
           updatedAt: new Date(),
         })
         .where(eq(agents.id, agent.id));
+
+      await db
+        .update(companies)
+        .set({
+          spentMonthlyCents: sql`${companies.spentMonthlyCents} + ${additionalCostCents}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(companies.id, agent.companyId));
+
+      // Auto-pause agent if it exceeds its monthly budget
+      const updatedAgent = await db
+        .select()
+        .from(agents)
+        .where(eq(agents.id, agent.id))
+        .then((rows) => rows[0] ?? null);
+
+      if (
+        updatedAgent &&
+        updatedAgent.budgetMonthlyCents > 0 &&
+        updatedAgent.spentMonthlyCents >= updatedAgent.budgetMonthlyCents &&
+        updatedAgent.status !== "paused" &&
+        updatedAgent.status !== "terminated"
+      ) {
+        await db
+          .update(agents)
+          .set({ status: "paused", updatedAt: new Date() })
+          .where(eq(agents.id, updatedAgent.id));
+        logger.info(
+          { agentId: agent.id, spent: updatedAgent.spentMonthlyCents, budget: updatedAgent.budgetMonthlyCents },
+          "agent paused: monthly budget exceeded",
+        );
+      }
     }
   }
 
@@ -1389,29 +1422,36 @@ export function heartbeatService(db: Db) {
         });
         await releaseIssueExecutionAndPromote(finalizedRun);
 
-        // Index files from the run log in the background (non-blocking)
+        // Index files from the run log in the background via job queue
         if (handle) {
-          indexRunFromLog(db, {
-            id: finalizedRun.id,
+          getJobQueue().enqueue("file-index-run", {
+            runId: finalizedRun.id,
             companyId: finalizedRun.companyId,
             agentId: finalizedRun.agentId,
-            logStore: handle.store,
-            logRef: handle.logRef,
-          }).then(async (indexed) => {
-            if (indexed > 0 && outcome === "succeeded") {
-              // Auto-link summary files to the issue if one exists
-              const ctx = finalizedRun.contextSnapshot as Record<string, unknown> | null;
-              const issueId = typeof ctx?.issueId === "string" ? ctx.issueId : null;
-              if (issueId) {
-                const svc = fileService(db);
-                const linked = await svc.autoLinkSummaryFiles(issueId, finalizedRun.id, finalizedRun.companyId);
-                if (linked > 0) {
-                  logger.info({ runId, issueId, linked }, "auto-linked summary files to issue");
+          }).catch((enqueueErr) => {
+            // Fallback: run indexing directly if job queue fails
+            logger.warn({ err: enqueueErr, runId }, "Failed to enqueue file-index-run job; falling back to direct call");
+            indexRunFromLog(db, {
+              id: finalizedRun.id,
+              companyId: finalizedRun.companyId,
+              agentId: finalizedRun.agentId,
+              logStore: handle!.store,
+              logRef: handle!.logRef,
+            }).then(async (indexed) => {
+              if (indexed > 0 && outcome === "succeeded") {
+                const ctx = finalizedRun.contextSnapshot as Record<string, unknown> | null;
+                const issueId = typeof ctx?.issueId === "string" ? ctx.issueId : null;
+                if (issueId) {
+                  const svc = fileService(db);
+                  const linked = await svc.autoLinkSummaryFiles(issueId, finalizedRun.id, finalizedRun.companyId);
+                  if (linked > 0) {
+                    logger.info({ runId, issueId, linked }, "auto-linked summary files to issue");
+                  }
                 }
               }
-            }
-          }).catch((indexErr) => {
-            logger.warn({ err: indexErr, runId }, "background file indexing failed");
+            }).catch((indexErr) => {
+              logger.warn({ err: indexErr, runId }, "background file indexing failed");
+            });
           });
         }
       }
@@ -1441,6 +1481,18 @@ export function heartbeatService(db: Db) {
         }
       }
       await finalizeAgentStatus(agent.id, outcome);
+
+      // Workflow engine hook: notify if this run was part of a workflow
+      try {
+        const wfEngine = createWorkflowEngine(db);
+        const contextSnap = run.contextSnapshot as Record<string, unknown> | null;
+        if (contextSnap?.stepRunId) {
+          await wfEngine.linkHeartbeatRunToStep(finalizedRun.id, contextSnap);
+        }
+        await wfEngine.onHeartbeatRunCompleted(finalizedRun.id);
+      } catch (wfErr) {
+        logger.warn({ err: wfErr, runId }, "workflow engine hook failed (non-fatal)");
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown adapter failure";
       logger.error({ err, runId }, "heartbeat execution failed");
@@ -1502,6 +1554,16 @@ export function heartbeatService(db: Db) {
       }
 
       await finalizeAgentStatus(agent.id, "failed");
+
+      // Workflow engine hook for failed runs
+      if (failedRun) {
+        try {
+          const wfEngine = createWorkflowEngine(db);
+          await wfEngine.onHeartbeatRunCompleted(failedRun.id);
+        } catch (wfErr) {
+          logger.warn({ err: wfErr, runId }, "workflow engine hook failed (non-fatal)");
+        }
+      }
     } finally {
       await startNextQueuedRunForAgent(agent.id);
     }

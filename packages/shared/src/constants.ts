@@ -199,6 +199,11 @@ export const LIVE_EVENT_TYPES = [
   "heartbeat.run.log",
   "agent.status",
   "activity.logged",
+  "workflow.run.started",
+  "workflow.run.status",
+  "workflow.step.status",
+  "workflow.step.output",
+  "workflow.approval.required",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 
@@ -232,3 +237,45 @@ export const PERMISSION_KEYS = [
   "joins:approve",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
+
+export const WORKFLOW_STATUSES = ["draft", "active", "paused", "archived"] as const;
+export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
+
+export const WORKFLOW_TRIGGER_TYPES = ["manual", "from_issue", "from_template", "generated"] as const;
+export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number];
+
+export const WORKFLOW_STEP_TYPES = [
+  "agent_run",
+  "condition",
+  "parallel_gate",
+  "approval",
+  "transform",
+  "webhook",
+  "sub_workflow",
+] as const;
+export type WorkflowStepType = (typeof WORKFLOW_STEP_TYPES)[number];
+
+export const WORKFLOW_EDGE_TYPES = ["default", "condition_true", "condition_false"] as const;
+export type WorkflowEdgeType = (typeof WORKFLOW_EDGE_TYPES)[number];
+
+export const WORKFLOW_RUN_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "paused",
+  "cancelled",
+] as const;
+export type WorkflowRunStatus = (typeof WORKFLOW_RUN_STATUSES)[number];
+
+export const WORKFLOW_STEP_RUN_STATUSES = [
+  "pending",
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "skipped",
+  "waiting_approval",
+  "cancelled",
+] as const;
+export type WorkflowStepRunStatus = (typeof WORKFLOW_STEP_RUN_STATUSES)[number];

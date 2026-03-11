@@ -36,6 +36,17 @@ export function healthRoutes(
       bootstrapStatus = roleCount > 0 ? "ready" : "bootstrap_pending";
     }
 
+    const startTime = Date.now();
+    let dbHealthy = true;
+    try {
+      await db.execute(sql`SELECT 1`);
+    } catch {
+      dbHealthy = false;
+    }
+    const dbLatencyMs = Date.now() - startTime;
+
+    const mem = process.memoryUsage();
+
     res.json({
       status: "ok",
       deploymentMode: opts.deploymentMode,
@@ -45,6 +56,16 @@ export function healthRoutes(
       features: {
         companyDeletionEnabled: opts.companyDeletionEnabled,
       },
+      checks: {
+        database: { status: dbHealthy ? "healthy" : "unhealthy", latencyMs: dbLatencyMs },
+      },
+      uptime: process.uptime(),
+      memoryUsage: {
+        rss: Math.round(mem.rss / 1024 / 1024),
+        heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+      },
+      timestamp: new Date().toISOString(),
     });
   });
 

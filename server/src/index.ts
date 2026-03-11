@@ -25,6 +25,8 @@ import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { heartbeatService } from "./services/index.js";
+import { registerAllJobs } from "./services/job-registrations.js";
+import { workflowEngine } from "./services/workflow-engine.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -490,6 +492,9 @@ setupLiveEventsWebSocketServer(server, db as any, {
   resolveSessionFromHeaders,
 });
 
+// Register and start background job queue
+const jobQueue = registerAllJobs(db as any);
+
 if (config.heartbeatSchedulerEnabled) {
   const heartbeat = heartbeatService(db as any);
 
@@ -498,26 +503,14 @@ if (config.heartbeatSchedulerEnabled) {
     logger.error({ err }, "startup reap of orphaned heartbeat runs failed");
   });
 
-  setInterval(() => {
-    void heartbeat
-      .tickTimers(new Date())
-      .then((result) => {
-        if (result.enqueued > 0) {
-          logger.info({ ...result }, "heartbeat timer tick enqueued runs");
-        }
-      })
-      .catch((err) => {
-        logger.error({ err }, "heartbeat timer tick failed");
-      });
-
-    // Periodically reap orphaned runs (5-min staleness threshold)
-    void heartbeat
-      .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
-      .catch((err) => {
-        logger.error({ err }, "periodic reap of orphaned heartbeat runs failed");
-      });
-  }, config.heartbeatSchedulerIntervalMs);
+  // Schedule recurring heartbeat jobs via job queue
+  jobQueue.schedule("heartbeat-tick", {}, config.heartbeatSchedulerIntervalMs);
+  jobQueue.schedule("heartbeat-reap-orphans", {}, 5 * 60 * 1000);
 }
+
+// Schedule cost aggregation (budget alerts) via job queue - every 15 minutes
+jobQueue.schedule("cost-aggregation", {}, 15 * 60 * 1000);
+logger.info("Background job queue: all recurring jobs scheduled");
 
 if (config.databaseBackupEnabled) {
   const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
@@ -566,6 +559,12 @@ if (config.databaseBackupEnabled) {
     void runScheduledBackup();
   }, backupIntervalMs);
 }
+
+// Recover in-flight workflow runs after restart
+const engine = workflowEngine(db as any);
+engine.recoverInFlightRuns().catch((err) => {
+  logger.warn({ err }, "workflow recovery failed");
+});
 
 server.listen(listenPort, config.host, () => {
   logger.info(`Server listening on ${config.host}:${listenPort}`);

@@ -25,6 +25,7 @@ import {
 import { logger } from "../middleware/logger.js";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { parsePaginationParams, buildPaginatedResponse } from "../lib/pagination.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 
 const MAX_ATTACHMENT_BYTES = Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
@@ -223,6 +224,8 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
 
+    const wantsPagination = req.query.cursor !== undefined || req.query.limit !== undefined;
+    const { cursor, limit } = parsePaginationParams(req.query as Record<string, unknown>);
     const result = await svc.list(companyId, {
       status: req.query.status as string | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
@@ -232,8 +235,18 @@ export function issueRoutes(db: Db, storage: StorageService) {
       projectId: req.query.projectId as string | undefined,
       labelId: req.query.labelId as string | undefined,
       q: req.query.q as string | undefined,
+      cursor,
+      limit,
     });
-    res.json(result);
+    if (wantsPagination) {
+      const paginated = buildPaginatedResponse(result, limit, (issue) => ({
+        updatedAt: issue.updatedAt,
+        id: issue.id,
+      }));
+      res.json(paginated);
+    } else {
+      res.json(result);
+    }
   });
 
   router.get("/companies/:companyId/labels", async (req, res) => {

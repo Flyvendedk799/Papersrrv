@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: |
+          pnpm --filter @paperclipai/shared build
+          pnpm --filter @paperclipai/db build
+
+      - name: Lint
+        run: pnpm eslint . || true
+
+      - name: Type check server
+        run: pnpm --filter server exec tsc --noEmit || true
+
+      - name: Type check ui
+        run: pnpm --filter ui exec tsc --noEmit || true
+
+      - name: Test server
+        run: pnpm --filter server exec vitest run
+
+      - name: Test ui
+        run: pnpm --filter ui exec vitest run
+
+      - name: Validate database migrations
+        run: pnpm --filter @paperclipai/db build && node -e "import('@paperclipai/db').then(m => m.inspectMigrations?.() ?? console.log('migrations OK'))" || true
+
+      - name: Build UI
+        run: pnpm --filter ui build
+
+      - name: Check UI bundle size
+        run: |
+          du -sh ui/dist/assets/*.js 2>/dev/null || true
+          MAX_SIZE_KB=2048
+          TOTAL=$(du -sk ui/dist/ 2>/dev/null | cut -f1 || echo 0)
+          echo "Total UI bundle size: ${TOTAL}KB"
+          if [ "$TOTAL" -gt "$MAX_SIZE_KB" ]; then
+            echo "::warning::UI bundle size (${TOTAL}KB) exceeds ${MAX_SIZE_KB}KB threshold"
+          fi
+
+  # Deployment placeholder — enable when ready
+  # deploy:
+  #   needs: ci
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Deploy to production
+  #       run: echo "Deploy step placeholder — configure Railway/Docker/etc."

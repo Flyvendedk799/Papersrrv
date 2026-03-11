@@ -71,3 +71,19 @@ export type {
   CompanyPortabilityImportResult,
   CompanyPortabilityExportRequest,
 } from "./company-portability.js";
+export type {
+  Workflow,
+  WorkflowStep,
+  WorkflowEdge,
+  WorkflowRun,
+  WorkflowStepRun,
+  WorkflowTemplate,
+  AgentRunStepConfig,
+  ConditionStepConfig,
+  ParallelGateStepConfig,
+  ApprovalStepConfig,
+  TransformStepConfig,
+  WebhookStepConfig,
+  SubWorkflowStepConfig,
+  WorkflowDefinition,
+} from "./workflow.js";

@@ -1,9 +1,12 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
+import { agents as agentsTable, companies as companiesTable, costEvents, heartbeatRuns } from "@paperclipai/db";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { createCostEventSchema, updateBudgetSchema } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { costService, companyService, agentService, logActivity } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { logger } from "../middleware/logger.js";
 
 export function costRoutes(db: Db) {
   const router = Router();
@@ -126,6 +129,132 @@ export function costRoutes(db: Db) {
     });
 
     res.json(updated);
+  });
+
+  // Backfill cost_events from heartbeat_runs.usageJson for runs that have costUsd
+  // but no corresponding cost_event (or cost_event with 0 cents).
+  // This fixes historical data where costCents was rounded to 0.
+  router.post("/companies/:companyId/costs/backfill", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    // Find all completed runs with costUsd in usageJson
+    const runs = await db
+      .select({
+        id: heartbeatRuns.id,
+        agentId: heartbeatRuns.agentId,
+        costUsd: sql<number>`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric`,
+        inputTokens: sql<number>`coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0)`,
+        outputTokens: sql<number>`coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0)`,
+        provider: sql<string>`coalesce(${heartbeatRuns.usageJson} ->> 'provider', 'unknown')`,
+        model: sql<string>`coalesce(${heartbeatRuns.usageJson} ->> 'model', 'unknown')`,
+        billingType: sql<string>`coalesce(${heartbeatRuns.usageJson} ->> 'billingType', 'unknown')`,
+        finishedAt: heartbeatRuns.finishedAt,
+      })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          isNotNull(heartbeatRuns.usageJson),
+          sql`(${heartbeatRuns.usageJson} ->> 'costUsd')::numeric > 0`,
+        ),
+      );
+
+    // Get existing cost_events keyed by runId (via occurred_at matching)
+    // Instead of complex matching, we'll recalculate totals from scratch
+    let totalCentsBackfilled = 0;
+    let eventsCreated = 0;
+
+    for (const run of runs) {
+      const costUsd = Number(run.costUsd);
+      if (!costUsd || costUsd <= 0) continue;
+      const costCents = Math.max(1, Math.ceil(costUsd * 100));
+
+      // Check if a cost_event already exists for this agent at this timestamp
+      const existing = await db
+        .select({ id: costEvents.id, costCents: costEvents.costCents })
+        .from(costEvents)
+        .where(
+          and(
+            eq(costEvents.companyId, companyId),
+            eq(costEvents.agentId, run.agentId),
+            eq(costEvents.occurredAt, run.finishedAt!),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+
+      if (existing) {
+        // Update if it was rounded to 0
+        if (existing.costCents === 0 && costCents > 0) {
+          await db
+            .update(costEvents)
+            .set({ costCents })
+            .where(eq(costEvents.id, existing.id));
+          totalCentsBackfilled += costCents;
+          eventsCreated++;
+        }
+      } else {
+        // Create missing cost_event
+        await db.insert(costEvents).values({
+          companyId,
+          agentId: run.agentId,
+          provider: run.provider || "unknown",
+          model: run.model || "unknown",
+          inputTokens: Number(run.inputTokens) || 0,
+          outputTokens: Number(run.outputTokens) || 0,
+          costCents,
+          occurredAt: run.finishedAt ?? new Date(),
+        });
+        totalCentsBackfilled += costCents;
+        eventsCreated++;
+      }
+    }
+
+    // Recalculate spentMonthlyCents for all agents in this company
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const agentTotals = await db
+      .select({
+        agentId: costEvents.agentId,
+        total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+      })
+      .from(costEvents)
+      .where(
+        and(
+          eq(costEvents.companyId, companyId),
+          sql`${costEvents.occurredAt} >= ${monthStart}`,
+        ),
+      )
+      .groupBy(costEvents.agentId);
+
+    let companyTotal = 0;
+    for (const { agentId, total } of agentTotals) {
+      const t = Number(total);
+      companyTotal += t;
+      await db
+        .update(agentsTable)
+        .set({ spentMonthlyCents: t, updatedAt: now })
+        .where(eq(agentsTable.id, agentId));
+    }
+
+    await db
+      .update(companiesTable)
+      .set({ spentMonthlyCents: companyTotal, updatedAt: now })
+      .where(eq(companiesTable.id, companyId));
+
+    logger.info(
+      { companyId, eventsCreated, totalCentsBackfilled, companyTotal },
+      "cost backfill completed",
+    );
+
+    res.json({
+      runsScanned: runs.length,
+      eventsCreatedOrUpdated: eventsCreated,
+      totalCentsBackfilled,
+      currentMonthSpendCents: companyTotal,
+    });
   });
 
   return router;

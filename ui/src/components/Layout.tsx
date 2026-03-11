@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type UIEvent } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Moon, Sun } from "lucide-react";
 import { Outlet, useLocation, useNavigate, useParams } from "@/lib/router";
@@ -282,7 +282,9 @@ export function Layout() {
             className={cn("flex-1 overflow-auto p-4 md:p-6", isMobile && "pb-[calc(5rem+env(safe-area-inset-bottom))]")}
             onScroll={handleMainScroll}
           >
-            <Outlet />
+            <Suspense fallback={<div className="flex items-center justify-center h-full text-sm text-muted-foreground">Loading...</div>}>
+              <Outlet />
+            </Suspense>
           </main>
           <PropertiesPanel />
         </div>

@@ -18,6 +18,7 @@ import {
 } from "@paperclipai/db";
 import { extractProjectMentionIds } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { decodeCursor } from "../lib/pagination.js";
 
 const ALL_ISSUE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"];
 
@@ -55,6 +56,8 @@ export interface IssueFilters {
   projectId?: string;
   labelId?: string;
   q?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 type IssueRow = typeof issues.$inferSelect;
@@ -478,6 +481,17 @@ export function issueService(db: Db) {
       }
       conditions.push(isNull(issues.hiddenAt));
 
+      if (filters?.cursor) {
+        const decoded = decodeCursor(filters.cursor);
+        if (decoded?.updatedAt && decoded?.id) {
+          conditions.push(
+            sql`(${issues.updatedAt}, ${issues.id}) < (${new Date(decoded.updatedAt as string)}, ${decoded.id as string})`,
+          );
+        }
+      }
+
+      const fetchLimit = (filters?.limit ?? 100) + 1;
+
       const priorityOrder = sql`CASE ${issues.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
       const searchOrder = sql<number>`
         CASE
@@ -494,7 +508,8 @@ export function issueService(db: Db) {
         .select()
         .from(issues)
         .where(and(...conditions))
-        .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt));
+        .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt))
+        .limit(fetchLimit);
       const withLabels = await withIssueLabels(db, rows);
       const runMap = await activeRunMapForIssues(db, withLabels);
       const withRuns = withActiveRuns(withLabels, runMap);

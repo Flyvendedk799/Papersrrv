@@ -1,12 +1,15 @@
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { activityLog, heartbeatRuns, issues } from "@paperclipai/db";
+import { decodeCursor } from "../lib/pagination.js";
 
 export interface ActivityFilters {
   companyId: string;
   agentId?: string;
   entityType?: string;
   entityId?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 export function activityService(db: Db) {
@@ -24,6 +27,17 @@ export function activityService(db: Db) {
       if (filters.entityId) {
         conditions.push(eq(activityLog.entityId, filters.entityId));
       }
+
+      if (filters.cursor) {
+        const decoded = decodeCursor(filters.cursor);
+        if (decoded?.createdAt && decoded?.id) {
+          conditions.push(
+            sql`(${activityLog.createdAt}, ${activityLog.id}) < (${decoded.createdAt}, ${decoded.id})`,
+          );
+        }
+      }
+
+      const take = (filters.limit ?? 100) + 1;
 
       return db
         .select({ activityLog })
@@ -45,6 +59,7 @@ export function activityService(db: Db) {
           ),
         )
         .orderBy(desc(activityLog.createdAt))
+        .limit(take)
         .then((rows) => rows.map((r) => r.activityLog));
     },
 

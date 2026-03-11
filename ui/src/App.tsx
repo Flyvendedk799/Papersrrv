@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { lazy, useEffect, useRef } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,29 +9,33 @@ import { healthApi } from "./api/health";
 import { Dashboard } from "./pages/Dashboard";
 import { Companies } from "./pages/Companies";
 import { Agents } from "./pages/Agents";
-import { AgentDetail } from "./pages/AgentDetail";
 import { Projects } from "./pages/Projects";
-import { ProjectDetail } from "./pages/ProjectDetail";
 import { Issues } from "./pages/Issues";
-import { IssueDetail } from "./pages/IssueDetail";
 import { Goals } from "./pages/Goals";
-import { GoalDetail } from "./pages/GoalDetail";
 import { Approvals } from "./pages/Approvals";
-import { ApprovalDetail } from "./pages/ApprovalDetail";
-import { Costs } from "./pages/Costs";
-import { Activity } from "./pages/Activity";
 import { Inbox } from "./pages/Inbox";
 import { CompanySettings } from "./pages/CompanySettings";
-import { DesignGuide } from "./pages/DesignGuide";
-import { OrgChart } from "./pages/OrgChart";
 import { NewAgent } from "./pages/NewAgent";
-import { Files } from "./pages/Files";
+import { Workflows } from "./pages/Workflows";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { InviteLandingPage } from "./pages/InviteLanding";
 import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
 import { useDialog } from "./context/DialogContext";
+
+// Route-based code splitting: lazy-load heavier page components
+const AgentDetail = lazy(() => import("./pages/AgentDetail").then(m => ({ default: m.AgentDetail })));
+const IssueDetail = lazy(() => import("./pages/IssueDetail").then(m => ({ default: m.IssueDetail })));
+const ProjectDetail = lazy(() => import("./pages/ProjectDetail").then(m => ({ default: m.ProjectDetail })));
+const GoalDetail = lazy(() => import("./pages/GoalDetail").then(m => ({ default: m.GoalDetail })));
+const ApprovalDetail = lazy(() => import("./pages/ApprovalDetail").then(m => ({ default: m.ApprovalDetail })));
+const Costs = lazy(() => import("./pages/Costs").then(m => ({ default: m.Costs })));
+const Activity = lazy(() => import("./pages/Activity").then(m => ({ default: m.Activity })));
+const Files = lazy(() => import("./pages/Files").then(m => ({ default: m.Files })));
+const OrgChart = lazy(() => import("./pages/OrgChart").then(m => ({ default: m.OrgChart })));
+const DesignGuide = lazy(() => import("./pages/DesignGuide").then(m => ({ default: m.DesignGuide })));
+const WorkflowDetail = lazy(() => import("./pages/WorkflowDetail").then(m => ({ default: m.WorkflowDetail })));
 
 function BootstrapPendingPage() {
   return (
@@ -113,6 +117,10 @@ function boardRoutes() {
       <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
       <Route path="files" element={<Files />} />
+      <Route path="workflows" element={<Workflows />} />
+      <Route path="workflows/:workflowId" element={<WorkflowDetail />} />
+      <Route path="workflows/:workflowId/:tab" element={<WorkflowDetail />} />
+      <Route path="workflows/:workflowId/runs/:runId" element={<WorkflowDetail />} />
       <Route path="issues" element={<Issues />} />
       <Route path="issues/all" element={<Navigate to="/issues" replace />} />
       <Route path="issues/active" element={<Navigate to="/issues" replace />} />

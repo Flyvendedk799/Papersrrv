@@ -68,6 +68,20 @@ export type {
   FileTreeNode,
   FileWithHistory,
   IssueSummaryFile,
+  Workflow,
+  WorkflowStep,
+  WorkflowEdge,
+  WorkflowRun,
+  WorkflowStepRun,
+  WorkflowTemplate,
+  AgentRunStepConfig,
+  ConditionStepConfig,
+  ParallelGateStepConfig,
+  ApprovalStepConfig,
+  TransformStepConfig,
+  WebhookStepConfig,
+  SubWorkflowStepConfig,
+  WorkflowDefinition,
 } from "./types/index.js";
 
 export type {

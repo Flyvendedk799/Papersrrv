@@ -12,3 +12,8 @@ export { dashboardRoutes } from "./dashboard.js";
 export { sidebarBadgeRoutes } from "./sidebar-badges.js";
 export { llmRoutes } from "./llms.js";
 export { accessRoutes } from "./access.js";
+export { workflowRoutes } from "./workflows.js";
+export { docsRoutes } from "./docs.js";
+export { jobRoutes } from "./jobs.js";
+export { agentCollaborationRoutes } from "./agent-collaboration.js";
+export { auditRoutes } from "./audit.js";
