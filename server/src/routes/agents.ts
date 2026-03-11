@@ -1826,10 +1826,16 @@ export function agentRoutes(db: Db) {
     const effectiveModel = (typeof requestedModel === "string" && requestedModel) || defaultModelByAdapter[adapterType] || "auto";
 
     const modelJson = JSON.stringify(effectiveModel); // e.g. '"gpt-5.3-codex"'
+    // Use CASE to handle agents whose adapter_config is not a JSON object
+    // (null, scalar, or empty). In those cases, build a fresh object.
     const result = await db.execute<{ id: string; name: string }>(sql`
       UPDATE agents
       SET adapter_type = ${adapterType},
-          adapter_config = jsonb_set(coalesce(adapter_config, '{}'::jsonb), '{model}', ${modelJson}::jsonb),
+          adapter_config = CASE
+            WHEN jsonb_typeof(adapter_config) = 'object'
+            THEN jsonb_set(adapter_config, '{model}', ${modelJson}::jsonb)
+            ELSE jsonb_build_object('model', ${modelJson}::jsonb)
+          END,
           updated_at = now()
       WHERE company_id = ${companyId} AND status != 'terminated'
       RETURNING id, name

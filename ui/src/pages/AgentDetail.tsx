@@ -344,10 +344,17 @@ export function AgentDetail() {
       queryClient.setQueryData(agentKey, { ...agent, status: newStatus });
       return { previous, agentKey };
     },
-    onSuccess: (_data, action) => {
+    onSuccess: (data, action) => {
       setActionError(null);
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
+      // For pause/resume/terminate: write the server response directly into cache
+      // instead of invalidating (which refetches and can get stale 304 data).
+      if (action !== "invoke" && data && typeof data === "object" && "status" in data) {
+        const agentKey = [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null];
+        queryClient.setQueryData(agentKey, data);
+      } else {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(routeAgentRef) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentLookupRef) });
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentLookupRef) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agentLookupRef) });
       if (resolvedCompanyId) {
@@ -356,8 +363,8 @@ export function AgentDetail() {
           queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(resolvedCompanyId, agent.id) });
         }
       }
-      if (action === "invoke" && _data && typeof _data === "object" && "id" in _data) {
-        navigate(`/agents/${canonicalAgentRef}/runs/${(_data as HeartbeatRun).id}`);
+      if (action === "invoke" && data && typeof data === "object" && "id" in data) {
+        navigate(`/agents/${canonicalAgentRef}/runs/${(data as HeartbeatRun).id}`);
       }
     },
     onError: (err, _action, context) => {
