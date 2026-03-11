@@ -106,12 +106,28 @@ async function loadInstructionsFile(filePath) {
   }
 }
 
+// Default CLI command per adapter type
+const DEFAULT_COMMANDS = {
+  cursor: "wsl -d Ubuntu -- /root/.local/bin/agent",
+  codex_local: "wsl -d Ubuntu -- codex",
+  claude_local: "wsl -d Ubuntu -- claude",
+  opencode_local: "wsl -d Ubuntu -- opencode",
+  pi_local: "wsl -d Ubuntu -- pi",
+};
+
+const DEFAULT_MODELS = {
+  cursor: "composer-1.5",
+  codex_local: "gpt-5.3-codex",
+  claude_local: "claude-sonnet-4-5-20250929",
+};
+
 async function executeRun(runId, agent, context, authToken) {
   const config = typeof agent.adapterConfig === "string"
     ? JSON.parse(agent.adapterConfig)
     : agent.adapterConfig || {};
 
-  const command = config.command || "wsl -d Ubuntu -- /root/.local/bin/agent";
+  const adapterType = agent.adapterType || "cursor";
+  const command = config.command || DEFAULT_COMMANDS[adapterType] || DEFAULT_COMMANDS.cursor;
   const cwd = resolveLocalCwd(config.cwd);
 
   // Isolate workspaces to prevent parallel agents from locking each other out
@@ -132,9 +148,9 @@ async function executeRun(runId, agent, context, authToken) {
     } catch { /* best-effort */ }
   }
 
-  const model = config.model || "composer-1.5";
+  const model = config.model || DEFAULT_MODELS[adapterType] || "auto";
 
-  console.log(`[run:${runId}] Agent: ${agent.name} (Started)`);
+  console.log(`[run:${runId}] Agent: ${agent.name} | Adapter: ${adapterType} | Model: ${model} (Started)`);
 
   const issueId = context.issueId || "";
   const wakeReason = context.wakeReason || context.reason || "heartbeat_timer";
@@ -180,9 +196,27 @@ async function executeRun(runId, agent, context, authToken) {
 
   const parts = command.split(/\s+/);
   const cmd = parts[0];
-  const args = [...parts.slice(1), "-p", "--output-format", "stream-json", "--workspace", workspaceOverride];
-  if (model) args.push("--model", model);
-  if (config.dangerouslyBypassApprovalsAndSandbox) args.push("--yolo");
+  let args;
+  if (adapterType === "codex_local") {
+    // Codex CLI: codex exec --json --model <model> [--dangerously-bypass-approvals-and-sandbox] -
+    args = [...parts.slice(1), "exec", "--json"];
+    if (model) args.push("--model", model);
+    if (config.dangerouslyBypassApprovalsAndSandbox !== false) args.push("--dangerously-bypass-approvals-and-sandbox");
+    if (config.extraArgs?.length) args.push(...config.extraArgs);
+    args.push("-"); // read prompt from stdin
+  } else if (adapterType === "claude_local") {
+    // Claude CLI: claude -p --output-format stream-json --model <model>
+    args = [...parts.slice(1), "-p", "--output-format", "stream-json"];
+    if (model) args.push("--model", model);
+    if (config.dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
+    if (config.extraArgs?.length) args.push(...config.extraArgs);
+  } else {
+    // Cursor CLI (default): agent -p --output-format stream-json --workspace <dir>
+    args = [...parts.slice(1), "-p", "--output-format", "stream-json", "--workspace", workspaceOverride];
+    if (model) args.push("--model", model);
+    if (config.dangerouslyBypassApprovalsAndSandbox) args.push("--yolo");
+    if (config.extraArgs?.length) args.push(...config.extraArgs);
+  }
 
   // Log buffering & local file writing
   let logBuffer = [];
@@ -289,7 +323,9 @@ async function pollAndClaim(activeRunIds) {
     const claimResult = await apiFetch(`/runner/claim/${runId}`, { method: "POST" });
     const { agent, run, authToken } = claimResult;
 
-    console.log(`✅ Started: ${agent.name} [Running: ${activeRunIds.size + 1}/${MAX_CONCURRENT_RUNS}]`);
+    const adType = agent.adapterType || "cursor";
+    const mdl = (agent.adapterConfig?.model) || DEFAULT_MODELS[adType] || "auto";
+    console.log(`✅ Started: ${agent.name} [${adType}/${mdl}] [Running: ${activeRunIds.size + 1}/${MAX_CONCURRENT_RUNS}]`);
     activeRunIds.add(runId);
 
     executeRun(runId, agent, run.contextSnapshot || {}, authToken)
