@@ -339,7 +339,8 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
 
   // Use agent home as workspace so CLIs auto-discover AGENTS.md, HEARTBEAT.md etc.
   // as project files — avoids slow manual file reads via shell commands.
-  const workspaceDir = agentHome;
+  // May be overridden below if a project repo is cloned.
+  let workspaceDir = agentHome;
 
   // Instructions file: resolve from config or derive from agent name
   const instructionsFilePath = config.instructionsFilePath
@@ -473,6 +474,42 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
         { stdio: "ignore" },
       );
     } catch { /* best-effort */ }
+  }
+
+  // ── Project repo clone ──
+  // If the issue is linked to a project with a git repo, clone/update it and use as workspace
+  const repoUrl = workspaceContext.repoUrl;
+  if (repoUrl && isWsl && ghToken) {
+    // Derive a stable directory name from the repo URL
+    const repoSlug = repoUrl.replace(/.*\/\//, "").replace(/\.git$/, "").replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-");
+    const repoDir = `${baseWorkspace}/.repos/${repoSlug}`;
+    const repoRef = workspaceContext.repoRef || "main";
+    try {
+      // Inject token into URL for clone/fetch
+      const authedUrl = repoUrl.replace("https://", `https://x-access-token:${ghToken}@`);
+      const exists = execSync(
+        `wsl -d ${WSL_DISTRO} -- bash -c "[ -d '${repoDir}/.git' ] && echo yes || echo no"`,
+        { encoding: "utf8", stdio: ["pipe", "pipe", "ignore"] },
+      ).trim();
+      if (exists === "yes") {
+        // Fetch latest + reset to remote branch
+        execSync(
+          `wsl -d ${WSL_DISTRO} -- bash -c "cd '${repoDir}' && git remote set-url origin '${authedUrl}' && git fetch origin '${repoRef}' --depth=1 2>/dev/null && git checkout -B '${repoRef}' 'origin/${repoRef}' 2>/dev/null || true"`,
+          { stdio: "ignore", timeout: 60000 },
+        );
+      } else {
+        // Shallow clone
+        execSync(
+          `wsl -d ${WSL_DISTRO} -- bash -c "git clone --depth=1 --branch '${repoRef}' '${authedUrl}' '${repoDir}'"`,
+          { stdio: "ignore", timeout: 120000 },
+        );
+      }
+      workspaceDir = repoDir;
+      console.log(`📦 Project repo ready: ${repoUrl} → ${repoDir}`);
+    } catch (err) {
+      console.warn(`⚠ Failed to clone/update project repo ${repoUrl}: ${err.message}`);
+      // Fall back to agent home — agent will have to work without the repo
+    }
   }
 
   // ── WSLENV forwarding ──
