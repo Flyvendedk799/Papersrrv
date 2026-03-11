@@ -972,6 +972,15 @@ function ConfigSummary({
                 <FileText className="h-4 w-4 flex-shrink-0" />
                 {instructionsPath.split("/").pop()}
               </Link>
+              {instructionsPath && (
+                <Link
+                  to={`/files?file=${encodeURIComponent(instructionsPath.replace(/[^/]+$/, 'HEARTBEAT.md'))}`}
+                  className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400 font-mono"
+                >
+                  <FileText className="h-4 w-4 flex-shrink-0" />
+                  HEARTBEAT.md
+                </Link>
+              )}
               {standardsDir && (
                 <>
                   <div className="text-xs text-muted-foreground pt-1">Standards</div>

@@ -952,8 +952,25 @@ export function IssueDetail() {
                     >
                       <FileText className={cn("h-3.5 w-3.5 shrink-0", isMd ? "text-blue-500" : "text-muted-foreground")} />
                       <span className="truncate font-mono text-xs">{snap.filePath}</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
-                        {relativeTime(snap.capturedAt)}
+                      {snap.operation && (
+                        <span className={cn(
+                          "text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0",
+                          snap.operation === "write" ? "bg-green-500/10 text-green-600" :
+                          snap.operation === "edit" ? "bg-yellow-500/10 text-yellow-600" :
+                          snap.operation === "delete" ? "bg-red-500/10 text-red-600" :
+                          snap.operation === "read" ? "bg-blue-500/10 text-blue-600" :
+                          "bg-muted text-muted-foreground"
+                        )}>
+                          {snap.operation}
+                        </span>
+                      )}
+                      <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                        {snap.agentName && (
+                          <span className="text-[10px] text-muted-foreground/60">{snap.agentName}</span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground">
+                          {relativeTime(snap.capturedAt)}
+                        </span>
                       </span>
                     </button>
                   );
