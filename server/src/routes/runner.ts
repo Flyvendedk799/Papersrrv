@@ -184,6 +184,28 @@ export function runnerRoutes(db: Db) {
         .where(eq(agentRuntimeState.agentId, claimed.agentId))
         .then((rows) => rows[0] ?? null);
 
+      // Look up task session for session resumption (task-scoped sessions)
+      let taskSessionParams: Record<string, unknown> | null = null;
+      const taskId = (context as Record<string, unknown>)?.issueId
+        || (context as Record<string, unknown>)?.taskId;
+      const taskKey = taskId ? String(taskId) : null;
+      if (taskKey && agent) {
+        const taskSession = await db
+          .select()
+          .from(agentTaskSessions)
+          .where(
+            and(
+              eq(agentTaskSessions.agentId, agent.id),
+              eq(agentTaskSessions.taskKey, taskKey),
+              eq(agentTaskSessions.adapterType, agent.adapterType ?? "cursor"),
+            ),
+          )
+          .then((rows) => rows[0] ?? null);
+        if (taskSession?.sessionParamsJson) {
+          taskSessionParams = taskSession.sessionParamsJson;
+        }
+      }
+
       // Initialize seq counter for this run
       runSeqCounters.set(claimed.id, 0);
 
@@ -265,6 +287,7 @@ export function runnerRoutes(db: Db) {
           : null,
         runtime: {
           sessionId: runtimeState?.sessionId ?? null,
+          sessionParams: taskSessionParams ?? (runtimeState?.sessionId ? { sessionId: runtimeState.sessionId } : null),
           stateJson: runtimeState?.stateJson ?? null,
         },
         authToken,
@@ -376,6 +399,8 @@ export function runnerRoutes(db: Db) {
         costUsd?: number | null;
         billingType?: string | null;
         sessionId?: string | null;
+        sessionParams?: Record<string, unknown> | null;
+        sessionDisplayId?: string | null;
         summary?: string | null;
         stdoutExcerpt?: string | null;
         stderrExcerpt?: string | null;
@@ -510,8 +535,8 @@ export function runnerRoutes(db: Db) {
         },
       });
 
-      // Update runtime state (token usage)
-      if (result.usage && agent) {
+      // Update runtime state (token usage + session)
+      if (agent) {
         const existing = await db
           .select()
           .from(agentRuntimeState)
@@ -519,15 +544,73 @@ export function runnerRoutes(db: Db) {
           .then((rows) => rows[0] ?? null);
 
         if (existing) {
+          const updates: Record<string, unknown> = {
+            sessionId: result.sessionId ?? existing.sessionId,
+            lastRunId: runId,
+            lastRunStatus: status,
+            lastError: status !== "succeeded" ? (result.errorMessage ?? null) : null,
+            updatedAt: new Date(),
+          };
+          if (result.usage) {
+            updates.totalInputTokens = (existing.totalInputTokens ?? 0) + (result.usage.inputTokens ?? 0);
+            updates.totalOutputTokens = (existing.totalOutputTokens ?? 0) + (result.usage.outputTokens ?? 0);
+            updates.totalCachedInputTokens = (existing.totalCachedInputTokens ?? 0) + (result.usage.cachedInputTokens ?? 0);
+          }
+          if (effectiveCostUsd != null) {
+            updates.totalCostCents = (existing.totalCostCents ?? 0) + Math.round(effectiveCostUsd * 100);
+          }
           await db
             .update(agentRuntimeState)
-            .set({
-              totalInputTokens: (existing.totalInputTokens ?? 0) + (result.usage.inputTokens ?? 0),
-              totalOutputTokens: (existing.totalOutputTokens ?? 0) + (result.usage.outputTokens ?? 0),
-              sessionId: result.sessionId ?? existing.sessionId,
-              updatedAt: new Date(),
-            })
+            .set(updates)
             .where(eq(agentRuntimeState.agentId, agent.id));
+        }
+      }
+
+      // Persist task-scoped session for cross-heartbeat resume
+      if (agent && result.sessionParams) {
+        const ctx = run.contextSnapshot as Record<string, unknown> | null;
+        const completedTaskKey = ctx?.issueId || ctx?.taskId;
+        if (completedTaskKey && typeof completedTaskKey === "string") {
+          try {
+            // Upsert: create or update the task session
+            const existingSession = await db
+              .select()
+              .from(agentTaskSessions)
+              .where(
+                and(
+                  eq(agentTaskSessions.agentId, agent.id),
+                  eq(agentTaskSessions.taskKey, completedTaskKey),
+                  eq(agentTaskSessions.adapterType, agent.adapterType ?? "cursor"),
+                ),
+              )
+              .then((rows) => rows[0] ?? null);
+
+            if (existingSession) {
+              await db
+                .update(agentTaskSessions)
+                .set({
+                  sessionParamsJson: result.sessionParams,
+                  sessionDisplayId: result.sessionDisplayId ?? result.sessionId ?? null,
+                  lastRunId: runId,
+                  lastError: status !== "succeeded" ? (result.errorMessage ?? null) : null,
+                  updatedAt: new Date(),
+                })
+                .where(eq(agentTaskSessions.id, existingSession.id));
+            } else {
+              await db.insert(agentTaskSessions).values({
+                companyId: run.companyId,
+                agentId: agent.id,
+                adapterType: agent.adapterType ?? "cursor",
+                taskKey: completedTaskKey,
+                sessionParamsJson: result.sessionParams,
+                sessionDisplayId: result.sessionDisplayId ?? result.sessionId ?? null,
+                lastRunId: runId,
+                lastError: status !== "succeeded" ? (result.errorMessage ?? null) : null,
+              });
+            }
+          } catch (sessionErr) {
+            logger.warn({ err: sessionErr, runId }, "Failed to persist task session");
+          }
         }
       }
 
