@@ -2,11 +2,12 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, ZoomIn, ZoomOut, RotateCcw, Bot, GitFork, ShieldCheck,
-  ArrowRightLeft, Webhook, Layers, Trash2, Link2, X, ChevronDown,
+  ArrowRightLeft, Webhook, Layers, Trash2, Link2, X, ChevronDown, Puzzle,
 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { workflowsApi } from "../../api/workflows";
 import { agentsApi } from "../../api/agents";
+import { skillsApi } from "../../api/skills";
 import { queryKeys } from "../../lib/queryKeys";
 import { useCompany } from "../../context/CompanyContext";
 import { useToast } from "../../context/ToastContext";
@@ -61,6 +62,11 @@ export function WorkflowBuilder({ workflowId }: Props) {
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(companyId),
     queryFn: () => agentsApi.list(companyId),
+  });
+
+  const { data: skills } = useQuery({
+    queryKey: queryKeys.skills.list(companyId),
+    queryFn: () => skillsApi.list(companyId),
   });
 
   const { data: allWorkflows } = useQuery({
@@ -472,6 +478,12 @@ export function WorkflowBuilder({ workflowId }: Props) {
                 onClick={() => handleStepClick(step.id)}
                 onMouseDown={(e) => handleDragStart(step.id, e)}
               >
+                {!!(step.config as Record<string, unknown>)?.skillName && (
+                  <div className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[9px] font-bold bg-purple-500 text-white rounded-full shadow-sm flex items-center gap-0.5 z-10">
+                    <Puzzle className="h-2.5 w-2.5" />
+                    {String((step.config as Record<string, unknown>).skillName)}
+                  </div>
+                )}
                 <div className="flex items-center gap-2 px-3 py-2.5">
                   <div className={cn("w-7 h-7 rounded-md flex items-center justify-center text-white shrink-0", stepType?.color ?? "bg-gray-500")}>
                     <Icon className="h-3.5 w-3.5" />
@@ -648,6 +660,34 @@ export function WorkflowBuilder({ workflowId }: Props) {
                     onChange={(e) => updateConfigAndSave("model", e.target.value || undefined)}
                   />
                 </div>
+
+                <hr className="border-border" />
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Skill</h4>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Skill</label>
+                  <select
+                    className="w-full mt-1 px-2.5 py-1.5 text-sm border border-border rounded-md bg-background focus:ring-1 focus:ring-indigo-500 outline-none"
+                    value={(cfg.skillName as string) ?? ""}
+                    onChange={(e) => updateConfigAndSave("skillName", e.target.value || undefined)}
+                  >
+                    <option value="">None</option>
+                    {skills?.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  </select>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Injects skill instructions into the agent&apos;s prompt
+                  </p>
+                </div>
+                {!!cfg.skillName && (
+                  <label className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={!!cfg.skillFiles}
+                      onChange={(e) => updateConfigAndSave("skillFiles", e.target.checked)}
+                      className="rounded border-border"
+                    />
+                    <span className="text-muted-foreground">Include skill&apos;s bundled files</span>
+                  </label>
+                )}
               </div>
             )}
 

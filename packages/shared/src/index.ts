@@ -82,6 +82,7 @@ export type {
   WebhookStepConfig,
   SubWorkflowStepConfig,
   WorkflowDefinition,
+  TriggerInput,
   CompanySkill,
 } from "./types/index.js";
 

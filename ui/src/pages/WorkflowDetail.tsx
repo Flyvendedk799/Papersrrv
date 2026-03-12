@@ -9,6 +9,8 @@ import { queryKeys } from "../lib/queryKeys";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { WorkflowBuilder } from "../components/workflows/WorkflowBuilder";
 import { WorkflowRunView } from "../components/workflows/WorkflowRunView";
+import { WorkflowRunForm } from "../components/workflows/WorkflowRunForm";
+import type { TriggerInput } from "@paperclipai/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +67,7 @@ export function WorkflowDetail() {
 
   // Run detail state
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [showRunForm, setShowRunForm] = useState(false);
 
   const {
     data: workflow,
@@ -136,8 +139,10 @@ export function WorkflowDetail() {
   });
 
   const startRun = useMutation({
-    mutationFn: () => workflowsApi.startRun(selectedCompanyId!, workflowId!),
+    mutationFn: (payload?: Record<string, unknown> | void) =>
+      workflowsApi.startRun(selectedCompanyId!, workflowId!, payload ? { triggerPayload: payload } : undefined),
     onSuccess: () => {
+      setShowRunForm(false);
       queryClient.invalidateQueries({
         queryKey: queryKeys.workflows.runs(selectedCompanyId!, workflowId!),
       });
@@ -221,7 +226,11 @@ export function WorkflowDetail() {
                 <TooltipTrigger asChild>
                   <Button
                     size="sm"
-                    onClick={() => startRun.mutate()}
+                    onClick={() => {
+                      const inputs = (workflow.triggerConfig as Record<string, unknown>)?.inputs;
+                      if (Array.isArray(inputs) && inputs.length > 0) setShowRunForm(true);
+                      else startRun.mutate();
+                    }}
                     disabled={startRun.isPending}
                   >
                     <Play className="h-3.5 w-3.5 mr-1.5" />
@@ -320,7 +329,15 @@ export function WorkflowDetail() {
                 <div className="text-center py-8">
                   <p className="text-sm text-muted-foreground mb-3">No runs yet.</p>
                   {workflow.status === "active" && (
-                    <Button size="sm" onClick={() => startRun.mutate()} disabled={startRun.isPending}>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const inputs = (workflow.triggerConfig as Record<string, unknown>)?.inputs;
+                        if (Array.isArray(inputs) && inputs.length > 0) setShowRunForm(true);
+                        else startRun.mutate();
+                      }}
+                      disabled={startRun.isPending}
+                    >
                       <Play className="h-3.5 w-3.5 mr-1.5" />
                       Start First Run
                     </Button>
@@ -443,6 +460,15 @@ export function WorkflowDetail() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {showRunForm && (
+        <WorkflowRunForm
+          inputs={((workflow.triggerConfig as Record<string, unknown>)?.inputs ?? []) as TriggerInput[]}
+          onSubmit={(payload) => startRun.mutate(payload)}
+          onCancel={() => setShowRunForm(false)}
+          isPending={startRun.isPending}
+        />
+      )}
     </div>
   );
 }

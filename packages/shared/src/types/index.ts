@@ -87,4 +87,5 @@ export type {
   WebhookStepConfig,
   SubWorkflowStepConfig,
   WorkflowDefinition,
+  TriggerInput,
 } from "./workflow.js";

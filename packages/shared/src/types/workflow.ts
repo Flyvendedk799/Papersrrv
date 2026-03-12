@@ -108,6 +108,19 @@ export interface AgentRunStepConfig {
   timeoutSec?: number;
   retryPolicy?: { maxRetries: number; backoffSec: number };
   adapterOverrides?: Record<string, unknown>;
+  skillName?: string;
+  skillFiles?: boolean;
+}
+
+export interface TriggerInput {
+  key: string;
+  label: string;
+  type: "text" | "textarea" | "boolean" | "select" | "password";
+  required?: boolean;
+  defaultValue?: unknown;
+  placeholder?: string;
+  options?: Array<{ label: string; value: string }>;
+  showWhen?: { field: string; value: unknown };
 }
 
 export interface ConditionStepConfig {

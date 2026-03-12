@@ -95,7 +95,7 @@ export const workflowsApi = {
   startRun: (
     companyId: string,
     workflowId: string,
-    data?: { issueId?: string; input?: Record<string, unknown> },
+    data?: { issueId?: string; triggerPayload?: Record<string, unknown> },
   ) => api.post<WorkflowRun>(`/companies/${companyId}/workflows/${workflowId}/run`, data ?? {}),
 
   listRuns: (companyId: string, workflowId: string) =>

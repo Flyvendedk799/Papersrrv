@@ -10,6 +10,7 @@ import {
   heartbeatRuns,
   agents,
   agentWakeupRequests,
+  companySkills,
 } from "@paperclipai/db";
 import { publishLiveEvent } from "./live-events.js";
 import { logger } from "../middleware/logger.js";
@@ -115,7 +116,7 @@ export function workflowEngine(db: Db) {
       status: "running",
       triggerType: opts.triggerType,
       triggerPayload: opts.triggerPayload ?? {},
-      context: {},
+      context: { ...(opts.triggerPayload ?? {}) },
       issueId: opts.issueId ?? null,
       parentRunId: opts.parentRunId ?? null,
       startedAt: new Date(),
@@ -279,6 +280,24 @@ export function workflowEngine(db: Db) {
     };
     if (config.promptTemplate) payload.stepInstructions = config.promptTemplate;
     if (config.model) payload.adapterOverrides = { model: config.model };
+
+    // Skill injection
+    if (config.skillName) {
+      const [skill] = await db.select().from(companySkills)
+        .where(and(
+          eq(companySkills.name, config.skillName as string),
+          eq(companySkills.companyId, run.companyId)
+        ));
+      if (skill) {
+        const existing = (payload.stepInstructions as string) ?? "";
+        payload.stepInstructions = `<skill name="${skill.name}">\n${skill.content}\n</skill>\n\n${existing}`;
+        if (config.skillFiles && skill.files && Object.keys(skill.files).length > 0) {
+          payload.skillFiles = skill.files;
+        }
+      } else {
+        logger.warn({ skillName: config.skillName }, "workflow: skill not found, continuing without");
+      }
+    }
 
     // Enqueue wakeup - the heartbeat system handles execution
     const [wakeup] = await db.insert(agentWakeupRequests).values({

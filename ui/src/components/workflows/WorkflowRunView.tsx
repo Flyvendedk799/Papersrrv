@@ -9,6 +9,8 @@ import { workflowsApi } from "../../api/workflows";
 import { queryKeys } from "../../lib/queryKeys";
 import { useCompany } from "../../context/CompanyContext";
 import { cn } from "../../lib/utils";
+import { WorkflowRunDag } from "./WorkflowRunDag";
+import { WorkflowOutputs } from "./WorkflowOutputs";
 import type { WorkflowStepRun, WorkflowStep } from "@paperclipai/shared";
 
 const statusConfig: Record<string, { icon: typeof CheckCircle2; color: string; label: string; bg: string; border: string }> = {
@@ -52,6 +54,7 @@ export function WorkflowRunView({ runId, onApprove, onReject }: Props) {
   const { selectedCompanyId } = useCompany();
   const companyId = selectedCompanyId!;
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<"pipeline" | "dag">("pipeline");
 
   const { data: run, isLoading } = useQuery({
     queryKey: queryKeys.workflows.run(companyId, runId),
@@ -131,6 +134,32 @@ export function WorkflowRunView({ runId, onApprove, onReject }: Props) {
         )}
       </div>
 
+      {/* View toggle */}
+      <div className="flex items-center gap-1 text-xs">
+        <button
+          onClick={() => setViewMode("pipeline")}
+          className={cn(
+            "px-2.5 py-1 rounded-md transition-colors",
+            viewMode === "pipeline" ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50",
+          )}
+        >
+          Pipeline
+        </button>
+        <button
+          onClick={() => setViewMode("dag")}
+          className={cn(
+            "px-2.5 py-1 rounded-md transition-colors",
+            viewMode === "dag" ? "bg-accent font-medium" : "text-muted-foreground hover:bg-accent/50",
+          )}
+        >
+          DAG
+        </button>
+      </div>
+
+      {viewMode === "dag" ? (
+        <WorkflowRunDag workflowId={run.workflowId} runId={runId} />
+      ) : (
+      <>
       {/* Step runs as visual pipeline */}
       <div className="space-y-0">
         {stepRuns.map((sr, idx) => {
@@ -248,6 +277,16 @@ export function WorkflowRunView({ runId, onApprove, onReject }: Props) {
       {run.error && (
         <div className="px-3 py-2 text-xs text-red-600 bg-red-50 dark:bg-red-950/20 rounded-md border border-red-200 dark:border-red-800">
           <span className="font-medium">Error: </span>{run.error}
+        </div>
+      )}
+      </>
+      )}
+
+      {/* Workflow outputs */}
+      {run.status === "succeeded" && stepRuns.length > 0 && (
+        <div className="border-t border-border mt-4 pt-4">
+          <h3 className="text-sm font-medium mb-3">Workflow Outputs</h3>
+          <WorkflowOutputs stepRuns={stepRuns} />
         </div>
       )}
     </div>

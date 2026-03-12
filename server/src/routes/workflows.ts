@@ -596,6 +596,19 @@ export function workflowRoutes(db: Db) {
         return;
       }
 
+      // Validate trigger inputs if schema defined
+      const inputSchema = (workflow.triggerConfig as Record<string, unknown>)?.inputs;
+      if (Array.isArray(inputSchema)) {
+        const payload = req.body.triggerPayload ?? {};
+        const missing = inputSchema
+          .filter((inp: any) => inp.required && (payload[inp.key] === undefined || payload[inp.key] === ""))
+          .map((inp: any) => inp.label);
+        if (missing.length > 0) {
+          res.status(400).json({ error: `Missing required inputs: ${missing.join(", ")}` });
+          return;
+        }
+      }
+
       const actor = getActorInfo(req);
       const [run] = await db
         .insert(workflowRuns)
@@ -605,7 +618,7 @@ export function workflowRoutes(db: Db) {
           status: "queued",
           triggerType: "manual",
           triggerPayload: req.body.triggerPayload ?? {},
-          context: req.body.context ?? {},
+          context: { ...(req.body.triggerPayload ?? {}), ...(req.body.context ?? {}) },
           issueId: req.body.issueId ?? null,
           createdByUserId: actor.actorType === "user" ? actor.actorId : null,
           createdByAgentId: actor.actorType === "agent" ? actor.actorId : null,
