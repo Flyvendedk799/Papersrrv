@@ -30,6 +30,7 @@ import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { heartbeatService } from "./services/index.js";
 import { registerAllJobs } from "./services/job-registrations.js";
 import { workflowEngine } from "./services/workflow-engine.js";
+import { seedBuiltInWorkflows } from "./services/seed-built-in-workflows.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -567,6 +568,11 @@ if (config.databaseBackupEnabled) {
 const engine = workflowEngine(db as any);
 engine.recoverInFlightRuns().catch((err) => {
   logger.warn({ err }, "workflow recovery failed");
+});
+
+// Seed built-in workflows for all companies (idempotent)
+seedBuiltInWorkflows(db as any).catch((err) => {
+  logger.warn({ err }, "built-in workflow seeding failed");
 });
 
 // One-time cost backfill: estimate costs from token counts for historical runs
