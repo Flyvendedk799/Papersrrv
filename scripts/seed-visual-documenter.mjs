@@ -2,28 +2,30 @@
 /**
  * Seed script: Visual Project Documenter workflow + built-in template.
  *
+ * Uses the REST API (works with embedded-postgres, no direct DB needed).
+ *
  * Usage:
  *   node scripts/seed-visual-documenter.mjs --company-id <UUID> --agent-id <UUID>
  *
- * If omitted, it will look for SEED_COMPANY_ID and SEED_AGENT_ID env vars.
+ * Options:
+ *   --api-url    Base URL (default: http://localhost:3100/api)
+ *   --company-id Company UUID (or SEED_COMPANY_ID env)
+ *   --agent-id   Agent UUID (or SEED_AGENT_ID env)
  */
 
-import postgres from "postgres";
-import { randomUUID } from "crypto";
 import { parseArgs } from "util";
 
 const { values: args } = parseArgs({
   options: {
     "company-id": { type: "string" },
     "agent-id": { type: "string" },
-    "database-url": { type: "string" },
+    "api-url": { type: "string" },
   },
 });
 
 const companyId = args["company-id"] ?? process.env.SEED_COMPANY_ID;
 const agentId = args["agent-id"] ?? process.env.SEED_AGENT_ID;
-const databaseUrl =
-  args["database-url"] ?? process.env.DATABASE_URL ?? "postgres://localhost:5432/paperclip";
+const apiUrl = args["api-url"] ?? process.env.API_URL ?? "http://localhost:3100/api";
 
 if (!companyId) {
   console.error("Error: --company-id or SEED_COMPANY_ID is required");
@@ -34,9 +36,24 @@ if (!agentId) {
   process.exit(1);
 }
 
-const sql = postgres(databaseUrl);
+// ── Helper ──────────────────────────────────────────────────────────────────
+
+async function api(method, path, body) {
+  const url = `${apiUrl}${path}`;
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${method} ${path} → ${res.status}: ${text}`);
+  }
+  return res.json();
+}
 
 // ── Trigger config with input form schema ──────────────────────────────────
+
 const triggerConfig = {
   inputs: [
     {
@@ -205,137 +222,80 @@ const stepDefs = [
 // ── Edge definitions (by step index) ─────────────────────────────────────────
 
 const edgeDefs = [
-  // Project Analysis → Auth Check
   { from: 0, to: 1, edgeType: "default" },
-  // Auth Check → Auth Login (true)
   { from: 1, to: 2, edgeType: "condition_true" },
-  // Auth Check → Auth Skip (false)
   { from: 1, to: 3, edgeType: "condition_false" },
-  // Auth Login → Documentation Plan
   { from: 2, to: 4, edgeType: "default" },
-  // Auth Skip → Documentation Plan
   { from: 3, to: 4, edgeType: "default" },
-  // Documentation Plan → Flow Capture
   { from: 4, to: 5, edgeType: "default" },
-  // Flow Capture → Tech Docs Check
   { from: 5, to: 6, edgeType: "default" },
-  // Tech Docs Check → Tech Docs Gen (true)
   { from: 6, to: 7, edgeType: "condition_true" },
-  // Tech Docs Check → Tech Docs Skip (false)
   { from: 6, to: 8, edgeType: "condition_false" },
-  // Tech Docs Gen → Content Assembly
   { from: 7, to: 9, edgeType: "default" },
-  // Tech Docs Skip → Content Assembly
   { from: 8, to: 9, edgeType: "default" },
-  // Content Assembly → Visual Assembly
   { from: 9, to: 10, edgeType: "default" },
-  // Visual Assembly → Review & Deliver
   { from: 10, to: 11, edgeType: "default" },
 ];
 
 // ── Main seed function ──────────────────────────────────────────────────────
 
 async function seed() {
-  console.log("Seeding Visual Project Documenter workflow...");
+  console.log("Seeding Visual Project Documenter workflow via REST API...");
+  console.log(`  API:     ${apiUrl}`);
   console.log(`  Company: ${companyId}`);
   console.log(`  Agent:   ${agentId}`);
 
+  const base = `/companies/${companyId}`;
+
   // 1. Create the workflow
-  const workflowId = randomUUID();
-  await sql`
-    INSERT INTO workflows (id, company_id, name, description, status, trigger_type, trigger_config, metadata)
-    VALUES (
-      ${workflowId},
-      ${companyId},
-      ${"Visual Project Documenter"},
-      ${"Automatically document any project with AI-powered screenshots, flow walkthroughs, and polished visual HTML output."},
-      ${"active"},
-      ${"manual"},
-      ${JSON.stringify(triggerConfig)},
-      ${JSON.stringify({ builtIn: true, version: "1.0.0" })}
-    )
-  `;
+  const workflow = await api("POST", `${base}/workflows`, {
+    name: "Visual Project Documenter",
+    description:
+      "Automatically document any project with AI-powered screenshots, flow walkthroughs, and polished visual HTML output.",
+    status: "active",
+    triggerType: "manual",
+    triggerConfig,
+    metadata: { builtIn: true, version: "1.0.0" },
+  });
+  const workflowId = workflow.id;
   console.log(`  Workflow created: ${workflowId}`);
 
-  // 2. Create steps
+  // 2. Create steps (sequentially to preserve order)
   const stepIds = [];
   for (const def of stepDefs) {
-    const stepId = randomUUID();
-    stepIds.push(stepId);
-
-    // agent_run steps get the agentId
-    const stepAgentId = def.stepType === "agent_run" ? agentId : null;
-
-    await sql`
-      INSERT INTO workflow_steps (id, workflow_id, company_id, name, description, step_order, step_type, agent_id, config, position, input_mapping)
-      VALUES (
-        ${stepId},
-        ${workflowId},
-        ${companyId},
-        ${def.name},
-        ${null},
-        ${def.stepOrder},
-        ${def.stepType},
-        ${stepAgentId},
-        ${JSON.stringify(def.config)},
-        ${JSON.stringify(def.position)},
-        ${JSON.stringify({})}
-      )
-    `;
+    const stepAgentId = def.stepType === "agent_run" ? agentId : undefined;
+    const step = await api("POST", `${base}/workflows/${workflowId}/steps`, {
+      name: def.name,
+      stepOrder: def.stepOrder,
+      stepType: def.stepType,
+      agentId: stepAgentId,
+      config: def.config,
+      position: def.position,
+      inputMapping: {},
+    });
+    stepIds.push(step.id);
   }
   console.log(`  Created ${stepIds.length} steps`);
 
   // 3. Create edges
   for (const edge of edgeDefs) {
-    const edgeId = randomUUID();
-    await sql`
-      INSERT INTO workflow_edges (id, workflow_id, company_id, source_step_id, target_step_id, edge_type)
-      VALUES (
-        ${edgeId},
-        ${workflowId},
-        ${companyId},
-        ${stepIds[edge.from]},
-        ${stepIds[edge.to]},
-        ${edge.edgeType}
-      )
-    `;
+    await api("POST", `${base}/workflows/${workflowId}/edges`, {
+      sourceStepId: stepIds[edge.from],
+      targetStepId: stepIds[edge.to],
+      edgeType: edge.edgeType,
+    });
   }
   console.log(`  Created ${edgeDefs.length} edges`);
 
-  // 4. Save as built-in template
-  const templateId = randomUUID();
-  const stepsJson = stepDefs.map((def, idx) => ({
-    id: stepIds[idx],
-    name: def.name,
-    stepOrder: def.stepOrder,
-    stepType: def.stepType,
-    agentId: def.stepType === "agent_run" ? agentId : null,
-    config: def.config,
-    position: def.position,
-    inputMapping: {},
-  }));
-  const edgesJson = edgeDefs.map((edge) => ({
-    id: randomUUID(),
-    sourceStepId: stepIds[edge.from],
-    targetStepId: stepIds[edge.to],
-    edgeType: edge.edgeType,
-    label: null,
-  }));
-
-  await sql`
-    INSERT INTO workflow_templates (id, company_id, name, description, category, steps_json, edges_json, is_built_in)
-    VALUES (
-      ${templateId},
-      ${companyId},
-      ${"Visual Project Documenter"},
-      ${"Automatically document any project with AI-powered screenshots, flow walkthroughs, and polished visual HTML output."},
-      ${"documentation"},
-      ${JSON.stringify(stepsJson)},
-      ${JSON.stringify(edgesJson)},
-      ${true}
-    )
-  `;
-  console.log(`  Template created: ${templateId}`);
+  // 4. Save as built-in template (snapshot from the workflow we just created)
+  await api("POST", `${base}/workflow-templates`, {
+    workflowId,
+    name: "Visual Project Documenter",
+    description:
+      "Automatically document any project with AI-powered screenshots, flow walkthroughs, and polished visual HTML output.",
+    category: "documentation",
+  });
+  console.log("  Template created (snapshot from workflow)");
 
   console.log("\nDone! Workflow is active and ready to run.");
 }
@@ -343,8 +303,6 @@ async function seed() {
 try {
   await seed();
 } catch (err) {
-  console.error("Seed failed:", err);
+  console.error("Seed failed:", err.message ?? err);
   process.exit(1);
-} finally {
-  await sql.end();
 }

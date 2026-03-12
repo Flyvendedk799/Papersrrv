@@ -240,6 +240,21 @@ async function applyPendingMigrationsManually(
       );
       if (existingEntry) continue;
 
+      // If the migration's schema objects already exist, just record the journal
+      // entry without re-running the SQL (avoids "already exists" crashes).
+      const alreadyApplied = await migrationContentAlreadyApplied(sql, migrationContent);
+      if (alreadyApplied) {
+        await recordMigrationHistoryEntry(
+          sql,
+          qualifiedTable,
+          columnNames,
+          migrationFile,
+          hash,
+          folderMillisByFileName.get(migrationFile) ?? Date.now(),
+        );
+        continue;
+      }
+
       await runInTransaction(sql, async () => {
         for (const statement of splitMigrationStatements(migrationContent)) {
           await sql.unsafe(statement);
@@ -380,6 +395,39 @@ async function migrationStatementAlreadyApplied(
   const addConstraintMatch = normalized.match(/^ALTER TABLE "([^"]+)" ADD CONSTRAINT "([^"]+)"/i);
   if (addConstraintMatch) {
     return constraintExists(sql, addConstraintMatch[2]);
+  }
+
+  // ALTER TABLE ... ALTER COLUMN (SET DEFAULT, SET NOT NULL, DROP NOT NULL, SET DATA TYPE)
+  // These are idempotent — safe to consider "applied" if the table and column exist.
+  const alterColumnMatch = normalized.match(
+    /^ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)"/i,
+  );
+  if (alterColumnMatch) {
+    return columnExists(sql, alterColumnMatch[1], alterColumnMatch[2]);
+  }
+
+  // ALTER TABLE ... DROP COLUMN — consider applied if column is already gone
+  const dropColumnMatch = normalized.match(
+    /^ALTER TABLE "([^"]+)" DROP COLUMN(?: IF EXISTS)? "([^"]+)"/i,
+  );
+  if (dropColumnMatch) {
+    const exists = await columnExists(sql, dropColumnMatch[1], dropColumnMatch[2]);
+    return !exists;
+  }
+
+  // DROP INDEX — consider applied if the index is already gone
+  const dropIndexMatch = normalized.match(/^DROP INDEX(?: IF EXISTS)? "([^"]+)"/i);
+  if (dropIndexMatch) {
+    const exists = await indexExists(sql, dropIndexMatch[1]);
+    return !exists;
+  }
+
+  // DML statements (UPDATE, INSERT, DELETE, WITH ... UPDATE), comments,
+  // DO $$ blocks, SET/FROM/WHERE continuations, and END tokens
+  // are not schema-defining — safe to consider "applied" when encountered
+  // during reconciliation (they were part of a migration that already ran).
+  if (/^(UPDATE |INSERT |DELETE |WITH |DO |SET |FROM |WHERE |END)/i.test(normalized) || /^--/.test(normalized)) {
+    return true;
   }
 
   // If we cannot reason about a statement safely, require manual migration.
@@ -642,13 +690,20 @@ export async function applyPendingMigrations(url: string): Promise<void> {
   const initialState = await inspectMigrations(url);
   if (initialState.status === "upToDate") return;
 
-  const sql = postgres(url, { max: 1 });
+  // If tables already exist but journal is empty/drifted, skip migratePg (it would
+  // crash on CREATE TABLE for existing tables) and go straight to reconciliation.
+  const skipMigratePg =
+    initialState.status === "needsMigrations" &&
+    (initialState.reason === "no-migration-journal-non-empty-db" || initialState.reason === "pending-migrations");
 
-  try {
-    const db = drizzlePg(sql);
-    await migratePg(db, { migrationsFolder: MIGRATIONS_FOLDER });
-  } finally {
-    await sql.end();
+  if (!skipMigratePg) {
+    const sql = postgres(url, { max: 1 });
+    try {
+      const db = drizzlePg(sql);
+      await migratePg(db, { migrationsFolder: MIGRATIONS_FOLDER });
+    } finally {
+      await sql.end();
+    }
   }
 
   let state = await inspectMigrations(url);
