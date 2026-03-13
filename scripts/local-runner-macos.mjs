@@ -289,6 +289,12 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
 
   console.log(`[run:${runId.slice(0, 8)}] ${agent.name} | ${adapterType} | ${model} | Session: ${canResume ? previousSessionId.slice(0, 8) + "..." : "new"}`);
 
+  // ── Workflow step detection (needed early for env + prompt) ──
+
+  const isWorkflowStep = !!(context.stepRunId || context.stepInstructions);
+  const workflowContext = context.workflowContext || {};
+  const stepInput = context.stepInput || {};
+
   // ── Build environment variables ──
 
   const issueId = context.issueId || context.taskId || "";
@@ -381,11 +387,6 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
   // ── Build prompt ──
 
   const instructionsPrefix = await loadInstructionsFile(instructionsFilePath);
-
-  // Workflow step context: stepInstructions, workflowContext, stepInput
-  const isWorkflowStep = !!(context.stepRunId || context.stepInstructions);
-  const workflowContext = context.workflowContext || {};
-  const stepInput = context.stepInput || {};
 
   const templateData = {
     agent: { id: agent.id, name: agent.name, companyId: agent.companyId },

@@ -344,6 +344,13 @@ export function runnerRoutes(db: Db) {
         createdAt: new Date(),
       });
 
+      // Touch updatedAt so the orphan reaper knows this run is still alive
+      if (seq % 10 === 0) {
+        await db.update(heartbeatRuns)
+          .set({ updatedAt: new Date() })
+          .where(eq(heartbeatRuns.id, runId));
+      }
+
       // Append to persisted log file for post-completion transcript
       const logHandle = runLogHandles.get(runId);
       if (logHandle) {

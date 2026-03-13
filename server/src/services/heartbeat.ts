@@ -924,6 +924,17 @@ export function heartbeatService(db: Db) {
     for (const run of activeRuns) {
       if (runningProcesses.has(run.id)) continue;
 
+      // Skip runs managed by the remote runner — they are not tracked in runningProcesses.
+      // The remote runner has its own timeout logic and reports completion itself.
+      // Detect remote runner runs: they have no local process, but received log data recently.
+      // Use a much longer threshold (30 min) for runs not in runningProcesses to avoid
+      // reaping runs that are legitimately running on the remote runner.
+      if (!runningProcesses.has(run.id)) {
+        const remoteStaleMs = 30 * 60 * 1000; // 30 minutes
+        const refTime = run.updatedAt ? new Date(run.updatedAt).getTime() : 0;
+        if (now.getTime() - refTime < remoteStaleMs) continue;
+      }
+
       // Apply staleness threshold to avoid false positives
       if (staleThresholdMs > 0) {
         const refTime = run.updatedAt ? new Date(run.updatedAt).getTime() : 0;
