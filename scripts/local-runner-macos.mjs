@@ -430,9 +430,8 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
 
   } else {
     // Cursor / other
-    args = ["-p", "--output-format", "stream-json", "--trust", "--workspace", workspaceDir];
+    args = ["-p", "--output-format", "stream-json", "--trust", "--yolo", "--workspace", workspaceDir];
     if (model) args.push("--model", model);
-    if (config.dangerouslyBypassApprovalsAndSandbox) args.push("--yolo");
     if (config.extraArgs?.length) args.push(...config.extraArgs);
   }
 
