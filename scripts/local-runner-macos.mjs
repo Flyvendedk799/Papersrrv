@@ -309,12 +309,22 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     AGENT_HOME: agentHome,
   };
 
+  // Never leak runner's server auth token to agent processes
+  delete env.PAPERCLIP_RUNNER_TOKEN;
+
   if (authToken) env.PAPERCLIP_API_KEY = authToken;
   if (issueId) env.PAPERCLIP_TASK_ID = issueId;
   if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
   if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
   if (linkedIssueIds) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds;
+
+  // Workflow step env vars
+  if (isWorkflowStep) {
+    if (context.workflowRunId) env.PAPERCLIP_WORKFLOW_RUN_ID = context.workflowRunId;
+    if (context.stepRunId) env.PAPERCLIP_STEP_RUN_ID = context.stepRunId;
+    if (context.stepName) env.PAPERCLIP_STEP_NAME = context.stepName;
+  }
 
   const workspaceContext = context.paperclipWorkspace || {};
   const workspaceHints = Array.isArray(context.paperclipWorkspaces) ? context.paperclipWorkspaces : [];
@@ -372,18 +382,50 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
 
   const instructionsPrefix = await loadInstructionsFile(instructionsFilePath);
 
+  // Workflow step context: stepInstructions, workflowContext, stepInput
+  const isWorkflowStep = !!(context.stepRunId || context.stepInstructions);
+  const workflowContext = context.workflowContext || {};
+  const stepInput = context.stepInput || {};
+
   const templateData = {
     agent: { id: agent.id, name: agent.name, companyId: agent.companyId },
-    run: { id: runId, source: "on_demand" },
+    run: { id: runId, source: isWorkflowStep ? "workflow" : "on_demand" },
     context,
     agentId: agent.id,
     companyId: agent.companyId,
     runId,
+    // Flatten workflow context + step input so templates like {{projectSource}} resolve
+    ...workflowContext,
+    ...stepInput,
   };
 
-  const defaultTemplate = `Heartbeat run for {{agent.name}}. Wake reason: ${wakeReason}.`;
-  const promptTemplate = config.promptTemplate || defaultTemplate;
-  const renderedPrompt = renderTemplate(promptTemplate, templateData);
+  let renderedPrompt;
+
+  if (isWorkflowStep && context.stepInstructions) {
+    // Workflow agent_run step: use stepInstructions as the prompt
+    const rawInstructions = context.stepInstructions;
+    renderedPrompt = renderTemplate(rawInstructions, templateData);
+
+    // Add workflow context summary so the agent knows what previous steps produced
+    const prevStepOutputs = [];
+    for (const [key, val] of Object.entries(workflowContext)) {
+      if (typeof val === "object" && val !== null) {
+        prevStepOutputs.push(`- ${key}: ${JSON.stringify(val).slice(0, 500)}`);
+      } else if (val !== undefined && val !== null && val !== "") {
+        prevStepOutputs.push(`- ${key}: ${String(val).slice(0, 300)}`);
+      }
+    }
+    if (prevStepOutputs.length > 0) {
+      renderedPrompt = `## Workflow Context (from previous steps & trigger inputs)\n${prevStepOutputs.join("\n")}\n\n## Your Task\n${renderedPrompt}`;
+    }
+
+    console.log(`  [workflow] Step: ${context.stepName || "unknown"} | Instructions: ${renderedPrompt.length} chars`);
+  } else {
+    // Normal heartbeat run
+    const defaultTemplate = `Heartbeat run for {{agent.name}}. Wake reason: ${wakeReason}.`;
+    const promptTemplate = config.promptTemplate || defaultTemplate;
+    renderedPrompt = renderTemplate(promptTemplate, templateData);
+  }
 
   const keyVars = [
     `PAPERCLIP_API_URL=${SERVER_URL}`,
@@ -393,6 +435,8 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     issueId ? `PAPERCLIP_TASK_ID=${issueId}` : null,
     wakeReason !== "heartbeat_timer" ? `PAPERCLIP_WAKE_REASON=${wakeReason}` : null,
     wakeCommentId ? `PAPERCLIP_WAKE_COMMENT_ID=${wakeCommentId}` : null,
+    isWorkflowStep ? `PAPERCLIP_WORKFLOW_RUN_ID=${context.workflowRunId || ""}` : null,
+    isWorkflowStep ? `PAPERCLIP_STEP_RUN_ID=${context.stepRunId || ""}` : null,
   ].filter(Boolean).join("\n");
   const envNote = `Environment:\n\`\`\`\n${keyVars}\n\`\`\`\n\n`;
   const prompt = `${instructionsPrefix}${envNote}${renderedPrompt}`;
@@ -467,7 +511,7 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     let stderrBuf = "";
     let timedOut = false;
 
-    const timeoutSec = config.timeoutSec != null ? config.timeoutSec : 180;
+    const timeoutSec = config.timeoutSec != null ? config.timeoutSec : (isWorkflowStep ? 600 : 180);
     const timeoutTimer = timeoutSec > 0
       ? setTimeout(() => {
         timedOut = true;

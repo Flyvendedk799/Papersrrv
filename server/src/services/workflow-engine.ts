@@ -256,12 +256,50 @@ export function workflowEngine(db: Db) {
     stepRun: typeof workflowStepRuns.$inferSelect,
     config: Record<string, unknown>,
   ) {
-    const agentId = step.agentId;
-    if (!agentId) throw new Error("agent_run step has no agentId configured");
+    let agentId = step.agentId;
+    let agent: typeof agents.$inferSelect | null = null;
 
-    // Verify agent exists
-    const agent = await db.query.agents.findFirst({ where: eq(agents.id, agentId) });
-    if (!agent) throw new Error(`Agent ${agentId} not found`);
+    if (agentId) {
+      agent = (await db.query.agents.findFirst({ where: eq(agents.id, agentId) })) ?? null;
+      if (!agent) throw new Error(`Agent ${agentId} not found`);
+    }
+
+    // Auto-create a dedicated agent for this workflow step if none assigned
+    if (!agent) {
+      const workflow = await db.query.workflows.findFirst({ where: eq(workflows.id, run.workflowId) });
+      const workflowName = workflow?.name ?? "Workflow";
+      const agentName = `${step.name} (${workflowName})`;
+      const defaultAdapter = process.env.PAPERCLIP_DEFAULT_ADAPTER_TYPE || "cursor";
+
+      const [created] = await db.insert(agents).values({
+        companyId: run.companyId,
+        name: agentName,
+        role: "general",
+        title: `Auto-created for workflow step: ${step.name}`,
+        icon: "zap",
+        status: "idle",
+        adapterType: defaultAdapter,
+        adapterConfig: config.model ? { model: config.model } : {},
+        metadata: {
+          createdForWorkflow: run.workflowId,
+          createdForStep: step.id,
+          autoCreated: true,
+        },
+      }).returning();
+
+      agent = created;
+      agentId = created.id;
+
+      // Persist the agent assignment on the step so future runs reuse it
+      await db.update(workflowSteps)
+        .set({ agentId: created.id, updatedAt: new Date() })
+        .where(eq(workflowSteps.id, step.id));
+
+      logger.info(
+        { stepId: step.id, agentId: created.id, agentName },
+        "workflow: auto-created agent for step",
+      );
+    }
 
     // Build the wakeup payload with workflow context
     const runContext = (run.context ?? {}) as Record<string, unknown>;
@@ -299,10 +337,21 @@ export function workflowEngine(db: Db) {
       }
     }
 
-    // Enqueue wakeup - the heartbeat system handles execution
+    // Create wakeup request + heartbeat_run so the runner can pick it up
+    const contextSnapshot = {
+      workflowRunId: run.id,
+      stepRunId: stepRun.id,
+      stepName: step.name,
+      ...(payload.stepInstructions ? { stepInstructions: payload.stepInstructions } : {}),
+      ...(payload.workflowContext ? { workflowContext: payload.workflowContext } : {}),
+      ...(payload.stepInput ? { stepInput: payload.stepInput } : {}),
+      ...(payload.adapterOverrides ? { adapterOverrides: payload.adapterOverrides } : {}),
+      ...(payload.skillFiles ? { skillFiles: payload.skillFiles } : {}),
+    };
+
     const [wakeup] = await db.insert(agentWakeupRequests).values({
       companyId: run.companyId,
-      agentId,
+      agentId: agentId!,
       source: "automation",
       triggerDetail: "system",
       reason: `Workflow step: ${step.name}`,
@@ -311,9 +360,35 @@ export function workflowEngine(db: Db) {
       requestedByActorType: "system",
     }).returning();
 
-    // The heartbeat system will pick this up and create a heartbeat_run
-    // We need to watch for the run to complete via onHeartbeatRunCompleted
-    logger.info({ stepRunId: stepRun.id, agentId, wakeupId: wakeup.id }, "workflow: agent_run step enqueued");
+    // Create the heartbeat_run that the runner actually polls for
+    const [hbRun] = await db.insert(heartbeatRuns).values({
+      companyId: run.companyId,
+      agentId: agentId!,
+      invocationSource: "automation",
+      triggerDetail: "system",
+      status: "queued",
+      wakeupRequestId: wakeup.id,
+      contextSnapshot,
+    }).returning();
+
+    // Link wakeup → heartbeat run
+    await db.update(agentWakeupRequests)
+      .set({ runId: hbRun.id, updatedAt: new Date() })
+      .where(eq(agentWakeupRequests.id, wakeup.id));
+
+    // Link step run → heartbeat run
+    await db.update(workflowStepRuns)
+      .set({ heartbeatRunId: hbRun.id, updatedAt: new Date() })
+      .where(eq(workflowStepRuns.id, stepRun.id));
+
+    publishLiveEvent({
+      companyId: run.companyId,
+      type: "heartbeat.run.queued",
+      agentId: agentId!,
+      runId: hbRun.id,
+    });
+
+    logger.info({ stepRunId: stepRun.id, agentId, wakeupId: wakeup.id, heartbeatRunId: hbRun.id }, "workflow: agent_run step enqueued with heartbeat_run");
   }
 
   // ---- Condition Step: evaluate and route ----
@@ -854,8 +929,10 @@ export function workflowEngine(db: Db) {
     });
     if (!hbRun) return;
 
+    const resultData = (hbRun.resultJson ?? {}) as Record<string, unknown>;
     const output: Record<string, unknown> = {
       status: hbRun.status,
+      summary: resultData.summary ?? null,
       resultJson: hbRun.resultJson,
       stdoutExcerpt: hbRun.stdoutExcerpt,
       usage: hbRun.usageJson,

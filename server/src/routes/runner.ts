@@ -22,6 +22,7 @@ import { getRunLogStore, type RunLogHandle } from "../services/run-log-store.js"
 import { secretService } from "../services/index.js";
 import { indexRunFromLog } from "../services/file-indexer.js";
 import { estimateCostUsd } from "../services/token-cost-estimator.js";
+import { workflowEngine as createWorkflowEngine } from "../services/workflow-engine.js";
 
 /** Adapter types that require a local CLI and cannot run on a cloud server. */
 const LOCAL_ADAPTER_TYPES = new Set(["cursor", "process", "claude_local", "codex_local", "opencode_local", "pi_local"]);
@@ -479,6 +480,11 @@ export function runnerRoutes(db: Db) {
       }
       runSeqCounters.delete(runId);
 
+      // Build resultJson from summary + usage for workflow steps and UI
+      const resultJson: Record<string, unknown> | null = result.summary
+        ? { summary: result.summary, ...(result.usage ?? {}) }
+        : null;
+
       await db
         .update(heartbeatRuns)
         .set({
@@ -489,6 +495,7 @@ export function runnerRoutes(db: Db) {
           exitCode: result.exitCode ?? null,
           signal: result.signal ?? null,
           usageJson: usageJson as Record<string, unknown> | null,
+          resultJson,
           stdoutExcerpt: result.stdoutExcerpt ?? null,
           stderrExcerpt: result.stderrExcerpt ?? null,
           sessionIdAfter: result.sessionId ?? null,
@@ -623,6 +630,18 @@ export function runnerRoutes(db: Db) {
             logger.warn({ err: sessionErr, runId }, "Failed to persist task session");
           }
         }
+      }
+
+      // Workflow engine hook: advance workflow if this run was a workflow step
+      try {
+        const wfEngine = createWorkflowEngine(db);
+        const contextSnap = run.contextSnapshot as Record<string, unknown> | null;
+        if (contextSnap?.stepRunId) {
+          await wfEngine.linkHeartbeatRunToStep(runId, contextSnap);
+        }
+        await wfEngine.onHeartbeatRunCompleted(runId);
+      } catch (wfErr) {
+        logger.warn({ err: wfErr, runId }, "runner complete: workflow engine hook failed (non-fatal)");
       }
 
       // Index files from the run log in the background (non-blocking)
