@@ -413,7 +413,7 @@ async function executeRun(runId, agent, context, authToken, runtimeState) {
     else args.push("-");
 
   } else if (adapterType === "claude_local") {
-    args = ["-p", "--output-format", "stream-json"];
+    args = ["-p", "--verbose", "--output-format", "stream-json"];
     if (model) args.push("--model", model);
     if (config.dangerouslySkipPermissions !== false) args.push("--dangerously-skip-permissions");
     if (config.effort) args.push("--effort", config.effort);
