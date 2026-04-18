@@ -37,6 +37,7 @@ import { auditRoutes } from "./routes/audit.js";
 import { skillRoutes } from "./routes/skills.js";
 import { backlogRoutes } from "./routes/backlog.js";
 import { githubRoutes } from "./routes/github.js";
+import { githubWebhooksRoutes } from "./routes/github-webhooks.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
 type UiMode = "none" | "static" | "vite-dev";
@@ -57,6 +58,13 @@ export async function createApp(
   },
 ) {
   const app = express();
+
+  // ── GitHub webhook ingress (backlog 4.0 A3) ────────────────────────
+  // MUST be mounted before the global JSON body parser so the raw
+  // request body is available for HMAC signature verification.
+  // The route itself attaches `express.raw({ type: "application/json" })`
+  // locally. See server/src/routes/github-webhooks.ts.
+  app.use(githubWebhooksRoutes(db));
 
   app.use(express.json({ limit: "10mb" }));
   app.use(requestIdMiddleware);
