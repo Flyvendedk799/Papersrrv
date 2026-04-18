@@ -10,17 +10,21 @@ const STATUS_COLORS: Record<string, { main: string; emissive: string }> = {
   cancelled:   { main: "#9CA3AF", emissive: "#6B7280" },
 };
 
-export function statusColor(status: string): { main: string; emissive: string } {
-  return STATUS_COLORS[status] ?? STATUS_COLORS.todo;
+/** Primary hex string for a status. Consumers pass this directly to
+ *  three.js `color=` props and `new THREE.Color(...)`. */
+export function statusColor(status: string): string {
+  return (STATUS_COLORS[status] ?? STATUS_COLORS.todo).main;
 }
 
-/**
- * Shell tint for a status — the softer outer glow color used by IssuePillar
- * for the pillar's shell halo. Returns the emissive variant dimmed further.
- */
+/** Softer emissive variant used by the pillar's shell halo. */
 export function statusShellColor(status: string): string {
-  const s = STATUS_COLORS[status] ?? STATUS_COLORS.todo;
-  return s.emissive;
+  return (STATUS_COLORS[status] ?? STATUS_COLORS.todo).emissive;
+}
+
+/** Keep the {main,emissive} pair available for the handful of call-sites
+ *  that genuinely want both (e.g. HUD legend swatches). */
+export function statusColorPair(status: string): { main: string; emissive: string } {
+  return STATUS_COLORS[status] ?? STATUS_COLORS.todo;
 }
 
 const AGENT_PALETTE = [
@@ -77,7 +81,7 @@ export function colorForNode(target: NodeLikeTarget | null | undefined): string 
   if (d.color) return d.color;
   if (target.kind === "run") return agentColor(d.agentId ?? null);
   if (target.kind === "comment") return agentColor(d.author ?? null);
-  if (d.status) return statusColor(d.status).main;
+  if (d.status) return statusColor(d.status);
   return WARM_CREAM;
 }
 

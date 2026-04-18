@@ -573,6 +573,30 @@ function IssueSceneInner(props: IssueSceneInnerProps) {
             toneMappingExposure: 1.1,
             powerPreference: "high-performance",
           }}
+          /* Force R3F to re-read its size on scroll AND on resize with
+             no debounce. Fixes the "stuck at 300×150" issue where
+             useMeasure latches the initial 0×0 observation under
+             StrictMode double-mount. */
+          resize={{ scroll: true, debounce: { scroll: 0, resize: 0 } }}
+          onCreated={(state) => {
+            /* Belt-and-braces sizing fix. R3F's useMeasure sometimes
+               latches a 0×0 reading; poll the wrapper a few times across
+               the first ~600ms and push its real size into state.setSize
+               if we see a mismatch. */
+            const el = wrapperRef.current;
+            if (!el) return;
+            const push = () => {
+              const rect = el.getBoundingClientRect();
+              if (rect.width > 40 && rect.height > 40) {
+                state.setSize(rect.width, rect.height);
+              }
+            };
+            push();
+            requestAnimationFrame(push);
+            window.setTimeout(push, 120);
+            window.setTimeout(push, 260);
+            window.setTimeout(push, 600);
+          }}
           onPointerMissed={(e) => {
             // Click on empty space → deselect + clear hover
             if (e.type === "click") handleBackgroundClick();
@@ -1435,3 +1459,4 @@ function CameraDolly({
 
   return null;
 }
+
