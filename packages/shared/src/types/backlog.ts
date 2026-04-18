@@ -198,3 +198,34 @@ export interface BulkBacklogItemResult {
   failed: number;
   results: BulkBacklogItemResultEntry[];
 }
+
+/**
+ * Overview / insights snapshot for the Backlog Tab (backlog3.0 B5).
+ *
+ * All counts are company-scoped. `promotedRecent` is the number of items
+ * whose status flipped to `promoted` within the last `recentDays` window
+ * (default 14d). `stale` is the count of non-archived, non-promoted items
+ * that have not been updated in `staleDays` (default 14d).
+ *
+ * `perPlan` summarizes plans that currently hold one or more items so the
+ * UI can render small progress bars without a follow-up round-trip.
+ */
+export interface BacklogPlanProgress {
+  planId: string;
+  title: string;
+  total: number;
+  ready: number;
+  promoted: number;
+  archived: number;
+}
+
+export interface BacklogOverview {
+  counts: Record<BacklogItemStatus, number>;
+  total: number;
+  unplanned: number;
+  promotedRecent: number;
+  recentDays: number;
+  stale: number;
+  staleDays: number;
+  perPlan: BacklogPlanProgress[];
+}

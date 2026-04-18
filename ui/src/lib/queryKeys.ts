@@ -130,5 +130,7 @@ export const queryKeys = {
     plans: (companyId: string) => ["backlog", companyId, "plans"] as const,
     plan: (companyId: string, id: string) =>
       ["backlog", companyId, "plan", id] as const,
+    overview: (companyId: string) =>
+      ["backlog", companyId, "overview"] as const,
   },
 };

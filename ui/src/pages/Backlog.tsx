@@ -59,6 +59,7 @@ import {
 import { BacklogBoardView } from "../components/backlog/BacklogBoardView";
 import { useBacklogReorder } from "../components/backlog/useBacklogReorder";
 import { BulkActionBar } from "../components/backlog/BulkActionBar";
+import { BacklogInsightsStrip } from "../components/backlog/BacklogInsightsStrip";
 import { useToast } from "../context/ToastContext";
 
 type StatusFilter = BacklogItemStatus | "all";
@@ -194,6 +195,17 @@ export function Backlog() {
   const { data: plans } = useQuery({
     queryKey: queryKeys.backlog.plans(selectedCompanyId ?? ""),
     queryFn: () => backlogApi.listPlans(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  // Unfiltered, archive-inclusive snapshot for the insights strip (B5).
+  // Stats need to reflect the whole backlog, not the currently filtered
+  // slice — otherwise clicking a tile to filter would erase the totals
+  // it was just based on.
+  const { data: insightItems } = useQuery({
+    queryKey: queryKeys.backlog.items(selectedCompanyId ?? "", "__insights"),
+    queryFn: () =>
+      backlogApi.listItems(selectedCompanyId!, { includeArchived: true }),
     enabled: !!selectedCompanyId,
   });
 
@@ -352,6 +364,13 @@ export function Backlog() {
           New item
         </Button>
       </header>
+
+      <BacklogInsightsStrip
+        items={insightItems ?? []}
+        plans={plans}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center overflow-hidden rounded-md border border-border">

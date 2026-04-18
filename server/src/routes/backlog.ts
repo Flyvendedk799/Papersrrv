@@ -201,6 +201,29 @@ export function backlogRoutes(db: Db) {
     res.json(archived);
   });
 
+  /**
+   * Backlog overview / insights strip (backlog3.0 B5).
+   *
+   * Read-only aggregates so we don't need to mirror every count into the
+   * client — the strip stays accurate even when the user has filtered the
+   * list view, because filters apply to `/items` only.
+   */
+  router.get("/companies/:companyId/backlog/overview", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const recentDays = req.query.recentDays
+      ? Number(req.query.recentDays)
+      : undefined;
+    const staleDays = req.query.staleDays
+      ? Number(req.query.staleDays)
+      : undefined;
+    const overview = await svc.overview(companyId, {
+      recentDays: Number.isFinite(recentDays) ? recentDays : undefined,
+      staleDays: Number.isFinite(staleDays) ? staleDays : undefined,
+    });
+    res.json(overview);
+  });
+
   // ─── Plans ──────────────────────────────────────────────────────────
 
   router.get("/companies/:companyId/backlog/plans", async (req, res) => {

@@ -26,8 +26,10 @@ import type {
   BacklogItemSource,
   BacklogItemSourceRef,
   BacklogItemStatus,
+  BacklogOverview,
   BacklogPlan,
   BacklogPlanKind,
+  BacklogPlanProgress,
   BacklogPlanStatus,
   BulkBacklogItemInput,
   BulkBacklogItemResult,
@@ -477,6 +479,98 @@ export function backlogService(db: Db) {
         succeeded,
         failed: results.length - succeeded,
         results,
+      };
+    },
+
+    /**
+     * Aggregate counts for the Backlog Tab overview strip (backlog3.0 B5).
+     *
+     * Computed in a single pass over the active item set so the strip
+     * stays cheap even with thousands of items. `recentDays` / `staleDays`
+     * default to 14 to match the spec's "what's flowing / what's stuck"
+     * framing.
+     */
+    async overview(
+      companyId: string,
+      opts: { recentDays?: number; staleDays?: number } = {},
+    ): Promise<BacklogOverview> {
+      const recentDays = Math.max(1, Math.min(opts.recentDays ?? 14, 365));
+      const staleDays = Math.max(1, Math.min(opts.staleDays ?? 14, 365));
+      const now = Date.now();
+      const recentCutoff = new Date(now - recentDays * 24 * 60 * 60 * 1000);
+      const staleCutoff = new Date(now - staleDays * 24 * 60 * 60 * 1000);
+
+      // Fetch every item (include archived) for accurate counts. Bounded
+      // by company scope; for very large backlogs we'd swap to GROUP BY
+      // SQL — leave as a future optimisation note.
+      const rows = await db
+        .select()
+        .from(backlogItems)
+        .where(eq(backlogItems.companyId, companyId));
+
+      const counts: Record<BacklogItemStatus, number> = {
+        idea: 0,
+        draft: 0,
+        ready: 0,
+        promoted: 0,
+        archived: 0,
+      };
+      let unplanned = 0;
+      let promotedRecent = 0;
+      let stale = 0;
+      const planAgg = new Map<string, BacklogPlanProgress>();
+
+      const planRows = await db
+        .select()
+        .from(backlogPlans)
+        .where(eq(backlogPlans.companyId, companyId));
+      const planTitle = new Map(planRows.map((p) => [p.id, p.title]));
+
+      for (const row of rows) {
+        const status = (row.status ?? "idea") as BacklogItemStatus;
+        if (counts[status] !== undefined) counts[status] += 1;
+        if (!row.planId) unplanned += 1;
+        if (status === "promoted" && row.updatedAt && row.updatedAt >= recentCutoff) {
+          promotedRecent += 1;
+        }
+        if (
+          status !== "promoted" &&
+          status !== "archived" &&
+          row.updatedAt &&
+          row.updatedAt < staleCutoff
+        ) {
+          stale += 1;
+        }
+        if (row.planId) {
+          const agg =
+            planAgg.get(row.planId) ??
+            ({
+              planId: row.planId,
+              title: planTitle.get(row.planId) ?? "Untitled plan",
+              total: 0,
+              ready: 0,
+              promoted: 0,
+              archived: 0,
+            } as BacklogPlanProgress);
+          agg.total += 1;
+          if (status === "ready") agg.ready += 1;
+          if (status === "promoted") agg.promoted += 1;
+          if (status === "archived") agg.archived += 1;
+          planAgg.set(row.planId, agg);
+        }
+      }
+
+      const perPlan = Array.from(planAgg.values()).sort((a, b) => b.total - a.total);
+
+      return {
+        counts,
+        total: rows.length,
+        unplanned,
+        promotedRecent,
+        recentDays,
+        stale,
+        staleDays,
+        perPlan,
       };
     },
 
