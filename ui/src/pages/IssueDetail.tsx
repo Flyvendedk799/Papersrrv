@@ -10,6 +10,7 @@ import { projectsApi } from "../api/projects";
 import { filesApi } from "../api/files";
 import { workflowsApi } from "../api/workflows";
 import { backlogApi } from "../api/backlog";
+import { useToast } from "../context/ToastContext";
 import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -547,6 +548,61 @@ export function IssueDetail() {
     },
   });
 
+  const { pushToast } = useToast();
+
+  /**
+   * Reverse flow: move this Issue into the Backlog (backlog3.0 C4).
+   * The Issue is preserved and status is flipped to `backlog`; a
+   * linked backlog item is created/reused so lineage survives the
+   * round-trip.
+   */
+  const moveToBacklog = useMutation({
+    mutationFn: () => backlogApi.fromIssue(selectedCompanyId!, issueId!),
+    onSuccess: (result) => {
+      invalidateIssue();
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.backlog.bySource(selectedCompanyId!, {
+          source: "issue",
+          sourceRefId: issueId!,
+          sourceRefType: "issue",
+        }),
+      });
+      pushToast({
+        tone: "info",
+        title: "Moved to Backlog",
+        body: `Issue is now in the Backlog${
+          result.issue.prevStatus !== "backlog"
+            ? ` (was ${result.issue.prevStatus.replace(/_/g, " ")})`
+            : ""
+        }.`,
+        action: { label: "View in Backlog", href: `/backlog?item=${result.item.id}` },
+      });
+    },
+    onError: (err: Error) => {
+      pushToast({
+        tone: "error",
+        title: "Couldn't move to Backlog",
+        body: err.message,
+      });
+    },
+  });
+
+  const restoreFromBacklog = useMutation({
+    mutationFn: (backlogItemId: string) =>
+      backlogApi.restoreIssue(selectedCompanyId!, backlogItemId),
+    onSuccess: () => {
+      invalidateIssue();
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.backlog.bySource(selectedCompanyId!, {
+          source: "issue",
+          sourceRefId: issueId!,
+          sourceRefType: "issue",
+        }),
+      });
+      pushToast({ tone: "info", title: "Issue restored" });
+    },
+  });
+
   const addComment = useMutation({
     mutationFn: ({ body, reopen }: { body: string; reopen?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen),
@@ -813,6 +869,39 @@ export function IssueDetail() {
                   Send to Backlog
                 </button>
               )}
+              {backlogEnabled && issue.status !== "backlog" && (
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                  disabled={moveToBacklog.isPending}
+                  onClick={() => {
+                    moveToBacklog.mutate();
+                    setMoreOpen(false);
+                  }}
+                >
+                  <Inbox className="h-3 w-3" />
+                  {moveToBacklog.isPending ? "Moving..." : "Move to Backlog"}
+                </button>
+              )}
+              {backlogEnabled &&
+                issue.status === "backlog" &&
+                linkedBacklog &&
+                linkedBacklog.length > 0 && (
+                  <button
+                    className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                    disabled={restoreFromBacklog.isPending}
+                    onClick={() => {
+                      const target = linkedBacklog[0];
+                      if (!target) return;
+                      restoreFromBacklog.mutate(target.id);
+                      setMoreOpen(false);
+                    }}
+                  >
+                    <Inbox className="h-3 w-3" />
+                    {restoreFromBacklog.isPending
+                      ? "Restoring..."
+                      : "Restore from Backlog"}
+                  </button>
+                )}
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
                 onClick={() => {

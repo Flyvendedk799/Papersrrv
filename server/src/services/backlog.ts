@@ -629,6 +629,193 @@ export function backlogService(db: Db) {
     },
 
     /**
+     * Move an Issue into the Backlog Tab (backlog3.0 C4, reverse flow).
+     *
+     * Creates a linked backlog item mirroring the Issue (title, body,
+     * priority, project, goal, labels), then transitions the Issue to
+     * `backlog` status so it stays queryable but is no longer on the
+     * active board. The backlog item's `sourceRef` records the
+     * previous Issue status so reverse-reverse (undo) can cleanly
+     * restore it.
+     *
+     * Round-trip invariants:
+     * - Issue row and its comments / history stay intact.
+     * - Labels are copied, not moved: an Issue keeps its labels so
+     *   the undo path is a pure status flip.
+     * - Double-move is a no-op: if a non-archived backlog item with
+     *   `sourceRef.id === issueId` already exists we reuse it.
+     */
+    async moveIssueToBacklog(
+      companyId: string,
+      issueId: string,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<{
+      item: BacklogItem;
+      issue: { id: string; identifier: string | null; previousStatus: string; status: string };
+    }> {
+      const issueSvc = issueService(db);
+      const issue = await issueSvc.getById(issueId);
+      if (!issue || issue.companyId !== companyId) {
+        throw notFound("Issue not found");
+      }
+      if (issue.status === "backlog") {
+        // Idempotent: find or create the linked backlog item below.
+      }
+
+      // Dedup: if we already have a non-archived backlog item linked
+      // back to this issue via sourceRef, reuse it instead of
+      // spawning a duplicate.
+      const existingLinked = await db
+        .select()
+        .from(backlogItems)
+        .where(
+          and(
+            eq(backlogItems.companyId, companyId),
+            sql`${backlogItems.deletedAt} is null`,
+            sql`${backlogItems.sourceRef}->>'type' = 'issue'`,
+            sql`${backlogItems.sourceRef}->>'id' = ${issueId}`,
+          ),
+        )
+        .limit(1)
+        .then((rs) => rs[0]);
+
+      const previousStatus = issue.status;
+
+      let itemRow = existingLinked;
+      if (!itemRow) {
+        const sourceRef: BacklogItemSourceRef = {
+          type: "issue",
+          id: issue.id,
+          identifier: issue.identifier ?? null,
+          previousStatus,
+        };
+        const maxRow = await db
+          .select({ rank: backlogItems.rank })
+          .from(backlogItems)
+          .where(eq(backlogItems.companyId, companyId))
+          .orderBy(desc(backlogItems.rank))
+          .limit(1)
+          .then((rs) => rs[0]);
+        const rank = midpointRank(maxRow?.rank ?? "", "");
+
+        const inserted = await db
+          .insert(backlogItems)
+          .values({
+            companyId,
+            title: issue.title,
+            body: issue.description ?? null,
+            status: "draft",
+            priority: (issue.priority as never) ?? null,
+            source: "issue",
+            sourceRef,
+            authorUserId: actor.userId,
+            authorAgentId: actor.agentId,
+            projectId: issue.projectId ?? null,
+            goalId: issue.goalId ?? null,
+            rank,
+          })
+          .returning()
+          .then((rs) => rs[0]);
+        itemRow = inserted;
+
+        // Mirror labels (copy, not move). backlog_item_labels has a
+        // composite PK so duplicates are impossible even under retry.
+        const labelIds = (issue.labels ?? [])
+          .map((l) => l.id)
+          .filter((id): id is string => Boolean(id));
+        if (labelIds.length > 0) {
+          await db
+            .insert(backlogItemLabels)
+            .values(
+              labelIds.map((labelId) => ({
+                backlogItemId: itemRow!.id,
+                labelId,
+                companyId,
+              })),
+            )
+            .onConflictDoNothing();
+        }
+      }
+
+      // Flip issue status if needed.
+      let updatedIssueStatus = issue.status;
+      if (issue.status !== "backlog") {
+        const patched = await issueSvc.update(issue.id, {
+          status: "backlog",
+        } as never);
+        if (patched) updatedIssueStatus = patched.status;
+      }
+
+      return {
+        item: itemToApi(itemRow),
+        issue: {
+          id: issue.id,
+          identifier: issue.identifier,
+          previousStatus,
+          status: updatedIssueStatus,
+        },
+      };
+    },
+
+    /**
+     * Reverse of `moveIssueToBacklog` (backlog3.0 C4 undo).
+     *
+     * Archives the backlog item and restores the Issue to its
+     * previously-recorded status. The backlog row is preserved for
+     * lineage; a subsequent move-to-backlog will reuse it thanks to
+     * the dedup branch above.
+     */
+    async restoreIssueFromBacklog(
+      companyId: string,
+      backlogItemId: string,
+    ): Promise<{ itemId: string; issue: { id: string; status: string } }> {
+      const row = await db
+        .select()
+        .from(backlogItems)
+        .where(
+          and(
+            eq(backlogItems.companyId, companyId),
+            eq(backlogItems.id, backlogItemId),
+          ),
+        )
+        .then((rs) => rs[0]);
+      if (!row) throw notFound("Backlog item not found");
+      const sourceRef = (row.sourceRef as BacklogItemSourceRef | null) ?? null;
+      if (!sourceRef || (sourceRef as { type?: string }).type !== "issue") {
+        throw unprocessable("Backlog item is not linked to an Issue");
+      }
+      const issueId = (sourceRef as { id?: string }).id;
+      const previousStatus =
+        (sourceRef as { previousStatus?: string }).previousStatus ?? "todo";
+      if (!issueId) {
+        throw unprocessable("Backlog item sourceRef is missing the Issue id");
+      }
+
+      await db
+        .update(backlogItems)
+        .set({
+          status: "archived",
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(backlogItems.companyId, companyId),
+            eq(backlogItems.id, backlogItemId),
+          ),
+        );
+
+      const issueSvc = issueService(db);
+      const restored = await issueSvc.update(issueId, {
+        status: previousStatus,
+      } as never);
+      return {
+        itemId: backlogItemId,
+        issue: { id: issueId, status: restored?.status ?? previousStatus },
+      };
+    },
+
+    /**
      * Promote many backlog items at once (backlog3.0 C3).
      *
      * Each item is promoted independently so one failure doesn't

@@ -532,6 +532,118 @@ export function backlogRoutes(db: Db) {
     res.json({ total: ids.length, succeeded, failed, results });
   });
 
+  /**
+   * Reverse flow: move an existing Issue to the Backlog (backlog3.0 C4).
+   *
+   * Creates a backlog item linked back to the Issue and flips the Issue's
+   * status to `backlog`. The Issue itself is preserved (history, comments,
+   * linked runs) so the round-trip is non-destructive and can be
+   * "promoted" back into an active Issue later via the normal C3 flow.
+   */
+  /**
+   * Reverse flow: move an Issue into the Backlog (backlog3.0 C4).
+   *
+   * Delegates to `svc.moveIssueToBacklog`, which handles dedup
+   * against a prior move, label copy, and recording the Issue's
+   * previous status on the backlog item's `sourceRef` so undo is
+   * clean. The Issue itself is preserved — this is a status flip,
+   * not a delete.
+   */
+  router.post(
+    "/companies/:companyId/backlog/items/from-issue/:issueId",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const issueId = req.params.issueId as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      const result = await svc.moveIssueToBacklog(companyId, issueId, {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        agentId: actor.agentId,
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "backlog_item.captured_from_issue",
+        entityType: "backlog_item",
+        entityId: result.item.id,
+        details: {
+          issueId,
+          issueIdentifier: result.issue.identifier,
+          previousStatus: result.issue.previousStatus,
+        },
+      });
+      if (result.issue.previousStatus !== "backlog") {
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "issue.moved_to_backlog",
+          entityType: "issue",
+          entityId: issueId,
+          details: {
+            backlogItemId: result.item.id,
+            previousStatus: result.issue.previousStatus,
+          },
+        });
+      }
+      res.json({
+        item: result.item,
+        issue: {
+          id: result.issue.id,
+          identifier: result.issue.identifier,
+          prevStatus: result.issue.previousStatus,
+          status: result.issue.status,
+        },
+      });
+    },
+  );
+
+  /**
+   * Undo the reverse flow (backlog3.0 C4).
+   *
+   * Archives the backlog item and restores the linked Issue to the
+   * status it had before the move. Safe to call even after the
+   * Issue has been edited — we only touch its status.
+   */
+  router.post(
+    "/companies/:companyId/backlog/items/:id/restore-issue",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      const result = await svc.restoreIssueFromBacklog(companyId, id);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "backlog_item.archived",
+        entityType: "backlog_item",
+        entityId: result.itemId,
+        details: { reason: "restore_issue", issueId: result.issue.id },
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.restored_from_backlog",
+        entityType: "issue",
+        entityId: result.issue.id,
+        details: { backlogItemId: result.itemId, status: result.issue.status },
+      });
+      res.json(result);
+    },
+  );
+
   router.post("/companies/:companyId/backlog/items/:id/archive", async (req, res) => {
     const companyId = req.params.companyId as string;
     const id = req.params.id as string;

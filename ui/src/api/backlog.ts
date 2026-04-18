@@ -80,6 +80,21 @@ export const backlogApi = {
       `/companies/${companyId}/backlog/items/bulk-promote`,
       input,
     ),
+  fromIssue: (companyId: string, issueId: string) =>
+    api.post<{
+      item: BacklogItem;
+      issue: {
+        id: string;
+        identifier: string | null;
+        prevStatus: string;
+        status: string;
+      };
+    }>(`/companies/${companyId}/backlog/items/from-issue/${issueId}`, {}),
+  restoreIssue: (companyId: string, backlogItemId: string) =>
+    api.post<{ itemId: string; issue: { id: string; status: string } }>(
+      `/companies/${companyId}/backlog/items/${backlogItemId}/restore-issue`,
+      {},
+    ),
   overview: (companyId: string, opts?: { recentDays?: number; staleDays?: number }) => {
     const params = new URLSearchParams();
     if (opts?.recentDays) params.set("recentDays", String(opts.recentDays));
