@@ -43,6 +43,13 @@ export type PapeeTool =
   | { kind: "setIssuePriority"; issueId: string; priority: "low" | "medium" | "high" | "critical" }
   | { kind: "assignIssue"; issueId: string; assignee: string }
   | { kind: "createIssue"; title: string; description?: string; assignee?: string; projectId?: string }
+  | {
+      kind: "createBacklogItem";
+      title: string;
+      body?: string;
+      source?: string;
+      sourceRef?: Record<string, unknown> | null;
+    }
   | { kind: "linkIssues"; sourceId: string; targetId: string; relation: "blocks" | "blocked-by" | "relates-to" }
   | { kind: "navigate"; path: string }
   | { kind: "openIssue"; identifier: string }
@@ -75,6 +82,7 @@ export const PAPEE_TOOL_TIER: Record<PapeeToolKind, PapeeRiskTier> = {
   setIssuePriority: "tier-1",
   assignIssue: "tier-1",
   createIssue: "tier-1",
+  createBacklogItem: "tier-1",
   linkIssues: "tier-1",
   navigate: "tier-1",
   openIssue: "tier-1",

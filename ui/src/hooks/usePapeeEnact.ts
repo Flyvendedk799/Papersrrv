@@ -248,6 +248,12 @@ const ARC_BY_KIND: Partial<Record<PapeeToolKind, ToolArc>> = {
     success: { pose: "jumping", speech: "Filed!" },
     error: { pose: "alarmed", speech: "Couldn't file — draft kept." },
   },
+  createBacklogItem: {
+    pre: { pose: "writing", speech: "Capturing…" },
+    during: { pose: "typing" },
+    success: { pose: "thumbs-up", speech: "In your backlog." },
+    error: { pose: "alarmed", speech: "Couldn't capture." },
+  },
   linkIssues: {
     pre: { pose: "walking" },
     during: { pose: "thinking" },

@@ -4,6 +4,8 @@ import { useNavigate } from "@/lib/router";
 import { usePapee } from "../../context/PapeeContext";
 import { useSidebar } from "../../context/SidebarContext";
 import { usePapeeChat } from "../../hooks/usePapeeChat";
+import { usePapeeEnact } from "../../hooks/usePapeeEnact";
+import { isFeatureEnabled } from "../../lib/featureFlags";
 import type { ChatMessage } from "../../context/PapeeContext";
 import { agentsApi } from "../../api/agents";
 import { useCompany } from "../../context/CompanyContext";
@@ -17,6 +19,8 @@ export function PapeeChat() {
   const papee = usePapee();
   const { isMobile } = useSidebar();
   const { messages, sendMessage, isLoading, suggestedActions, clearHistory, EnactConfirmDialog } = usePapeeChat();
+  const { enact } = usePapeeEnact();
+  const backlogEnabled = isFeatureEnabled("backlog_tab_enabled");
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -143,7 +147,26 @@ export function PapeeChat() {
         )}
 
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            onSendToBacklog={
+              backlogEnabled && msg.role === "papee" && msg.content.trim().length > 0
+                ? async () => {
+                    const firstLine = msg.content.split("\n").find((l) => l.trim().length > 0) ?? msg.content;
+                    const title = firstLine.slice(0, 120).trim();
+                    const body = msg.content.length > title.length ? msg.content : undefined;
+                    await enact({
+                      kind: "createBacklogItem",
+                      title: title || "Captured from chat",
+                      body,
+                      source: "chat",
+                      sourceRef: { type: "papee_chat_message", id: msg.id },
+                    });
+                  }
+                : undefined
+            }
+          />
         ))}
 
         {isLoading && (
@@ -208,7 +231,15 @@ export function PapeeChat() {
 
 /* ---- Message Bubble ---- */
 
-function MessageBubble({ message, onFollowUp }: { message: ChatMessage; onFollowUp?: (text: string) => void }) {
+function MessageBubble({
+  message,
+  onFollowUp,
+  onSendToBacklog,
+}: {
+  message: ChatMessage;
+  onFollowUp?: (text: string) => void;
+  onSendToBacklog?: () => void | Promise<void>;
+}) {
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const isUser = message.role === "user";
@@ -285,6 +316,18 @@ function MessageBubble({ message, onFollowUp }: { message: ChatMessage; onFollow
                 {action.label}
               </button>
             ))}
+          </div>
+        )}
+
+        {onSendToBacklog && !isUser && (
+          <div className="mt-2 pt-1.5 border-t border-border/30">
+            <button
+              type="button"
+              onClick={() => void onSendToBacklog()}
+              className="text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Send to backlog
+            </button>
           </div>
         )}
       </div>

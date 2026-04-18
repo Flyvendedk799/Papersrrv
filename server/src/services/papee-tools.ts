@@ -10,6 +10,7 @@ import { workflowEngine } from "./workflow-engine.js";
 import { secretService } from "./secrets.js";
 import { logActivity } from "./activity-log.js";
 import { recall } from "./papee-memory.js";
+import { backlogService } from "./backlog.js";
 
 /**
  * PAPEE_TOOLS_PLAN.md — central tools dispatcher.
@@ -40,6 +41,7 @@ export function papeeToolsService(db: Db) {
   const projects = projectService(db);
   const workflows = workflowEngine(db);
   const secrets = secretService(db);
+  const backlog = backlogService(db);
 
   function actorFor(actor: PapeeToolActor): { agentId?: string; userId?: string } {
     if (actor.type === "agent") return { agentId: actor.id };
@@ -257,6 +259,31 @@ export function papeeToolsService(db: Db) {
             undo: priorAssignee
               ? { kind: "assignIssue", issueId: tool.issueId, assignee: priorAssignee }
               : undefined,
+          };
+        }
+
+        case "createBacklogItem": {
+          const created = await backlog.createItem(
+            companyId,
+            {
+              title: tool.title,
+              body: tool.body ?? null,
+              status: "idea",
+              source: "chat",
+              sourceRef: (tool.sourceRef ?? null) as import("@paperclipai/shared").BacklogItemSourceRef | null,
+            },
+            {
+              userId: actor.type === "user" ? (actor.userId ?? actor.id) : null,
+              agentId: actor.type === "agent" ? actor.id : null,
+            },
+          );
+          await audit(companyId, actor, "createBacklogItem", { type: "backlog_item", id: created.id }, {
+            title: tool.title,
+          });
+          return {
+            ok: true,
+            summary: "Saved to your backlog",
+            entity: { type: "backlog_item", id: created.id },
           };
         }
 
