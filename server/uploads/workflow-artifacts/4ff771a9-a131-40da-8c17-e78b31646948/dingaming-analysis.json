@@ -1,0 +1,112 @@
+{
+  "projectUrl": "https://dingaming.dk/",
+  "projectName": "DinGaming",
+  "description": "Digital game key marketplace for Steam, PlayStation, Xbox, and Nintendo Switch",
+  "language": "Danish",
+  "techStack": {
+    "framework": "React",
+    "backend": "Supabase (serverless)",
+    "ecommerce": "Shopify",
+    "gameKeysProvider": "Kinguin API",
+    "analytics": "Flock Analytics",
+    "fonts": "Google Fonts (DM Sans, Playfair Display)",
+    "styling": "CSS-in-JS",
+    "http": "Fetch API"
+  },
+  "sitemap": {
+    "public": [
+      "/",
+      "/categories",
+      "/search",
+      "/product/:handle",
+      "/deals",
+      "/login",
+      "/signup",
+      "/forgot-password",
+      "/support"
+    ],
+    "authenticated": [
+      "/club",
+      "/club/cases",
+      "/club/casino",
+      "/club/casino/blackjack",
+      "/club/casino/dice",
+      "/club/casino/hilo",
+      "/club/casino/lines",
+      "/club/casino/mines",
+      "/club/casino/roulette",
+      "/club/games",
+      "/club/rewards",
+      "/checkout",
+      "/admin"
+    ]
+  },
+  "mainFlows": [
+    {
+      "name": "Homepage",
+      "route": "/",
+      "description": "Main landing page with featured game keys",
+      "authenticated": false
+    },
+    {
+      "name": "Browse Games",
+      "route": "/categories",
+      "description": "View games organized by category/platform",
+      "authenticated": false
+    },
+    {
+      "name": "Search Games",
+      "route": "/search",
+      "description": "Search for specific game keys",
+      "authenticated": false
+    },
+    {
+      "name": "Product Details",
+      "route": "/product/:handle",
+      "description": "View game key details, price, platform compatibility",
+      "authenticated": false
+    },
+    {
+      "name": "Club Section",
+      "route": "/club",
+      "description": "Loyalty/rewards club with casino games, cases, rewards",
+      "authenticated": true,
+      "subsections": ["cases", "casino", "games", "rewards"]
+    },
+    {
+      "name": "Account Management",
+      "routes": ["/login", "/signup", "/forgot-password"],
+      "description": "Authentication flows",
+      "authenticated": false
+    },
+    {
+      "name": "Checkout",
+      "route": "/checkout",
+      "description": "Purchase and payment processing",
+      "authenticated": true
+    }
+  ],
+  "navigationStructure": {
+    "topLevel": ["Homepage", "Categories", "Search", "Club", "Account"],
+    "secondLevel": {
+      "Club": ["Cases", "Casino", "Games", "Rewards"]
+    },
+    "casino_games": ["Blackjack", "Dice", "HiLo", "Lines", "Mines", "Roulette"]
+  },
+  "keyFeatures": [
+    "Digital game key marketplace",
+    "Instant delivery via email",
+    "Multi-platform support (Steam, PlayStation, Xbox, Nintendo Switch)",
+    "Rewards/loyalty club with gamification",
+    "Casino games (BlackJack, Roulette, Dice, etc.)",
+    "Loot cases/mystery boxes",
+    "User authentication and account management",
+    "Secure payment processing"
+  ],
+  "analysisMetadata": {
+    "timestamp": "2026-03-15",
+    "method": "curl + JavaScript bundle analysis",
+    "routesExtracted": 18,
+    "requiresAuth": true
+  }
+}

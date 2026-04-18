@@ -1,0 +1,44 @@
+{
+  "flows": [
+    {
+      "name": "Homepage / Landing",
+      "screenshots": [
+        "homepage/01-homepage.png"
+      ],
+      "description": "Main landing page for DinGaming, a Danish gaming marketplace. Features hero section, game deals, platform categories (Steam, PlayStation, Xbox, Nintendo), and Customer Club benefits."
+    },
+    {
+      "name": "Login Flow",
+      "screenshots": [
+        "login/01-login-page.png",
+        "login/02-credentials-filled.png",
+        "login/03-post-submit.png"
+      ],
+      "description": "Login page with email and password fields. Features Customer Club benefits (1% cashback, daily login bonuses, Shards rewards). Post-login state captured."
+    },
+    {
+      "name": "Product Browsing",
+      "screenshots": [
+        "browse/01-homepage-products.png",
+        "browse/02-platform-filter.png"
+      ],
+      "description": "Browse products by platform categories. Homepage displays game deals organized by platform (Steam, PlayStation, Xbox, Nintendo Switch)."
+    },
+    {
+      "name": "Product Detail & Purchase",
+      "screenshots": [
+        "product/01-product-detail.png"
+      ],
+      "description": "Product detail page showing game information, pricing, platform availability, and purchase options. Example product: Two Point Hospital PC Steam Account."
+    },
+    {
+      "name": "Search Flow",
+      "screenshots": [
+        "search/01-before-search.png",
+        "search/02-search-filled.png",
+        "search/03-search-results.png"
+      ],
+      "description": "Search functionality allows users to find games by keyword. Example search: \"FIFA\"."
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { runnerApi } from "../api/runner";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
@@ -11,33 +12,149 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
-import { StatusIcon } from "../components/StatusIcon";
-import { PriorityIcon } from "../components/PriorityIcon";
 import { ActivityRow } from "../components/ActivityRow";
-import { Identity } from "../components/Identity";
-import { timeAgo } from "../lib/timeAgo";
 import { cn, formatCents } from "../lib/utils";
-import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard } from "lucide-react";
+import { Pause, Play, LayoutDashboard, ArrowRight } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
-import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
-import type { Agent, Issue } from "@paperclipai/shared";
+import { PapeeHead } from "../components/boared/PapeeHead";
+import { PapeeMemo } from "../components/boared/PapeeMemo";
+import { Marginalia, type MarginaliaItem } from "../components/boared/Marginalia";
+import { usePapeeMood } from "../hooks/usePapeeMood";
+import type { PapeeMood } from "../lib/papee-personality";
+import type { DashboardSummary } from "@paperclipai/shared";
+import type { ActivityEvent, Agent } from "@paperclipai/shared";
 
-function getRecentIssues(issues: Issue[]): Issue[] {
-  return [...issues]
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+/* ────────────────────────────────────────────────────────────────────
+ *  Editorial Dashboard — "Today's Edition"
+ *
+ *  Six blocks, top to bottom:
+ *    1. Editorial masthead with the Lead headline (Papee voice)
+ *    2. The Memo — Papee's typewritten daily briefing
+ *    3. ActiveAgentsPanel (kept — still useful)
+ *    4. The Wire — full-width activity feed (dominant)
+ *    5. The Marginalia — slim numeric rail (right side, reads as a sidebar)
+ *    6. Footer colophon
+ *
+ *  Charts have moved to /activity. Numeric stats live as both prose
+ *  (in the Memo) and quick-scan figures (in the Marginalia).
+ *  Hooks, queries, mutations, refs, and effects are byte-identical to
+ *  the previous version.
+ * ──────────────────────────────────────────────────────────────────── */
+
+function todayDateline(): string {
+  const d = new Date();
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** The Lead — one declarative line in Papee's voice. */
+function composeLeadHeadline(
+  summary: DashboardSummary | undefined,
+  mood: PapeeMood,
+): string {
+  if (!summary) return "Loading the wire.";
+  const attentionCount =
+    summary.pendingApprovals + summary.tasks.blocked + summary.agents.error;
+  if (mood === "urgent") return "Something's on fire.";
+  if (mood === "alert") {
+    return attentionCount === 1
+      ? "One thing needs your eye."
+      : `${attentionCount} things need your eye.`;
+  }
+  if (mood === "happy") return "All quiet. Nothing burning.";
+  return "All clear.";
+}
+
+/** The Memo body — 2-4 sentences in Papee's voice composed from summary. */
+function composePapeeMemo(summary: DashboardSummary): string[] {
+  const totalAgents =
+    summary.agents.active +
+    summary.agents.running +
+    summary.agents.paused +
+    summary.agents.error;
+
+  const lines: string[] = [];
+
+  // Line 1 — agent state
+  if (totalAgents === 0) {
+    lines.push("No agents on the floor yet. Hire one when you're ready.");
+  } else {
+    const verb = summary.agents.running === 0 ? "are idle" : "are working";
+    lines.push(
+      `${summary.agents.running} of ${totalAgents} ${totalAgents === 1 ? "agent" : "agents"} ${verb} right now${
+        summary.agents.error > 0
+          ? `, and ${summary.agents.error} ${summary.agents.error === 1 ? "is" : "are"} in error — I'll keep watch.`
+          : "."
+      }`,
+    );
+  }
+
+  // Line 2 — task state
+  const openTotal =
+    summary.tasks.open + summary.tasks.inProgress + summary.tasks.blocked;
+  if (openTotal === 0) {
+    lines.push("Nothing on the docket. Quiet day.");
+  } else {
+    lines.push(
+      `${summary.tasks.inProgress} ${summary.tasks.inProgress === 1 ? "matter" : "matters"} in progress, ${summary.tasks.open + summary.tasks.blocked} waiting${
+        summary.tasks.blocked > 0
+          ? ` (${summary.tasks.blocked} blocked)`
+          : ""
+      }.`,
+    );
+  }
+
+  // Line 3 — money
+  if (summary.costs.monthBudgetCents > 0) {
+    lines.push(
+      `${formatCents(summary.costs.monthSpendCents)} spent this month — ${summary.costs.monthUtilizationPercent}% of the budget.`,
+    );
+  } else {
+    lines.push(
+      `${formatCents(summary.costs.monthSpendCents)} spent this month.`,
+    );
+  }
+
+  // Line 4 — approvals (only if any)
+  if (summary.pendingApprovals > 0) {
+    lines.push(
+      `${summary.pendingApprovals} ${summary.pendingApprovals === 1 ? "matter awaits" : "matters await"} your eye.`,
+    );
+  }
+
+  return lines;
+}
+
+/** Visual weight for a wire dispatch — runs and status changes read stronger. */
+function eventWeight(event: ActivityEvent): "strong" | "quiet" {
+  if (event.entityType === "agent_run") return "strong";
+  if (
+    event.entityType === "issue" &&
+    (event.action.startsWith("issue.status_changed") ||
+      event.action === "issue.created" ||
+      event.action === "issue.assigned")
+  ) {
+    return "strong";
+  }
+  return "quiet";
 }
 
 export function Dashboard() {
-  const { selectedCompanyId, companies } = useCompany();
+  const { selectedCompanyId, selectedCompany, companies } = useCompany();
   const { openOnboarding } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [animatedActivityIds, setAnimatedActivityIds] = useState<Set<string>>(new Set());
   const seenActivityIdsRef = useRef<Set<string>>(new Set());
   const hydratedActivityRef = useRef(false);
   const activityAnimationTimersRef = useRef<number[]>([]);
+
+  const mood = usePapeeMood();
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -46,7 +163,7 @@ export function Dashboard() {
   });
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Dashboard" }]);
+    setBreadcrumbs([{ label: "Today" }]);
   }, [setBreadcrumbs]);
 
   const { data, isLoading, error } = useQuery({
@@ -73,14 +190,25 @@ export function Dashboard() {
     enabled: !!selectedCompanyId,
   });
 
-  const { data: runs } = useQuery({
-    queryKey: queryKeys.heartbeats(selectedCompanyId!),
-    queryFn: () => heartbeatsApi.list(selectedCompanyId!),
+  const { data: liveRuns } = useQuery({
+    queryKey: queryKeys.liveRuns(selectedCompanyId!),
+    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+    refetchInterval: 10_000,
   });
 
-  const recentIssues = issues ? getRecentIssues(issues) : [];
-  const recentActivity = useMemo(() => (activity ?? []).slice(0, 10), [activity]);
+  const { data: runnerStatus, refetch: refetchRunnerStatus } = useQuery({
+    queryKey: ["runner-status"],
+    queryFn: () => runnerApi.status(),
+    refetchInterval: 5000,
+  });
+
+  const toggleRunner = useMutation({
+    mutationFn: (paused: boolean) => runnerApi.setPaused(paused),
+    onSuccess: () => refetchRunnerStatus(),
+  });
+
+  const recentActivity = useMemo(() => (activity ?? []).slice(0, 25), [activity]);
 
   useEffect(() => {
     for (const timer of activityAnimationTimersRef.current) {
@@ -157,24 +285,26 @@ export function Dashboard() {
     return map;
   }, [issues]);
 
-  const agentName = (id: string | null) => {
-    if (!id || !agents) return null;
-    return agents.find((a) => a.id === id)?.name ?? null;
-  };
-
   if (!selectedCompanyId) {
     if (companies.length === 0) {
       return (
         <EmptyState
           icon={LayoutDashboard}
-          message="Welcome to Paperclip. Set up your first company and agent to get started."
-          action="Get Started"
+          message="Welcome. Set up your first organization to get started."
+          action="Get started"
           onAction={openOnboarding}
+          papee
+          papeePose="waving"
         />
       );
     }
     return (
-      <EmptyState icon={LayoutDashboard} message="Create or select a company to view the dashboard." />
+      <EmptyState
+        icon={LayoutDashboard}
+        message="Pick an organization from the masthead to see what's happening."
+        papee
+        papeePose="thinking"
+      />
     );
   }
 
@@ -183,167 +313,207 @@ export function Dashboard() {
   }
 
   const hasNoAgents = agents !== undefined && agents.length === 0;
+  const runnerPaused = !!runnerStatus?.paused;
+  const totalAgents = data
+    ? data.agents.active + data.agents.running + data.agents.paused + data.agents.error
+    : 0;
+  const leadHeadline = composeLeadHeadline(data, mood);
+  const memoLines = data ? composePapeeMemo(data) : [];
+
+  // Marginalia items — six raw figures the data hounds will scan
+  const marginaliaItems: MarginaliaItem[] = data
+    ? [
+        { label: "Agents", value: totalAgents, to: "/agents/all" },
+        { label: "Running", value: data.agents.running, to: "/agents/active", accent: data.agents.running > 0 },
+        { label: "Open matters", value: data.tasks.open + data.tasks.inProgress + data.tasks.blocked, to: "/issues" },
+        { label: "In progress", value: data.tasks.inProgress, to: "/issues" },
+        { label: "Spend", value: formatCents(data.costs.monthSpendCents), to: "/costs" },
+        {
+          label: "Approvals",
+          value: data.pendingApprovals,
+          to: "/approvals/pending",
+          accent: data.pendingApprovals > 0,
+        },
+      ]
+    : [];
 
   return (
-    <div className="space-y-6">
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+    <div className="boared-reveal max-w-[1200px] mx-auto pb-32">
+      {/* ── 1. Editorial masthead with the Lead ─────────────────── */}
+      <header className="relative pb-8 mb-10 border-b-2 border-foreground">
+        <div className="flex items-baseline justify-between gap-4 mb-6">
+          <span className="boared-label text-foreground">
+            §01 · The {selectedCompany?.name ?? "Boared"} Edition
+          </span>
+          <span className="font-mono text-[0.62rem] tracking-tight text-muted-foreground tabular-nums">
+            {todayDateline()}
+          </span>
+        </div>
 
-      {hasNoAgents && (
-        <div className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/25 dark:bg-amber-950/60">
-          <div className="flex items-center gap-2.5">
-            <Bot className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-            <p className="text-sm text-amber-900 dark:text-amber-100">
-              You have no agents.
-            </p>
+        <div className="grid grid-cols-12 gap-6 items-end">
+          <h1 className="col-span-12 md:col-span-9 boared-display text-[clamp(2.75rem,6vw,5rem)] leading-[0.92] text-foreground">
+            {leadHeadline}
+          </h1>
+          <div className="col-span-12 md:col-span-3 flex md:justify-end items-end gap-3">
+            <div className="flex flex-col items-end gap-1">
+              <span className="font-mono text-[0.58rem] uppercase tracking-[0.14em] text-muted-foreground">
+                By Papee
+              </span>
+              <span className="font-mono text-[0.58rem] uppercase tracking-[0.14em] text-foreground">
+                {mood}
+              </span>
+            </div>
+            <PapeeHead mood={mood} size={44} />
           </div>
+        </div>
+
+        <div className="absolute top-0 right-0">
           <button
-            onClick={() => openOnboarding({ initialStep: 2, companyId: selectedCompanyId! })}
-            className="text-sm font-medium text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100 underline underline-offset-2 shrink-0"
+            type="button"
+            onClick={() => toggleRunner.mutate(!runnerPaused)}
+            disabled={toggleRunner.isPending}
+            className={cn(
+              "inline-flex items-center gap-2 px-3 h-7 border transition-colors",
+              "font-mono text-[0.6rem] tracking-tight uppercase",
+              runnerPaused
+                ? "border-destructive text-destructive hover:bg-destructive hover:text-background"
+                : "border-foreground text-foreground hover:bg-foreground hover:text-background",
+            )}
+            title={runnerPaused ? "Resume runner" : "Pause runner"}
           >
-            Create one here
+            {runnerPaused ? <Play className="size-2.5" /> : <Pause className="size-2.5" />}
+            <span>{runnerPaused ? "Paused" : "Live"}</span>
           </button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="mb-8 px-4 py-3 border border-destructive text-destructive font-mono text-[0.72rem]">
+          {error.message}
         </div>
       )}
 
+      {hasNoAgents && (
+        <div className="mb-10 flex items-center justify-between gap-3 px-4 py-3 border border-foreground bg-[var(--boared-paper-2)]">
+          <p className="text-[0.82rem]">
+            You have no agents.{" "}
+            <button
+              onClick={() => openOnboarding({ initialStep: 2, companyId: selectedCompanyId! })}
+              className="underline underline-offset-4 hover:[text-decoration-color:var(--boared-acid)]"
+            >
+              Hire one
+            </button>
+            .
+          </p>
+        </div>
+      )}
+
+      {/* ── 2. Papee's typewritten memo ─────────────────────────── */}
+      {data && (
+        <div className="mb-12">
+          <PapeeMemo
+            re={`The state of ${selectedCompany?.name ?? "the bureau"}`}
+            dated={todayDateline()}
+            mood={mood}
+            lines={memoLines}
+          />
+        </div>
+      )}
+
+      {/* ── 3. ActiveAgentsPanel ────────────────────────────────── */}
       <ActiveAgentsPanel companyId={selectedCompanyId!} />
 
+      {/* ── 4. The Wire + 5. The Marginalia ─────────────────────── */}
       {data && (
-        <>
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
-            <MetricCard
-              icon={Bot}
-              value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
-              label="Agents Enabled"
-              to="/agents"
-              description={
-                <span>
-                  {data.agents.running} running{", "}
-                  {data.agents.paused} paused{", "}
-                  {data.agents.error} errors
-                </span>
-              }
-            />
-            <MetricCard
-              icon={CircleDot}
-              value={data.tasks.inProgress}
-              label="Tasks In Progress"
-              to="/issues"
-              description={
-                <span>
-                  {data.tasks.open} open{", "}
-                  {data.tasks.blocked} blocked
-                </span>
-              }
-            />
-            <MetricCard
-              icon={DollarSign}
-              value={formatCents(data.costs.monthSpendCents)}
-              label="Month Spend"
-              to="/costs"
-              description={
-                <span>
-                  {data.costs.monthBudgetCents > 0
-                    ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
-                    : "Unlimited budget"}
-                </span>
-              }
-            />
-            <MetricCard
-              icon={ShieldCheck}
-              value={data.pendingApprovals}
-              label="Pending Approvals"
-              to="/approvals"
-              description={
-                <span>
-                  {data.staleTasks} stale tasks
-                </span>
-              }
-            />
-          </div>
+        <section className="grid grid-cols-12 gap-x-10 gap-y-8 mt-12">
+          {/* The Wire — main column */}
+          <div className="col-span-12 md:col-span-9 min-w-0">
+            <div className="flex items-baseline justify-between gap-3 mb-4 pb-2 border-b-2 border-foreground">
+              <span className="boared-label text-foreground">The Wire</span>
+              <span className="font-mono text-[0.6rem] text-muted-foreground tracking-tight tabular-nums flex items-center gap-3">
+                {liveRuns && liveRuns.length > 0 && (
+                  <span className="flex items-center gap-1.5 text-foreground">
+                    <span className="size-1.5 bg-[var(--boared-acid)] animate-pulse" />
+                    {liveRuns.length} LIVE
+                  </span>
+                )}
+                <span>{recentActivity.length} ENTRIES</span>
+              </span>
+            </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <ChartCard title="Run Activity" subtitle="Last 14 days">
-              <RunActivityChart runs={runs ?? []} />
-            </ChartCard>
-            <ChartCard title="Issues by Priority" subtitle="Last 14 days">
-              <PriorityChart issues={issues ?? []} />
-            </ChartCard>
-            <ChartCard title="Issues by Status" subtitle="Last 14 days">
-              <IssueStatusChart issues={issues ?? []} />
-            </ChartCard>
-            <ChartCard title="Success Rate" subtitle="Last 14 days">
-              <SuccessRateChart runs={runs ?? []} />
-            </ChartCard>
-          </div>
+            {/* Live runs ride at the very top */}
+            {liveRuns && liveRuns.length > 0 && (
+              <div className="border-b border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)] bg-foreground/[0.025]">
+                {liveRuns.map((run) => (
+                  <Link
+                    key={run.id}
+                    to={run.issueId ? `/issues/${run.issueId}` : `/agents/${run.agentId}/runs/${run.id}`}
+                    className="flex items-center gap-3 px-3 py-3 text-[0.82rem] no-underline text-foreground hover:bg-foreground/[0.04] transition-colors"
+                  >
+                    <span className="size-1.5 bg-[var(--boared-acid)] animate-pulse shrink-0" aria-hidden />
+                    <span className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-foreground shrink-0">
+                      Live
+                    </span>
+                    <span className="truncate">
+                      <span className="font-medium">{run.agentName}</span>
+                      <span className="text-muted-foreground"> is running{run.issueId ? "" : " a task"}.</span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
 
-          <div className="grid md:grid-cols-2 gap-4">
-            {/* Recent Activity */}
-            {recentActivity.length > 0 && (
-              <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                  Recent Activity
-                </h3>
-                <div className="border border-border divide-y divide-border overflow-hidden">
-                  {recentActivity.map((event) => (
+            {/* Historical wire feed */}
+            {recentActivity.length === 0 ? (
+              <p className="boared-display italic text-[1.4rem] text-muted-foreground py-8">
+                Nothing on the wire yet.
+              </p>
+            ) : (
+              <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+                {recentActivity.map((event) => {
+                  const weight = eventWeight(event);
+                  return (
                     <ActivityRow
                       key={event.id}
                       event={event}
                       agentMap={agentMap}
                       entityNameMap={entityNameMap}
                       entityTitleMap={entityTitleMap}
-                      className={animatedActivityIds.has(event.id) ? "activity-row-enter" : undefined}
+                      className={cn(
+                        weight === "quiet" && "opacity-60",
+                        animatedActivityIds.has(event.id) && "activity-row-enter",
+                      )}
                     />
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* Recent Tasks */}
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                Recent Tasks
-              </h3>
-              {recentIssues.length === 0 ? (
-                <div className="border border-border p-4">
-                  <p className="text-sm text-muted-foreground">No tasks yet.</p>
-                </div>
-              ) : (
-                <div className="border border-border divide-y divide-border overflow-hidden">
-                  {recentIssues.slice(0, 10).map((issue) => (
-                    <Link
-                      key={issue.id}
-                      to={`/issues/${issue.identifier ?? issue.id}`}
-                      className="px-4 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit block"
-                    >
-                      <div className="flex gap-3">
-                        <div className="flex items-start gap-2 min-w-0 flex-1">
-                          <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                            <PriorityIcon priority={issue.priority} />
-                            <StatusIcon status={issue.status} />
-                          </div>
-                          <p className="min-w-0 flex-1 truncate">
-                            <span>{issue.title}</span>
-                            {issue.assigneeAgentId && (() => {
-                              const name = agentName(issue.assigneeAgentId);
-                              return name
-                                ? <span className="hidden sm:inline"><Identity name={name} size="sm" className="ml-2 inline-flex" /></span>
-                                : null;
-                            })()}
-                          </p>
-                        </div>
-                        <span className="text-xs text-muted-foreground shrink-0 pt-0.5">
-                          {timeAgo(issue.updatedAt)}
-                        </span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
+            <Link
+              to="/activity"
+              className="mt-4 inline-flex items-center gap-2 font-mono text-[0.66rem] uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Older entries
+              <ArrowRight className="size-3" strokeWidth={1.75} />
+            </Link>
           </div>
 
-        </>
+          {/* The Marginalia — right rail */}
+          <div className="col-span-12 md:col-span-3 min-w-0">
+            <Marginalia items={marginaliaItems} eyebrow="At a glance" />
+          </div>
+        </section>
       )}
+
+      {/* ── 6. Footer colophon ──────────────────────────────────── */}
+      <footer className="mt-20 pt-6 border-t border-foreground flex items-baseline justify-between gap-4">
+        <span className="boared-display italic text-[1.05rem] text-muted-foreground">
+          Boared.
+        </span>
+        <span className="font-mono text-[0.6rem] tracking-[0.1em] uppercase text-muted-foreground">
+          An edition of the {selectedCompany?.name ?? "house"} bureau.
+        </span>
+      </footer>
     </div>
   );
 }

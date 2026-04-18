@@ -1,0 +1,82 @@
+{
+  "projectUrl": "https://dingaming.dk/",
+  "projectName": "DinGaming",
+  "techStack": {
+    "framework": "React SPA",
+    "language": "TypeScript/JavaScript",
+    "bundler": "Module-based (crossorigin)",
+    "styling": "CSS Modules/CSS-in-JS",
+    "analytics": "Flock Analytics",
+    "fonts": "Google Fonts (DM Sans, Playfair Display)",
+    "features": ["PWA capable", "iOS web app support"]
+  },
+  "sitemap": {
+    "public": [
+      "/",
+      "/login",
+      "/signup",
+      "/forgot-password",
+      "/search",
+      "/categories",
+      "/deals",
+      "/support"
+    ],
+    "authenticated": [
+      "/admin",
+      "/checkout",
+      "/club",
+      "/club/games",
+      "/club/rewards",
+      "/club/cases",
+      "/club/casino",
+      "/club/casino/blackjack",
+      "/club/casino/dice",
+      "/club/casino/hilo",
+      "/club/casino/lines",
+      "/club/casino/mines",
+      "/club/casino/roulette"
+    ],
+    "dynamic": [
+      "/product/:handle"
+    ]
+  },
+  "flowList": [
+    "Homepage browsing (/) - Browse featured games and deals",
+    "Game search (/search) - Search and filter games",
+    "Category browsing (/categories) - Browse by game platform/category",
+    "Product details (/product/:handle) - View game details, pricing, platform info",
+    "Deals section (/deals) - View promotional offers",
+    "Authentication flow (/login, /signup, /forgot-password) - User registration and login",
+    "Checkout (/checkout) - Complete purchase, payment processing",
+    "Club section (/club) - Member rewards, loyalty program",
+    "Club casino games (/club/casino/*) - Gamified reward games (blackjack, dice, hilo, mines, roulette, lines)",
+    "Club case openings (/club/cases) - Loot box style rewards",
+    "Support (/support) - Customer support",
+    "Admin panel (/admin) - Administrative interface"
+  ],
+  "navigationStructure": {
+    "mainNav": [
+      "Home",
+      "Categories",
+      "Deals",
+      "Search",
+      "Club"
+    ],
+    "userNav": [
+      "Login / Signup",
+      "Profile / Account",
+      "Checkout",
+      "Support"
+    ],
+    "protectedSections": [
+      "Club (Games, Rewards, Cases, Casino)"
+    ]
+  },
+  "metadata": {
+    "language": "Danish (da)",
+    "targetAudience": "Danish game key buyers",
+    "businessModel": "Digital game key marketplace with loyalty/rewards club",
+    "robots": "Fully crawlable (no restrictions)",
+    "sitemap": "Not available (404)"
+  }
+}

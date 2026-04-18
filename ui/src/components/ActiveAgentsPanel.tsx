@@ -8,8 +8,7 @@ import { getUIAdapter } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, relativeTime } from "../lib/utils";
-import { ExternalLink } from "lucide-react";
-import { Identity } from "./Identity";
+
 
 type FeedTone = "info" | "warn" | "error" | "assistant" | "tool";
 
@@ -376,19 +375,32 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
     };
   }, [activeRunIds, companyId, runById]);
 
+  const activeCount = runs.filter(isRunActive).length;
+
   return (
-    <div>
-      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-        Agents
-      </h3>
+    <section className="mb-12">
+      {/* Editorial section header — no card chrome */}
+      <div className="flex items-baseline justify-between gap-3 mb-3 pb-2 border-b border-[var(--boared-rule)]">
+        <span className="boared-label text-foreground">Correspondents</span>
+        <span className="font-mono text-[0.6rem] text-muted-foreground tracking-tight tabular-nums flex items-center gap-3">
+          {activeCount > 0 && (
+            <span className="flex items-center gap-1.5 text-foreground">
+              <span className="size-1.5 bg-[var(--boared-acid)] animate-pulse" />
+              {activeCount} ON THE WIRE
+            </span>
+          )}
+          <span>{runs.length} ENTRIES</span>
+        </span>
+      </div>
+
       {runs.length === 0 ? (
-        <div className="border border-border rounded-lg p-4">
-          <p className="text-sm text-muted-foreground">No recent agent runs.</p>
-        </div>
+        <p className="font-mono text-[0.72rem] text-muted-foreground py-3">
+          No correspondents on duty.
+        </p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
+        <div className="border-t border-foreground divide-y divide-[var(--boared-rule)]">
           {runs.map((run) => (
-            <AgentRunCard
+            <CorrespondentRow
               key={run.id}
               run={run}
               issue={run.issueId ? issueById.get(run.issueId) : undefined}
@@ -398,11 +410,20 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
-function AgentRunCard({
+/**
+ * CorrespondentRow — a single editorial register entry for an agent.
+ *
+ * Replaces the SaaS "agent run card with embedded scrolling log" with a
+ * one-line byline that reads like a press box note: name, current dispatch,
+ * last action, age. The full transcript still exists in the data layer
+ * (and is reachable by clicking through to the run detail page), but it
+ * doesn't take up a card slot on the dashboard.
+ */
+function CorrespondentRow({
   run,
   issue,
   feed,
@@ -413,97 +434,87 @@ function AgentRunCard({
   feed: FeedItem[];
   isActive: boolean;
 }) {
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const recent = feed.slice(-20);
+  // The latest dispatch — newest non-empty entry from the feed.
+  const latest = useMemo(() => {
+    for (let i = feed.length - 1; i >= 0; i--) {
+      const item = feed[i];
+      if (item && item.text.trim().length > 0) return item;
+    }
+    return null;
+  }, [feed]);
 
-  useEffect(() => {
-    const body = bodyRef.current;
-    if (!body) return;
-    body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
-  }, [feed.length]);
+  const dispatchText = latest?.text.replace(/\s+/g, " ").trim() ?? null;
+  const truncated = dispatchText && dispatchText.length > 110 ? dispatchText.slice(0, 110) + "…" : dispatchText;
 
   return (
-    <div className={cn(
-      "flex flex-col rounded-lg border overflow-hidden min-h-[200px]",
-      isActive
-        ? "border-blue-500/30 bg-background/80 shadow-[0_0_12px_rgba(59,130,246,0.08)]"
-        : "border-border bg-background/50",
-    )}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
-        <div className="flex items-center gap-2 min-w-0">
-          {isActive ? (
-            <span className="relative flex h-2 w-2 shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-            </span>
-          ) : (
-            <span className="flex h-2 w-2 shrink-0">
-              <span className="inline-flex rounded-full h-2 w-2 bg-muted-foreground/40" />
-            </span>
-          )}
-          <Identity name={run.agentName} size="sm" />
-          {isActive && (
-            <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Live</span>
-          )}
-        </div>
-        <Link
-          to={`/agents/${run.agentId}/runs/${run.id}`}
-          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground shrink-0"
-        >
-          <ExternalLink className="h-2.5 w-2.5" />
-        </Link>
+    <Link
+      to={`/agents/${run.agentId}/runs/${run.id}`}
+      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-1 py-3 px-1 no-underline text-inherit hover:bg-foreground/[0.025] transition-colors group/corr"
+    >
+      {/* Top row: byline + status code + age */}
+      <div className="col-span-1 flex items-center gap-2 shrink-0">
+        {isActive ? (
+          <span className="size-1.5 bg-[var(--boared-acid)] animate-pulse" aria-hidden />
+        ) : (
+          <span className="size-1.5 bg-muted-foreground/40" aria-hidden />
+        )}
+        <span className="font-mono text-[0.7rem] uppercase tracking-[0.06em] text-foreground truncate max-w-[18ch]">
+          {run.agentName}
+        </span>
       </div>
 
-      {/* Issue context */}
-      {run.issueId && (
-        <div className="px-3 py-1.5 border-b border-border/40 text-xs flex items-center gap-1 min-w-0">
-          <Link
-            to={`/issues/${issue?.identifier ?? run.issueId}`}
-            className={cn(
-              "hover:underline min-w-0 line-clamp-2 min-h-[2rem]",
-              isActive ? "text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300" : "text-muted-foreground hover:text-foreground",
-            )}
-            title={issue?.title ? `${issue?.identifier ?? run.issueId.slice(0, 8)} - ${issue.title}` : issue?.identifier ?? run.issueId.slice(0, 8)}
-          >
-            {issue?.identifier ?? run.issueId.slice(0, 8)}
-            {issue?.title ? ` - ${issue.title}` : ""}
-          </Link>
-        </div>
-      )}
-
-      {/* Feed body */}
-      <div ref={bodyRef} className="flex-1 max-h-[140px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
-        {isActive && recent.length === 0 && (
-          <div className="text-xs text-muted-foreground">Waiting for output...</div>
-        )}
-        {!isActive && recent.length === 0 && (
-          <div className="text-xs text-muted-foreground">
-            {run.finishedAt ? `Finished ${relativeTime(run.finishedAt)}` : `Started ${relativeTime(run.createdAt)}`}
-          </div>
-        )}
-        {recent.map((item, index) => (
-          <div
-            key={item.id}
-            className={cn(
-              "flex gap-2 items-start",
-              index === recent.length - 1 && isActive && "animate-in fade-in slide-in-from-bottom-1 duration-300",
-            )}
-          >
-            <span className="text-[10px] text-muted-foreground shrink-0">{relativeTime(item.ts)}</span>
-            <span className={cn(
-              "min-w-0 break-words",
-              item.tone === "error" && "text-red-600 dark:text-red-300",
-              item.tone === "warn" && "text-amber-600 dark:text-amber-300",
-              item.tone === "assistant" && "text-emerald-700 dark:text-emerald-200",
-              item.tone === "tool" && "text-cyan-600 dark:text-cyan-300",
-              item.tone === "info" && "text-foreground/80",
-            )}>
-              {item.text}
+      {/* Subject — issue identifier + title */}
+      <div className="col-span-1 min-w-0 text-[0.82rem] leading-snug text-foreground truncate">
+        {run.issueId ? (
+          <>
+            <span className="font-mono text-[0.62rem] uppercase tracking-[0.06em] text-muted-foreground mr-2">
+              {issue?.identifier ?? run.issueId.slice(0, 8)}
             </span>
-          </div>
-        ))}
+            <span className="truncate">{issue?.title ?? "—"}</span>
+          </>
+        ) : (
+          <span className="font-mono text-[0.66rem] uppercase tracking-[0.06em] text-muted-foreground">
+            Free-form task
+          </span>
+        )}
       </div>
-    </div>
+
+      {/* Right meta: status + age */}
+      <div className="col-span-1 flex items-center gap-3 shrink-0 font-mono text-[0.6rem] uppercase tracking-[0.06em] text-muted-foreground tabular-nums">
+        <span>
+          {isActive
+            ? "Active"
+            : run.status === "failed"
+              ? "Failed"
+              : run.status === "timed_out"
+                ? "Timeout"
+                : "Closed"}
+        </span>
+        <span>·</span>
+        <span>{relativeTime(run.finishedAt ?? run.createdAt)}</span>
+      </div>
+
+      {/* Bottom row: latest dispatch (italic muted), spans subject column */}
+      <div className="col-start-2 col-end-3 min-w-0">
+        {truncated ? (
+          <span
+            className={cn(
+              "block truncate font-mono text-[0.7rem] italic",
+              latest?.tone === "error" ? "text-destructive" : "text-muted-foreground",
+            )}
+          >
+            "{truncated}"
+          </span>
+        ) : isActive ? (
+          <span className="block font-mono text-[0.68rem] italic text-muted-foreground/70">
+            Waiting for the wire…
+          </span>
+        ) : (
+          <span className="block font-mono text-[0.68rem] italic text-muted-foreground/70">
+            Closed.
+          </span>
+        )}
+      </div>
+    </Link>
   );
 }

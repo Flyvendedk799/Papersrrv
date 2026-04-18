@@ -10,6 +10,7 @@ import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./Ma
 import { StatusBadge } from "./StatusBadge";
 import { AgentIcon } from "./AgentIconPicker";
 import { formatDateTime } from "../lib/utils";
+import { usePapeeTargetRegistryOptional } from "../context/PapeeTargetRegistry";
 
 interface CommentWithRunMeta extends IssueComment {
   runId?: string | null;
@@ -29,7 +30,7 @@ interface CommentReassignment {
   assigneeUserId: string | null;
 }
 
-interface CommentThreadProps {
+export interface CommentThreadProps {
   comments: CommentWithRunMeta[];
   linkedRuns?: LinkedRunItem[];
   onAdd: (body: string, reopen?: boolean, reassignment?: CommentReassignment) => Promise<void>;
@@ -44,6 +45,19 @@ interface CommentThreadProps {
   reassignOptions?: InlineEntityOption[];
   currentAssigneeValue?: string;
   mentions?: MentionOption[];
+  /** Optional: render a small adornment (e.g. a colored dot + "↗ 3D"
+   *  chip) next to each comment. Receives the commentId and returns
+   *  a ReactNode placed at the trailing edge of the header row. If
+   *  absent, behaves exactly as before. */
+  rowAdornments?: (commentId: string) => React.ReactNode;
+  /** Optional: fired when the user's pointer enters / leaves a comment
+   *  row. Used by the unified IssueDetail layout to halo the matching
+   *  3D comment orb. */
+  onRowHover?: (commentId: string | null) => void;
+  /** Optional: ref for the comment composer so the Companion's
+   *  "Write a note to unblock" CTA can focus it. Exposed as a
+   *  MarkdownEditorRef because the composer is the MarkdownEditor. */
+  composerRef?: React.MutableRefObject<MarkdownEditorRef | null>;
 }
 
 const CLOSED_STATUSES = new Set(["done", "cancelled"]);
@@ -115,106 +129,181 @@ type TimelineItem =
   | { kind: "comment"; id: string; createdAtMs: number; comment: CommentWithRunMeta }
   | { kind: "run"; id: string; createdAtMs: number; run: LinkedRunItem };
 
+/* Each row is its own memoized component. React-query preserves the
+ * inner item references via structural sharing across refetches, so
+ * even when the parent timeline array ref changes every poll, the
+ * individual row components see stable props and skip re-render
+ * entirely. That's the one trick that prevents the markdown parser
+ * from running 50× per poll cycle on big issues. */
+const CommentRow = memo(function CommentRow({
+  comment,
+  agentMap,
+  isHighlighted,
+  adornment,
+  onHoverChange,
+}: {
+  comment: CommentWithRunMeta;
+  agentMap?: Map<string, Agent>;
+  isHighlighted: boolean;
+  adornment?: React.ReactNode;
+  onHoverChange?: (entered: boolean) => void;
+}) {
+  return (
+    <div
+      key={comment.id}
+      id={`comment-${comment.id}`}
+      className={`border p-3 overflow-hidden min-w-0 rounded-sm transition-colors duration-1000 scene-aware-row group ${isHighlighted ? "border-primary/50 bg-primary/5" : "border-border"}`}
+      onMouseEnter={() => onHoverChange?.(true)}
+      onMouseLeave={() => onHoverChange?.(false)}
+    >
+      <div className="flex items-center justify-between mb-1">
+        {comment.authorAgentId ? (
+          <Link to={`/agents/${comment.authorAgentId}`} className="hover:underline">
+            <Identity
+              name={agentMap?.get(comment.authorAgentId)?.name ?? comment.authorAgentId.slice(0, 8)}
+              size="sm"
+            />
+          </Link>
+        ) : (
+          <Identity name="You" size="sm" />
+        )}
+        <span className="flex items-center gap-1.5">
+          {adornment}
+          <a
+            href={`#comment-${comment.id}`}
+            className="text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
+          >
+            {formatDateTime(comment.createdAt)}
+          </a>
+          <CopyMarkdownButton text={comment.body} />
+        </span>
+      </div>
+      <MarkdownBody className="text-sm">{comment.body}</MarkdownBody>
+      {comment.runId && (
+        <div className="mt-2 pt-2 border-t border-border/60">
+          {comment.runAgentId ? (
+            <Link
+              to={`/agents/${comment.runAgentId}/runs/${comment.runId}`}
+              className="inline-flex items-center rounded-md border border-border bg-accent/30 px-2 py-1 text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+            >
+              run {comment.runId.slice(0, 8)}
+            </Link>
+          ) : (
+            <span className="inline-flex items-center rounded-md border border-border bg-accent/30 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+              run {comment.runId.slice(0, 8)}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+const RunRow = memo(function RunRow({
+  run,
+  agentMap,
+}: {
+  run: LinkedRunItem;
+  agentMap?: Map<string, Agent>;
+}) {
+  return (
+    <div className="border border-border bg-accent/20 p-3 overflow-hidden min-w-0 rounded-sm">
+      <div className="flex items-center justify-between mb-2">
+        <Link to={`/agents/${run.agentId}`} className="hover:underline">
+          <Identity
+            name={agentMap?.get(run.agentId)?.name ?? run.agentId.slice(0, 8)}
+            size="sm"
+          />
+        </Link>
+        <span className="text-xs text-muted-foreground">
+          {formatDateTime(run.startedAt ?? run.createdAt)}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-muted-foreground">Run</span>
+        <Link
+          to={`/agents/${run.agentId}/runs/${run.runId}`}
+          className="inline-flex items-center rounded-md border border-border bg-accent/40 px-2 py-1 font-mono text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+        >
+          {run.runId.slice(0, 8)}
+        </Link>
+        <StatusBadge status={run.status} />
+        <Link
+          to={`/files?runId=${run.runId}`}
+          className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors ml-auto"
+          title="View files touched by this run"
+        >
+          <FileText className="h-3 w-3" />
+          Files
+        </Link>
+      </div>
+    </div>
+  );
+});
+
 const TimelineList = memo(function TimelineList({
   timeline,
   agentMap,
   highlightCommentId,
+  rowAdornments,
+  onRowHover,
 }: {
   timeline: TimelineItem[];
   agentMap?: Map<string, Agent>;
   highlightCommentId?: string | null;
+  rowAdornments?: (commentId: string) => React.ReactNode;
+  onRowHover?: (commentId: string | null) => void;
 }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const papeeRegistry = usePapeeTargetRegistryOptional();
+
+  // Register each comment row as a Papee target so Papee can visually walk to / look at them.
+  const commentIds = timeline.filter((t) => t.kind === "comment").map((t) => t.id).join(",");
+  useEffect(() => {
+    if (!papeeRegistry || !containerRef.current) return;
+    const container = containerRef.current;
+    const registered: string[] = [];
+    const nodes = container.querySelectorAll<HTMLElement>('[id^="comment-"]');
+    nodes.forEach((el, idx) => {
+      const targetId = `issue-comment:${el.id.replace(/^comment-/, "")}`;
+      papeeRegistry.registerTarget({
+        id: targetId,
+        label: `Comment ${idx + 1}`,
+        category: "activity",
+        priority: 1,
+        element: el,
+      });
+      registered.push(targetId);
+    });
+    return () => {
+      for (const id of registered) papeeRegistry.unregisterTarget(id);
+    };
+  }, [papeeRegistry, commentIds]);
+
   if (timeline.length === 0) {
     return <p className="text-sm text-muted-foreground">No comments or runs yet.</p>;
   }
 
   return (
-    <div className="space-y-3">
+    <div ref={containerRef} className="space-y-3">
       {timeline.map((item) => {
         if (item.kind === "run") {
-          const run = item.run;
-          return (
-            <div key={`run:${run.runId}`} className="border border-border bg-accent/20 p-3 overflow-hidden min-w-0 rounded-sm">
-              <div className="flex items-center justify-between mb-2">
-                <Link to={`/agents/${run.agentId}`} className="hover:underline">
-                  <Identity
-                    name={agentMap?.get(run.agentId)?.name ?? run.agentId.slice(0, 8)}
-                    size="sm"
-                  />
-                </Link>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateTime(run.startedAt ?? run.createdAt)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-muted-foreground">Run</span>
-                <Link
-                  to={`/agents/${run.agentId}/runs/${run.runId}`}
-                  className="inline-flex items-center rounded-md border border-border bg-accent/40 px-2 py-1 font-mono text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
-                >
-                  {run.runId.slice(0, 8)}
-                </Link>
-                <StatusBadge status={run.status} />
-                <Link
-                  to={`/files?runId=${run.runId}`}
-                  className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors ml-auto"
-                  title="View files touched by this run"
-                >
-                  <FileText className="h-3 w-3" />
-                  Files
-                </Link>
-              </div>
-            </div>
-          );
+          return <RunRow key={`run:${item.run.runId}`} run={item.run} agentMap={agentMap} />;
         }
-
-        const comment = item.comment;
-        const isHighlighted = highlightCommentId === comment.id;
         return (
-          <div
-            key={comment.id}
-            id={`comment-${comment.id}`}
-            className={`border p-3 overflow-hidden min-w-0 rounded-sm transition-colors duration-1000 ${isHighlighted ? "border-primary/50 bg-primary/5" : "border-border"}`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              {comment.authorAgentId ? (
-                <Link to={`/agents/${comment.authorAgentId}`} className="hover:underline">
-                  <Identity
-                    name={agentMap?.get(comment.authorAgentId)?.name ?? comment.authorAgentId.slice(0, 8)}
-                    size="sm"
-                  />
-                </Link>
-              ) : (
-                <Identity name="You" size="sm" />
-              )}
-              <span className="flex items-center gap-1.5">
-                <a
-                  href={`#comment-${comment.id}`}
-                  className="text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
-                >
-                  {formatDateTime(comment.createdAt)}
-                </a>
-                <CopyMarkdownButton text={comment.body} />
-              </span>
-            </div>
-            <MarkdownBody className="text-sm">{comment.body}</MarkdownBody>
-            {comment.runId && (
-              <div className="mt-2 pt-2 border-t border-border/60">
-                {comment.runAgentId ? (
-                  <Link
-                    to={`/agents/${comment.runAgentId}/runs/${comment.runId}`}
-                    className="inline-flex items-center rounded-md border border-border bg-accent/30 px-2 py-1 text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-                  >
-                    run {comment.runId.slice(0, 8)}
-                  </Link>
-                ) : (
-                  <span className="inline-flex items-center rounded-md border border-border bg-accent/30 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                    run {comment.runId.slice(0, 8)}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+          <CommentRow
+            key={item.comment.id}
+            comment={item.comment}
+            agentMap={agentMap}
+            isHighlighted={highlightCommentId === item.comment.id}
+            adornment={rowAdornments?.(item.comment.id)}
+            onHoverChange={
+              onRowHover
+                ? (entered) =>
+                    onRowHover(entered ? item.comment.id : null)
+                : undefined
+            }
+          />
         );
       })}
     </div>
@@ -235,6 +324,9 @@ export function CommentThread({
   reassignOptions = [],
   currentAssigneeValue = "",
   mentions: providedMentions,
+  rowAdornments,
+  onRowHover,
+  composerRef,
 }: CommentThreadProps) {
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
@@ -243,6 +335,11 @@ export function CommentThread({
   const [reassignTarget, setReassignTarget] = useState(currentAssigneeValue);
   const [highlightCommentId, setHighlightCommentId] = useState<string | null>(null);
   const editorRef = useRef<MarkdownEditorRef>(null);
+  // Mirror the internal editorRef into the caller-supplied composerRef
+  // so IssueDetail can focus() the composer on the "Write a note" CTA.
+  useEffect(() => {
+    if (composerRef) composerRef.current = editorRef.current;
+  });
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const location = useLocation();
@@ -359,7 +456,13 @@ export function CommentThread({
     <div className="space-y-4">
       <h3 className="text-sm font-semibold">Comments &amp; Runs ({timeline.length})</h3>
 
-      <TimelineList timeline={timeline} agentMap={agentMap} highlightCommentId={highlightCommentId} />
+      <TimelineList
+        timeline={timeline}
+        agentMap={agentMap}
+        highlightCommentId={highlightCommentId}
+        rowAdornments={rowAdornments}
+        onRowHover={onRowHover}
+      />
 
       {liveRunSlot}
 

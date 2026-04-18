@@ -64,3 +64,5 @@ export {
   type BacklogItemLabelRow,
   type NewBacklogItemLabelRow,
 } from "./backlog_item_labels.js";
+export { papeeMemory, type PapeeMemoryRow, type NewPapeeMemoryRow } from "./papee_memory.js";
+export { issueLinks, type IssueLinkRow, type NewIssueLinkRow } from "./issue_links.js";

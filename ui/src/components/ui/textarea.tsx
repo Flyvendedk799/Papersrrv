@@ -2,12 +2,23 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/*
+ * BOARED textarea — same hairline-rule treatment as Input but with all
+ * four sides drawn. Reads as a printed form box.
+ */
 function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
   return (
     <textarea
       data-slot="textarea"
       className={cn(
-        "border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 flex field-sizing-content min-h-16 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+        "flex w-full min-h-16 bg-transparent text-foreground field-sizing-content",
+        "font-mono text-[0.78rem] leading-relaxed tracking-tight",
+        "border border-[var(--boared-rule)] px-3 py-2",
+        "placeholder:text-muted-foreground placeholder:font-mono placeholder:text-[0.72rem] placeholder:tracking-[0.04em]",
+        "outline-none transition-[border-color]",
+        "focus-visible:border-foreground",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        "aria-invalid:border-destructive",
         className
       )}
       {...props}

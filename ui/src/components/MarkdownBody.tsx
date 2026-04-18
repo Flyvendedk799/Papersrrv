@@ -1,4 +1,4 @@
-import { isValidElement, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
+import { isValidElement, memo, useEffect, useId, useState, type CSSProperties, type ReactNode } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useParams, useLocation } from "react-router-dom";
@@ -135,7 +135,7 @@ function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: b
   );
 }
 
-export function MarkdownBody({ children, className }: MarkdownBodyProps) {
+function MarkdownBodyImpl({ children, className }: MarkdownBodyProps) {
   const { theme } = useTheme();
 
   // Auto-resolve company prefix for file path links
@@ -244,3 +244,9 @@ export function MarkdownBody({ children, className }: MarkdownBodyProps) {
     </div>
   );
 }
+
+/* Memoized so re-renders of the parent comment thread don't trigger
+ * a fresh markdown parse for every comment row on every poll. The
+ * comment body is a stable string when content is unchanged, so
+ * React.memo with default shallow equality is enough. */
+export const MarkdownBody = memo(MarkdownBodyImpl);

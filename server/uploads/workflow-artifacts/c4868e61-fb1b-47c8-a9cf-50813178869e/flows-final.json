@@ -1,0 +1,44 @@
+{
+  "flows": [
+    {
+      "name": "Homepage / Landing",
+      "screenshots": [
+        "homepage/01-homepage-full.png"
+      ],
+      "description": "Main landing page for DinGaming/GameKeys.dk, a Danish digital game key marketplace. Features: (1) Hero section promoting 'Save up to 70%' on game keys with featured deal, (2) Platform navigation icons (Steam, PlayStation, Xbox, Nintendo), (3) Product grid showcasing game deals with prices in DKK and 'Køb' (Buy) buttons, (4) Platform-specific sections for browsing, (5) Trustpilot reviews section showing customer testimonials, (6) Newsletter signup for exclusive offers, (7) Full footer with links to game categories, help resources, and payment method badges (Visa, Mastercard, MobilePay, PayPal, Apple Pay). Dark theme with orange/yellow accent colors for CTAs."
+    },
+    {
+      "name": "Login Flow",
+      "screenshots": [
+        "login/01-login-page.png",
+        "login/02-credentials-filled.png",
+        "login/03-post-submit.png"
+      ],
+      "description": "User authentication flow accessed via header navigation. Login page displays: (1) DinGaming logo and 'Log ind' heading, (2) 'Velkommen tilbage til Customer Club' (Welcome back to Customer Club) subheading, (3) Email input field with placeholder 'din@email.dk', (4) Password field ('Adgangskode') with show/hide toggle and 'Glemt?' (Forgot?) link, (5) Orange 'Log ind' submit button, (6) Divider with 'eller' (or), (7) Customer Club Benefits section highlighting: earn Shards on purchases (1% cashback), daily login bonuses, exchange Shards for discounts, (8) 'Opret konto' (Create account) link. Screenshots capture: empty form, filled credentials, and post-submission state. The login integrates loyalty program benefits as value proposition."
+    },
+    {
+      "name": "Product Browsing & Platform Filtering",
+      "screenshots": [
+        "browse/01-homepage-products.png",
+        "browse/02-platform-filter.png"
+      ],
+      "description": "Product discovery experience allowing users to browse game catalog. Features: (1) Homepage product grid showing 8+ games with thumbnails, titles, prices (e.g., '200 kr'), platform badges, and green 'Køb' buttons, (2) Platform filter navigation with 16+ clickable platform links including Steam, PlayStation, Xbox, Nintendo Switch, (3) Each product card displays game cover art, title, price, and purchase CTA, (4) Responsive grid layout organizing products by platform category. Users can filter by clicking platform icons or links to view platform-specific inventory. Screenshots show both homepage grid view and filtered platform view."
+    },
+    {
+      "name": "Product Detail & Purchase",
+      "screenshots": [
+        "product/01-product-detail.png"
+      ],
+      "description": "Individual product page for 'Two Point Hospital PC Steam Account' priced at 200 kr. Page structure: (1) Product image gallery with 4+ thumbnail previews and main display image showing game logo and artwork, (2) Product title and platform badge (PC Steam), (3) Pricing information prominently displayed, (4) Orange purchase/add to cart button, (5) Detailed product description section with game information, features, and specifications, (6) Additional product images or related content below, (7) Newsletter signup CTA ('Få eksklusive tilbud først' - Get exclusive offers first), (8) Footer with GameKeys.dk branding, navigation links (Spil, Hjælp, Sikker Handel), and payment method icons. Product page provides comprehensive game information to inform purchase decision."
+    },
+    {
+      "name": "Search Flow",
+      "screenshots": [
+        "search/01-before-search.png",
+        "search/02-search-filled.png",
+        "search/03-search-results.png"
+      ],
+      "description": "Search functionality for finding games by keyword. Flow: (1) Homepage with search input in header navigation, (2) User enters search term 'FIFA' into search field, (3) Search results page displays with query 'FIFA' shown in header, loading spinner indicates results are being fetched, (4) Results page includes persistent search bar with 'Søg' (Search) button and clear icon, (5) Promotional section 'Få eksklusive tilbud først' (Get exclusive offers first) encouraging newsletter signup with 10% discount on first order, (6) Footer remains consistent with platform categories (Alle Spil, Steam Keys, PlayStation, Xbox, Nintendo Switch, PC Games), help section (Kontakt Os, FAQ, Aktiveringsguide, Refundering), and trust indicators (SSL encryption badge, payment methods). Search provides quick access to specific game inventory."
+    }
+  ]
+}

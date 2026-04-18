@@ -1,0 +1,158 @@
+[500] GET / [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /api/companies/6a2cd3ee-c730-434e-a1bd-76a4e5fa8720/files/project-summaries PostgresError: syntax error at or near "ESCAPE"
+    at ErrorResponse (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:815:30)
+    at handle (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:489:6)
+    at Socket.data (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:324:9)
+    at Socket.emit (node:events:508:20)
+    at addChunk (node:internal/streams/readable:564:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:515:3)
+    at Readable.push (node:internal/streams/readable:395:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:23) {
+  severity_local: 'ERROR',
+  severity: 'ERROR',
+  code: '42601',
+  position: '164',
+  file: 'scan.l',
+  line: '1248',
+  routine: 'scanner_yyerror'
+}
+[500] GET /api/companies/6a2cd3ee-c730-434e-a1bd-76a4e5fa8720/files/general?limit=3 PostgresError: syntax error at or near "ESCAPE"
+    at ErrorResponse (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:815:30)
+    at handle (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:489:6)
+    at Socket.data (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:324:9)
+    at Socket.emit (node:events:508:20)
+    at addChunk (node:internal/streams/readable:564:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:515:3)
+    at Readable.push (node:internal/streams/readable:395:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:23) {
+  severity_local: 'ERROR',
+  severity: 'ERROR',
+  code: '42601',
+  position: '164',
+  file: 'scan.l',
+  line: '1248',
+  routine: 'scanner_yyerror'
+}
+[500] GET /api/companies/6a2cd3ee-c730-434e-a1bd-76a4e5fa8720/files/project-summaries PostgresError: op ANY/ALL (array) requires array on right side
+    at ErrorResponse (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:815:30)
+    at handle (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:489:6)
+    at Socket.data (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:324:9)
+    at Socket.emit (node:events:508:20)
+    at addChunk (node:internal/streams/readable:564:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:515:3)
+    at Readable.push (node:internal/streams/readable:395:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:23) {
+  severity_local: 'ERROR',
+  severity: 'ERROR',
+  code: '42809',
+  position: '144',
+  file: 'parse_oper.c',
+  line: '804',
+  routine: 'make_scalar_array_op'
+}
+[500] GET /api/companies/6a2cd3ee-c730-434e-a1bd-76a4e5fa8720/files/general?limit=3 PostgresError: op ANY/ALL (array) requires array on right side
+    at ErrorResponse (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:815:30)
+    at handle (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:489:6)
+    at Socket.data (file:///Users/tobiasmastek/paperclip/node_modules/.pnpm/postgres@3.4.9/node_modules/postgres/src/connection.js:324:9)
+    at Socket.emit (node:events:508:20)
+    at addChunk (node:internal/streams/readable:564:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:515:3)
+    at Readable.push (node:internal/streams/readable:395:5)
+    at TCP.onStreamRead (node:internal/stream_base_commons:189:23) {
+  severity_local: 'ERROR',
+  severity: 'ERROR',
+  code: '42809',
+  position: '144',
+  file: 'parse_oper.c',
+  line: '804',
+  routine: 'make_scalar_array_op'
+}
+[500] GET /assets/IssueDetail-DGd9Lkhy.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /assets/InlineEditor-CFFiydRy.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /assets/separator-nZI2lsCw.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /assets/shield-alert-OWJmPAiT.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /assets/FilePreview-DkMW_Le2.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /assets/circle-check-BqDPr6Q2.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /assets/sheet-bduqZiKi.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /assets/index-Bd5hMVuR.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}
+[500] GET /assets/copy-CEAjuWvB.js [Error: ENOENT: no such file or directory, stat '/Users/tobiasmastek/paperclip/ui/dist/index.html'] {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: '/Users/tobiasmastek/paperclip/ui/dist/index.html',
+  expose: false,
+  statusCode: 404,
+  status: 404
+}

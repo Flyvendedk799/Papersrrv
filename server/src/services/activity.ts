@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { activityLog, heartbeatRuns, issues } from "@paperclipai/db";
 import { decodeCursor } from "../lib/pagination.js";
@@ -10,6 +10,8 @@ export interface ActivityFilters {
   entityId?: string;
   limit?: number;
   cursor?: string;
+  /** Only include rows created after this ISO timestamp. */
+  since?: string;
 }
 
 export function activityService(db: Db) {
@@ -26,6 +28,12 @@ export function activityService(db: Db) {
       }
       if (filters.entityId) {
         conditions.push(eq(activityLog.entityId, filters.entityId));
+      }
+      if (filters.since) {
+        const d = new Date(filters.since);
+        if (!Number.isNaN(d.getTime())) {
+          conditions.push(gte(activityLog.createdAt, d));
+        }
       }
 
       if (filters.cursor) {

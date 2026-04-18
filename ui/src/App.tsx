@@ -18,6 +18,7 @@ import { CompanySettings } from "./pages/CompanySettings";
 import { NewAgent } from "./pages/NewAgent";
 import { Workflows } from "./pages/Workflows";
 import { Skills } from "./pages/Skills";
+import { Secrets } from "./pages/Secrets";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { InviteLandingPage } from "./pages/InviteLanding";
@@ -46,7 +47,7 @@ function BootstrapPendingPage() {
       <div className="rounded-lg border border-border bg-card p-6">
         <h1 className="text-xl font-semibold">Instance setup required</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          No instance admin exists yet. Run this command in your Paperclip environment to generate
+          No instance admin exists yet. Run this command in your Boared environment to generate
           the first admin invite URL:
         </p>
         <pre className="mt-4 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs">
@@ -120,6 +121,7 @@ function boardRoutes() {
       <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
       <Route path="files" element={<Files />} />
+      <Route path="secrets" element={<Secrets />} />
       <Route path="skills" element={<Skills />} />
       <Route path="workflows" element={<Workflows />} />
       <Route path="workflows/:workflowId" element={<WorkflowDetail />} />
@@ -242,6 +244,7 @@ export function App() {
           <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />
+          <Route path="secrets" element={<UnprefixedBoardRedirect />} />
           <Route path="skills" element={<UnprefixedBoardRedirect />} />
           <Route path="workflows" element={<UnprefixedBoardRedirect />} />
           <Route path="workflows/:workflowId" element={<UnprefixedBoardRedirect />} />

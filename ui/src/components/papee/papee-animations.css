@@ -1,0 +1,220 @@
+/* ============================================================
+   Papee mascot animations — rich, organic, character-driven
+   ============================================================ */
+
+/* ---- Idle: gentle floating breath ---- */
+@keyframes papee-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-2px) rotate(0.5deg); }
+  50% { transform: translateY(-3.5px) rotate(0deg); }
+  75% { transform: translateY(-1.5px) rotate(-0.5deg); }
+}
+
+.papee-idle {
+  animation: papee-float 4s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+
+/* ---- Jump: squash-and-stretch with overshoot ---- */
+@keyframes papee-jump {
+  0%   { transform: translateY(0) scaleX(1) scaleY(1); }
+  10%  { transform: translateY(3px) scaleX(1.08) scaleY(0.88); }       /* anticipation squash */
+  30%  { transform: translateY(-20px) scaleX(0.92) scaleY(1.1); }      /* launch stretch */
+  50%  { transform: translateY(-24px) scaleX(0.95) scaleY(1.06); }     /* peak */
+  70%  { transform: translateY(-6px) scaleX(1) scaleY(1); }            /* falling */
+  85%  { transform: translateY(2px) scaleX(1.06) scaleY(0.92); }       /* land squash */
+  95%  { transform: translateY(-1px) scaleX(0.99) scaleY(1.01); }      /* settle bounce */
+  100% { transform: translateY(0) scaleX(1) scaleY(1); }
+}
+
+.papee-jump {
+  animation: papee-jump 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---- Celebrate: bouncy repeated jumps with rotation ---- */
+@keyframes papee-celebrate {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  15%  { transform: translateY(3px) rotate(-2deg) scaleX(1.06) scaleY(0.92); }
+  35%  { transform: translateY(-18px) rotate(3deg) scaleX(0.94) scaleY(1.08); }
+  55%  { transform: translateY(-2px) rotate(-1deg) scale(1); }
+  70%  { transform: translateY(2px) rotate(1deg) scaleX(1.04) scaleY(0.95); }
+  85%  { transform: translateY(-10px) rotate(-2deg) scaleX(0.96) scaleY(1.05); }
+}
+
+.papee-celebrate {
+  animation: papee-celebrate 1s cubic-bezier(0.22, 1, 0.36, 1) 2;
+}
+
+/* ---- Alarm: rapid shake with slight scale pulse ---- */
+@keyframes papee-alarm-shake {
+  0%, 100% { transform: translateX(0) scale(1); }
+  10% { transform: translateX(-3px) scale(1.02); }
+  20% { transform: translateX(3px) scale(0.98); }
+  30% { transform: translateX(-2.5px) scale(1.01); }
+  40% { transform: translateX(2.5px) scale(0.99); }
+  50% { transform: translateX(-2px) scale(1.01); }
+  60% { transform: translateX(2px) scale(0.99); }
+  70% { transform: translateX(-1.5px) scale(1); }
+  80% { transform: translateX(1.5px) scale(1); }
+  90% { transform: translateX(-0.5px) scale(1); }
+}
+
+.papee-alarm-shake {
+  animation: papee-alarm-shake 500ms ease-out 2;
+}
+
+/* ---- Wave arm: jaunty swinging motion ---- */
+@keyframes papee-wave-arm {
+  0%   { transform: rotate(0deg); }
+  15%  { transform: rotate(-18deg); }
+  30%  { transform: rotate(14deg); }
+  45%  { transform: rotate(-12deg); }
+  60%  { transform: rotate(10deg); }
+  75%  { transform: rotate(-6deg); }
+  90%  { transform: rotate(3deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.papee-wave-arm {
+  animation: papee-wave-arm 800ms cubic-bezier(0.22, 1, 0.36, 1) 2;
+  transform-origin: 44px 28px;
+}
+
+/* ---- Thinking: rotating with bobbing ---- */
+@keyframes papee-think {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-1px) rotate(-2deg); }
+  50% { transform: translateY(-2px) rotate(0deg); }
+  75% { transform: translateY(-1px) rotate(2deg); }
+}
+
+.papee-think {
+  animation: papee-think 2.5s ease-in-out infinite;
+}
+
+/* ---- Thinking dots: sequential pop-in ---- */
+@keyframes papee-dot-pop {
+  0%, 20% { opacity: 0.2; transform: scale(0.6) translateY(2px); }
+  50% { opacity: 1; transform: scale(1.15) translateY(-1px); }
+  80%, 100% { opacity: 0.3; transform: scale(0.8) translateY(0); }
+}
+
+.papee-thinking-dots > circle {
+  animation: papee-dot-pop 1.4s ease-in-out infinite;
+}
+.papee-thinking-dots > circle:nth-child(2) {
+  animation-delay: 250ms;
+}
+.papee-thinking-dots > circle:nth-child(3) {
+  animation-delay: 500ms;
+}
+
+/* ---- Sparkles: starburst pop with drift ---- */
+@keyframes papee-sparkle-pop {
+  0% { opacity: 0; transform: scale(0) rotate(0deg); }
+  30% { opacity: 1; transform: scale(1.3) rotate(20deg); }
+  60% { opacity: 0.8; transform: scale(1) rotate(35deg); }
+  100% { opacity: 0; transform: scale(0.4) rotate(45deg) translateY(-4px); }
+}
+
+.papee-sparkle > path,
+.papee-sparkle > circle {
+  animation: papee-sparkle-pop 900ms ease-out forwards;
+}
+.papee-sparkle > *:nth-child(2) {
+  animation-delay: 120ms;
+}
+.papee-sparkle > *:nth-child(3) {
+  animation-delay: 250ms;
+}
+.papee-sparkle > *:nth-child(4) {
+  animation-delay: 400ms;
+}
+
+/* ---- Zzz: drifting upward ---- */
+@keyframes papee-zzz-drift {
+  0% { opacity: 0; transform: translateY(0) scale(0.7); }
+  30% { opacity: 0.7; transform: translateY(-3px) scale(1); }
+  70% { opacity: 0.4; transform: translateY(-6px) scale(0.9); }
+  100% { opacity: 0; transform: translateY(-10px) scale(0.7); }
+}
+
+.papee-zzz > text {
+  animation: papee-zzz-drift 2.5s ease-in-out infinite;
+}
+.papee-zzz > text:nth-child(2) {
+  animation-delay: 800ms;
+}
+.papee-zzz > text:nth-child(3) {
+  animation-delay: 1600ms;
+}
+
+/* ---- Speech bubble: spring-in from character ---- */
+@keyframes papee-speech-enter {
+  0% { opacity: 0; transform: translateY(8px) scale(0.9); }
+  50% { opacity: 1; transform: translateY(-2px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.papee-speech-bubble {
+  animation: papee-speech-enter 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Entrance: dramatic pop-up ---- */
+@keyframes papee-entrance {
+  0% { opacity: 0; transform: translateY(30px) scale(0.5) rotate(-10deg); }
+  40% { opacity: 1; transform: translateY(-8px) scale(1.05) rotate(2deg); }
+  70% { transform: translateY(2px) scale(0.98) rotate(-1deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
+}
+
+.papee-entrance {
+  animation: papee-entrance 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---- Glow pulse for active states ---- */
+@keyframes papee-glow-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+.papee-glow-celebrate {
+  animation: papee-glow-pulse 1s ease-in-out infinite;
+}
+
+.papee-glow-alarm {
+  animation: papee-glow-pulse 0.6s ease-in-out infinite;
+}
+
+.papee-glow-think {
+  animation: papee-glow-pulse 2s ease-in-out infinite;
+}
+
+/* ---- Hover sparkle on character button ---- */
+@keyframes papee-hover-sparkle {
+  0% { box-shadow: 0 0 0 0 oklch(0.75 0.1 85 / 0.4); }
+  70% { box-shadow: 0 0 0 8px oklch(0.75 0.1 85 / 0); }
+  100% { box-shadow: 0 0 0 0 oklch(0.75 0.1 85 / 0); }
+}
+
+/* ============================================================
+   Reduced motion: disable all animations
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .papee-idle,
+  .papee-jump,
+  .papee-celebrate,
+  .papee-alarm-shake,
+  .papee-wave-arm,
+  .papee-think,
+  .papee-thinking-dots > circle,
+  .papee-sparkle > path,
+  .papee-sparkle > circle,
+  .papee-zzz > text,
+  .papee-speech-bubble,
+  .papee-entrance,
+  .papee-glow-celebrate,
+  .papee-glow-alarm,
+  .papee-glow-think {
+    animation: none !important;
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "documents": [
+    {
+      "title": "README - Documentation Index",
+      "path": "docs/README.md",
+      "description": "Comprehensive index and overview of all technical documentation"
+    },
+    {
+      "title": "Architecture Overview",
+      "path": "docs/01-architecture-overview.md",
+      "description": "Complete technology stack, system components, security architecture, and scalability strategy for the DinGaming platform"
+    },
+    {
+      "title": "Authentication System",
+      "path": "docs/02-authentication-system.md",
+      "description": "Detailed documentation of the Supabase Auth integration including signup, login, password reset, session management, and security measures"
+    },
+    {
+      "title": "API Endpoints & Integration",
+      "path": "docs/03-api-endpoints.md",
+      "description": "Complete API reference covering authentication, database operations, payment integration, analytics, and webhooks"
+    },
+    {
+      "title": "Data Models & Database Schema",
+      "path": "docs/04-data-models.md",
+      "description": "Full database schema with ERD, table definitions, triggers, functions, Row Level Security policies, and sample data"
+    },
+    {
+      "title": "User Flows & Features",
+      "path": "docs/05-user-flows.md",
+      "description": "Comprehensive documentation of all user journeys including authentication, shopping, Customer Club, casino games, and support flows"
+    },
+    {
+      "title": "Deployment & Infrastructure",
+      "path": "docs/06-deployment-infrastructure.md",
+      "description": "Infrastructure architecture, CI/CD pipeline, monitoring, security compliance, disaster recovery, and operational procedures"
+    }
+  ],
+  "metadata": {
+    "projectName": "DinGaming",
+    "projectUrl": "https://dingaming.dk/",
+    "projectType": "Digital Game Keys Marketplace",
+    "primaryMarket": "Denmark (Danish language)",
+    "generatedDate": "2026-03-14",
+    "totalDocuments": 7,
+    "technologiesDocumented": [
+      "React",
+      "Vite",
+      "Supabase (PostgreSQL)",
+      "Supabase Auth",
+      "Cloudflare R2",
+      "Flock Analytics",
+      "MobilePay",
+      "PayPal"
+    ]
+  },
+  "summary": {
+    "techStack": {
+      "frontend": "React + Vite (SPA)",
+      "backend": "Supabase (PostgreSQL + Auth)",
+      "hosting": "Static web hosting",
+      "cdn": "Cloudflare R2",
+      "analytics": "Flock (GDPR-compliant)",
+      "payments": ["MobilePay", "Card", "PayPal"]
+    },
+    "keyFeatures": [
+      "Multi-platform game key marketplace (Steam, PlayStation, Xbox, Nintendo)",
+      "Instant delivery within 30 seconds",
+      "Customer Club loyalty program with Shards rewards",
+      "Casino gamification (Blackjack, Roulette, Dice, Hi-Lo, Lines, Mines)",
+      "Daily deals with up to 70% discounts",
+      "1% cashback on all purchases",
+      "Progressive Web App (PWA) enabled"
+    ],
+    "documentationCoverage": [
+      "Complete architecture diagrams",
+      "Full API endpoint reference",
+      "Comprehensive database schema with ERD",
+      "Detailed user flow documentation",
+      "CI/CD and deployment procedures",
+      "Security and compliance guidelines",
+      "Monitoring and observability setup",
+      "Disaster recovery procedures"
+    ]
+  },
+  "files": [
+    {
+      "name": "README.md",
+      "size": "11.2 KB",
+      "type": "markdown"
+    },
+    {
+      "name": "01-architecture-overview.md",
+      "size": "7.8 KB",
+      "type": "markdown"
+    },
+    {
+      "name": "02-authentication-system.md",
+      "size": "12.5 KB",
+      "type": "markdown"
+    },
+    {
+      "name": "03-api-endpoints.md",
+      "size": "16.3 KB",
+      "type": "markdown"
+    },
+    {
+      "name": "04-data-models.md",
+      "size": "21.7 KB",
+      "type": "markdown"
+    },
+    {
+      "name": "05-user-flows.md",
+      "size": "18.9 KB",
+      "type": "markdown"
+    },
+    {
+      "name": "06-deployment-infrastructure.md",
+      "size": "22.1 KB",
+      "type": "markdown"
+    }
+  ]
+}

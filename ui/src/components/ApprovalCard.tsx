@@ -1,18 +1,28 @@
-import { CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
-import { Identity } from "./Identity";
-import { typeLabel, typeIcon, defaultTypeIcon, ApprovalPayloadRenderer } from "./ApprovalPayload";
+import { typeLabel, ApprovalPayloadRenderer } from "./ApprovalPayload";
 import { timeAgo } from "../lib/timeAgo";
+import { cn } from "../lib/utils";
 import type { Approval, Agent } from "@paperclipai/shared";
 
-function statusIcon(status: string) {
-  if (status === "approved") return <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />;
-  if (status === "rejected") return <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />;
-  if (status === "revision_requested") return <Clock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />;
-  if (status === "pending") return <Clock className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />;
-  return null;
-}
+/*
+ * BOARED ApprovalCard — petition awaiting signature.
+ *
+ * Replaces the SaaS card pattern (rounded box, colored status icons, button
+ * row) with a typewritten petition document: a stamped header, the payload
+ * filed in the body, and a dotted-line "signature" tray at the foot.
+ *
+ * Each petition stacks directly into a vertical column with hairline rules
+ * between — no card chrome, no rounded corners, no colors except the one
+ * acid for "approve".
+ */
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: "Awaiting signature",
+  approved: "Signed off",
+  rejected: "Refused",
+  revision_requested: "Sent back",
+};
 
 export function ApprovalCard({
   approval,
@@ -31,73 +41,97 @@ export function ApprovalCard({
   detailLink?: string;
   isPending: boolean;
 }) {
-  const Icon = typeIcon[approval.type] ?? defaultTypeIcon;
   const label = typeLabel[approval.type] ?? approval.type;
+  const isAwaiting = approval.status === "pending" || approval.status === "revision_requested";
+  const statusText = STATUS_LABEL[approval.status] ?? approval.status;
 
   return (
-    <div className="border border-border rounded-lg p-4 space-y-0">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">{label}</span>
-            {requesterAgent && (
-              <span className="text-xs text-muted-foreground">
-                requested by <Identity name={requesterAgent.name} size="sm" className="inline-flex" />
-              </span>
-            )}
+    <article className="relative border-b border-[var(--boared-rule)] py-6 px-1">
+      {/* Stamped status mark — top right */}
+      <div
+        className={cn(
+          "absolute top-4 right-1 inline-flex items-center px-2 py-1 border font-mono text-[0.58rem] uppercase tracking-[0.12em]",
+          isAwaiting
+            ? "border-foreground text-foreground"
+            : approval.status === "approved"
+              ? "border-[var(--boared-acid)] text-[var(--boared-acid)]"
+              : "border-muted-foreground text-muted-foreground",
+        )}
+      >
+        {statusText}
+      </div>
+
+      {/* Petition header — typewritten meta block */}
+      <header className="mb-4">
+        <div className="boared-label text-foreground mb-1.5">Petition · {label}</div>
+        <div className="font-mono text-[0.66rem] uppercase tracking-[0.06em] text-muted-foreground flex items-center gap-2 flex-wrap">
+          <span>Filed {timeAgo(approval.createdAt)}</span>
+          {requesterAgent && (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span>By {requesterAgent.name}</span>
+            </>
+          )}
+        </div>
+      </header>
+
+      {/* Body — payload */}
+      <div className="max-w-[680px] mb-5">
+        <ApprovalPayloadRenderer type={approval.type} payload={approval.payload} />
+      </div>
+
+      {approval.decisionNote && (
+        <div className="max-w-[680px] mb-5 pt-3 border-t border-[var(--boared-rule)]">
+          <div className="boared-label text-muted-foreground mb-1">Note</div>
+          <p className="font-mono text-[0.74rem] italic text-muted-foreground">
+            {approval.decisionNote}
+          </p>
+        </div>
+      )}
+
+      {/* Signature tray — dotted line + approve / reject */}
+      {isAwaiting && (
+        <div className="max-w-[680px] flex items-end justify-between gap-4 pt-2">
+          <div className="flex-1 flex items-end gap-2">
+            <span className="boared-label text-muted-foreground pb-0.5">Sign</span>
+            <span
+              className="flex-1 h-px self-end mb-1.5"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(to right, var(--boared-rule) 0 4px, transparent 4px 8px)",
+              }}
+            />
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={onReject} disabled={isPending}>
+              Refuse
+            </Button>
+            <Button variant="acid" size="sm" onClick={onApprove} disabled={isPending}>
+              Sign off
+            </Button>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {statusIcon(approval.status)}
-          <span className="text-xs text-muted-foreground capitalize">{approval.status}</span>
-          <span className="text-xs text-muted-foreground">· {timeAgo(approval.createdAt)}</span>
-        </div>
-      </div>
-
-      {/* Payload */}
-      <ApprovalPayloadRenderer type={approval.type} payload={approval.payload} />
-
-      {/* Decision note */}
-      {approval.decisionNote && (
-        <div className="mt-3 text-xs text-muted-foreground italic border-t border-border pt-2">
-          Note: {approval.decisionNote}
-        </div>
       )}
 
-      {/* Actions */}
-      {(approval.status === "pending" || approval.status === "revision_requested") && (
-        <div className="flex gap-2 mt-4 pt-3 border-t border-border">
-          <Button
-            size="sm"
-            className="bg-green-700 hover:bg-green-600 text-white"
-            onClick={onApprove}
-            disabled={isPending}
-          >
-            Approve
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={onReject}
-            disabled={isPending}
-          >
-            Reject
-          </Button>
-        </div>
-      )}
-      <div className="mt-3">
+      {/* Detail link */}
+      <div className="max-w-[680px] mt-3">
         {detailLink ? (
-          <Button variant="ghost" size="sm" className="text-xs px-0" asChild>
-            <Link to={detailLink}>View details</Link>
-          </Button>
+          <Link
+            to={detailLink}
+            className="font-mono text-[0.62rem] uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground transition-colors no-underline"
+          >
+            Open file →
+          </Link>
         ) : (
-          <Button variant="ghost" size="sm" className="text-xs px-0" onClick={onOpen}>
-            View details
-          </Button>
+          <button
+            type="button"
+            onClick={onOpen}
+            className="font-mono text-[0.62rem] uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Open file →
+          </button>
         )}
       </div>
-    </div>
+    </article>
   );
 }

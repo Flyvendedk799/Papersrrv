@@ -1,0 +1,244 @@
+{
+  "projectUrl": "https://dingaming.dk/",
+  "projectName": "DinGaming",
+  "description": "Danish digital game key marketplace. Buy game keys for Steam, PlayStation, Xbox, and Nintendo. Instant delivery to email within 30 seconds. Customer Club with Shards rewards, daily bonuses, and casino games.",
+  "techStack": {
+    "frontend": {
+      "framework": "React",
+      "bundler": "Vite",
+      "architecture": "SPA (Single Page Application)",
+      "assets": "Hashed bundles under /assets/"
+    },
+    "infrastructure": {
+      "analytics": "Flock.js",
+      "hosting": "HTTPS, Danish domain"
+    },
+    "features": [
+      "Client-side routing",
+      "Module preloading",
+      "Responsive layout"
+    ]
+  },
+  "sitemap": {
+    "public": [
+      {
+        "path": "/",
+        "title": "Home",
+        "description": "Landing page with hero, deals, testimonials"
+      },
+      {
+        "path": "/categories",
+        "title": "Find dit næste gaming eventyr",
+        "description": "Browse by platform (PC, Steam, PlayStation, Xbox, Nintendo)"
+      },
+      {
+        "path": "/deals",
+        "title": "Dagens Tilbud",
+        "description": "Hot deals, flash deals, weekly favorites"
+      },
+      {
+        "path": "/search",
+        "title": "Søg efter spil",
+        "description": "Search for games"
+      },
+      {
+        "path": "/product/:id",
+        "title": "Product detail",
+        "description": "Game page with price, add to cart"
+      },
+      {
+        "path": "/login",
+        "title": "Log ind",
+        "description": "Customer Club login with email and password"
+      },
+      {
+        "path": "/signup",
+        "title": "Opret konto",
+        "description": "Create account, 500 Shards welcome bonus"
+      },
+      {
+        "path": "/forgot-password",
+        "title": "Glemt adgangskode?",
+        "description": "Password reset via email"
+      },
+      {
+        "path": "/support",
+        "title": "Support & Hjælp",
+        "description": "FAQ, activation guide, contact"
+      }
+    ],
+    "authenticated": [
+      {
+        "path": "/club",
+        "title": "Customer Club",
+        "description": "Member dashboard, Shards, rewards, daily login bonuses"
+      },
+      {
+        "path": "/club/rewards",
+        "title": "Club Rewards",
+        "description": "Redeem Shards for discounts"
+      },
+      {
+        "path": "/club/games",
+        "title": "Club Games",
+        "description": "Games available in Customer Club"
+      },
+      {
+        "path": "/club/history",
+        "title": "Club History",
+        "description": "Purchase/activity history"
+      },
+      {
+        "path": "/club/casino",
+        "title": "Club Casino",
+        "description": "Casino games hub (blackjack, roulette, dice, etc.)"
+      },
+      {
+        "path": "/club/cases",
+        "title": "Club Cases",
+        "description": "Loot case mechanics"
+      },
+      {
+        "path": "/checkout",
+        "title": "Checkout",
+        "description": "Purchase flow with cart, payment (MobilePay, card, PayPal)"
+      }
+    ]
+  },
+  "flowList": [
+    {
+      "id": "auth-login",
+      "name": "Login Flow",
+      "steps": [
+        "Navigate to /login or /club",
+        "Enter email and password",
+        "Optional: Use 'Glemt?' for password reset",
+        "Submit → Redirect to Customer Club"
+      ],
+      "entryPoints": [
+        "/login",
+        "/club"
+      ]
+    },
+    {
+      "id": "auth-signup",
+      "name": "Signup Flow",
+      "steps": [
+        "Navigate to /signup",
+        "Enter username, email, password, confirm password",
+        "Submit → Receive 500 Shards welcome bonus",
+        "Redirect to Customer Club"
+      ],
+      "entryPoints": [
+        "/signup"
+      ]
+    },
+    {
+      "id": "auth-forgot-password",
+      "name": "Password Reset Flow",
+      "steps": [
+        "Navigate to /forgot-password from login",
+        "Enter email",
+        "Send reset link",
+        "Receive reset link via email and reset password"
+      ],
+      "entryPoints": [
+        "/login → Glemt?"
+      ]
+    },
+    {
+      "id": "purchase-flow",
+      "name": "Game Purchase Flow",
+      "steps": [
+        "Find game (home, /categories, /deals, /search)",
+        "Add to cart",
+        "Navigate to checkout",
+        "Pay (MobilePay, card, PayPal)",
+        "Receive key via email within 30 seconds"
+      ],
+      "entryPoints": [
+        "/",
+        "/categories",
+        "/deals",
+        "/search",
+        "/product/:id"
+      ]
+    },
+    {
+      "id": "browse-flow",
+      "name": "Browse & Search Flow",
+      "steps": [
+        "Home or /categories or /deals",
+        "Optional: Use /search for specific games",
+        "Filter by platform",
+        "View product details and add to cart"
+      ],
+      "entryPoints": [
+        "/",
+        "/categories",
+        "/deals",
+        "/search"
+      ]
+    },
+    {
+      "id": "customer-club-flow",
+      "name": "Customer Club Flow",
+      "steps": [
+        "Login required",
+        "Access /club dashboard",
+        "Earn Shards (1% cashback, daily login bonuses)",
+        "Redeem at /club/rewards",
+        "Optional: Play casino games or cases"
+      ],
+      "entryPoints": [
+        "/club"
+      ],
+      "requiresAuth": true
+    }
+  ],
+  "navigationStructure": {
+    "header": {
+      "logo": "DinGaming",
+      "links": [
+        {
+          "label": "DinGaming",
+          "path": "/"
+        },
+        {
+          "label": "Alle Spil",
+          "path": "/#spil"
+        },
+        {
+          "label": "Kategorier",
+          "path": "/categories"
+        },
+        {
+          "label": "Tilbud",
+          "path": "/deals"
+        },
+        {
+          "label": "Support",
+          "path": "/support"
+        },
+        {
+          "label": "Club",
+          "path": "/club"
+        }
+      ]
+    },
+    "footer": {
+      "newsletter": "10% first order + weekly deals",
+      "support": "/support"
+    },
+    "platforms": [
+      "Steam",
+      "PlayStation",
+      "Xbox",
+      "Nintendo"
+    ]
+  },
+  "analysisMeta": {
+    "analyzedAt": "2026-03-14T16:46:13.033Z",
+    "loginVerified": false
+  }
+}

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DinGaming - Visual Documentation</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Light mode palette - Editorial aesthetic */
+      --bg: #faf8f6;
+      --surface: #ffffff;
+      --surface-secondary: #f5f2f0;
+      --border: rgba(0, 0, 0, 0.08);
+      --text: #1a1a1a;
+      --text-dim: #666666;
+      --accent-primary: #8b4513;
+      --accent-secondary: #2c5aa0;
+      --accent-tertiary: #6b8e23;
+      --overlay-light: rgba(139, 69, 19, 0.08);
+      --overlay-secondary: rgba(44, 90, 160, 0.08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1815;
+        --surface: #2a2520;
+        --surface-secondary: #332d28;
+        --border: rgba(255, 255, 255, 0.08);
+        --text: #f0ebe5;
+        --text-dim: #a89a8f;
+        --accent-primary: #d4a574;
+        --accent-secondary: #7eb3d4;
+        --accent-tertiary: #b8d961;
+        --overlay-light: rgba(212, 165, 116, 0.12);
+        --overlay-secondary: rgba(126, 179, 212, 0.12);
+      }
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: 'Instrument Serif', 'Georgia', serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* Navigation */
+    nav {
+      position: sticky;
+      top: 0;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      z-index: 100;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      nav {
+        background: rgba(26, 24, 21, 0.95);
+      }
+    }
+
+    nav ul {
+      list-style: none;
+      display: flex;
+      gap: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      flex-wrap: wrap;
+    }
+
+    nav a {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 0.95rem;
+      transition: color 0.3s ease;
+    }
+
+    nav a:hover {
+      color: var(--accent-primary);
+    }
+
+    /* Main container */
+    main {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 3rem 2rem;
+    }
+
+    /* Hero section */
+    .hero {
+      margin-bottom: 4rem;
+      text-align: center;
+      padding: 2rem;
+      background: linear-gradient(135deg, var(--overlay-light), transparent);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .hero h1 {
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+    }
+
+    .hero .subtitle {
+      font-size: 1.2rem;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+      font-style: italic;
+    }
+
+    .hero .date {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Section styling */
+    section {
+      margin-bottom: 4rem;
+    }
+
+    section h2 {
+      font-size: 2rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid var(--accent-primary);
+      font-weight: 400;
+      letter-spacing: -0.01em;
+    }
+
+    section h3 {
+      font-size: 1.3rem;
+      margin-top: 1.5rem;
+      margin-bottom: 0.75rem;
+      color: var(--accent-secondary);
+      font-weight: 400;
+    }
+
+    section p {
+      color: var(--text-dim);
+      margin-bottom: 1rem;
+      line-height: 1.8;
+    }
+
+    /* Project overview card */
+    .overview-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 768px) {
+      .overview-card {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .overview-card h3 {
+      grid-column: 1 / -1;
+      color: var(--accent-primary);
+      margin-top: 0;
+    }
+
+    .overview-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .overview-item strong {
+      color: var(--text);
+      margin-bottom: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+    }
+
+    .overview-item span {
+      color: var(--text-dim);
+      font-size: 1rem;
+    }
+
+    /* Gallery grid */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    @media (max-width: 768px) {
+      .gallery {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .gallery-item {
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .gallery-item {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+    }
+
+    .gallery-item:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .gallery-item:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      }
+    }
+
+    .gallery-item img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      padding: 1rem;
+      background: var(--surface-secondary);
+    }
+
+    .gallery-item p {
+      padding: 0 1rem 1rem;
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    /* Tech stack section */
+    .tech-stack {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .tech-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+
+    .tech-item strong {
+      color: var(--accent-secondary);
+      display: block;
+      margin-bottom: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+    }
+
+    .tech-item span {
+      color: var(--text-dim);
+      font-size: 0.95rem;
+    }
+
+    /* Features grid */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border-left: 4px solid var(--accent-tertiary);
+      padding: 1.5rem;
+      border-radius: 6px;
+    }
+
+    .feature-card strong {
+      color: var(--accent-tertiary);
+      display: block;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-card p {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    /* Video container */
+    .video-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .video-container video {
+      width: 100%;
+      max-width: 600px;
+      height: auto;
+      border-radius: 6px;
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* Code block */
+    .code-block {
+      background: var(--surface-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+      color: var(--accent-secondary);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      border-top: 1px solid var(--border);
+      margin-top: 4rem;
+    }
+
+    /* Animations */
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    section {
+      animation: fadeUp 0.6s ease forwards;
+    }
+
+    section:nth-child(1) { animation-delay: 0.1s; }
+    section:nth-child(2) { animation-delay: 0.2s; }
+    section:nth-child(3) { animation-delay: 0.3s; }
+    section:nth-child(4) { animation-delay: 0.4s; }
+    section:nth-child(n+5) { animation-delay: 0.5s; }
+
+    @media (prefers-reduced-motion: reduce) {
+      section {
+        animation: none;
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    /* Responsive typography */
+    @media (max-width: 768px) {
+      .hero h1 {
+        font-size: 2rem;
+      }
+
+      section h2 {
+        font-size: 1.5rem;
+      }
+
+      nav ul {
+        gap: 1rem;
+      }
+
+      main {
+        padding: 2rem 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#auth">Authentication</a></li>
+      <li><a href="#flows">User Flows</a></li>
+      <li><a href="#tech">Technology</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <h1>DinGaming</h1>
+      <p class="subtitle">Digital Game Key Marketplace</p>
+      <p class="subtitle">Instant delivery for Steam, PlayStation, Xbox, Nintendo Switch</p>
+      <p class="date">Documentation generated March 15, 2026</p>
+    </section>
+
+    <!-- Overview Section -->
+    <section id="overview">
+      <h2>Project Overview</h2>
+
+      <div class="overview-card">
+        <h3>Project Details</h3>
+
+        <div class="overview-item">
+          <strong>Project Name</strong>
+          <span>DinGaming</span>
+        </div>
+
+        <div class="overview-item">
+          <strong>Project URL</strong>
+          <span>https://dingaming.dk/</span>
+        </div>
+
+        <div class="overview-item">
+          <strong>Category</strong>
+          <span>E-commerce / Digital Goods</span>
+        </div>
+
+        <div class="overview-item">
+          <strong>Primary Function</strong>
+          <span>Game key marketplace with instant delivery</span>
+        </div>
+      </div>
+
+      <p>DinGaming is a modern digital marketplace specializing in game keys for major gaming platforms. The platform provides users with instant access to games across Steam, PlayStation, Xbox, and Nintendo Switch with a seamless purchasing experience.</p>
+
+      <h3>Key Features</h3>
+      <div class="features">
+        <div class="feature-card">
+          <strong>🎮 Multi-Platform Support</strong>
+          <p>Browse and purchase game keys for all major gaming platforms including Steam, PlayStation, Xbox, and Nintendo Switch.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>⚡ Instant Delivery</strong>
+          <p>Receive game keys immediately upon purchase without waiting for manual processing.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>🔍 Advanced Search</strong>
+          <p>Powerful search and filtering capabilities to find games by categories, price, and popularity.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>💰 Special Deals</strong>
+          <p>Browse and discover exclusive deals and discounted game keys updated regularly.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>🏪 Club Benefits</strong>
+          <p>Exclusive membership benefits and rewards for registered users.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>👤 User Accounts</strong>
+          <p>Secure account management with purchase history and profile customization.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Authentication Flow Section -->
+    <section id="auth">
+      <h2>Authentication & Login Flow</h2>
+      <p>DinGaming uses session-based authentication to manage user access and maintain secure login sessions.</p>
+
+      <h3>Login Process</h3>
+      <p>The login flow captures the user authentication journey from initial page load through successful authentication and dashboard access.</p>
+
+      <div class="gallery">
+        <div class="gallery-item">
+          <img src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/screenshots/01-login-page.png" alt="Login page initial state">
+          <p><strong>Step 1: Login Page</strong><br>User presented with authentication form</p>
+        </div>
+
+        <div class="gallery-item">
+          <img src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/screenshots/02-form-filled.png" alt="Login form with credentials entered">
+          <p><strong>Step 2: Credentials Entry</strong><br>User enters username and password</p>
+        </div>
+
+        <div class="gallery-item">
+          <img src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/screenshots/03-after-login.png" alt="Authenticated dashboard view">
+          <p><strong>Step 3: Post-Login</strong><br>User authenticated and dashboard accessible</p>
+        </div>
+      </div>
+
+      <div class="video-container">
+        <h3>Full Login Flow Video</h3>
+        <video controls>
+          <source src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/videos/login-flow.webm" type="video/webm">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+    </section>
+
+    <!-- User Flows Section -->
+    <section id="flows">
+      <h2>Main User Flows</h2>
+      <p>DinGaming provides several primary user flows for discovery and navigation:</p>
+
+      <h3>Platform Flows Captured</h3>
+      <div class="gallery">
+        <div class="gallery-item">
+          <img src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/screenshots/01-homepage.png" alt="DinGaming homepage">
+          <p><strong>Homepage</strong><br>Initial landing page with featured content</p>
+        </div>
+
+        <div class="gallery-item">
+          <img src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/screenshots/02-search.png" alt="Search functionality">
+          <p><strong>Search Interface</strong><br>Advanced game search and filtering</p>
+        </div>
+
+        <div class="gallery-item">
+          <img src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/screenshots/03-categories.png" alt="Game categories">
+          <p><strong>Categories</strong><br>Browse games by platform and genre</p>
+        </div>
+
+        <div class="gallery-item">
+          <img src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/screenshots/04-club.png" alt="Club/membership section">
+          <p><strong>Club Section</strong><br>Exclusive deals and member benefits</p>
+        </div>
+
+        <div class="gallery-item">
+          <img src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/screenshots/05-deals.png" alt="Deals and promotions">
+          <p><strong>Deals</strong><br>Current promotions and special offers</p>
+        </div>
+      </div>
+
+      <div class="video-container">
+        <h3>Complete Platform Flow Video</h3>
+        <video controls>
+          <source src="http://localhost:3100/api/workflow-artifacts/22ba88be-e919-4f7a-8f75-72ab0b76b830/videos/flow-capture.webm" type="video/webm">
+          Your browser does not support the video tag.
+        </video>
+      </div>
+
+      <h3>Flow Navigation Structure</h3>
+      <p>The platform implements a comprehensive navigation structure supporting 9 primary routes with both public and authenticated access levels:</p>
+      <ul style="margin-left: 1.5rem; color: var(--text-dim);">
+        <li><strong>/</strong> - Homepage (public)</li>
+        <li><strong>/search</strong> - Game search interface (public)</li>
+        <li><strong>/categories</strong> - Category browsing (public)</li>
+        <li><strong>/club</strong> - Membership benefits (authenticated)</li>
+        <li><strong>/deals</strong> - Special promotions (public)</li>
+        <li><strong>/product/:id</strong> - Individual game details (public)</li>
+        <li><strong>/cart</strong> - Shopping cart (authenticated)</li>
+        <li><strong>/checkout</strong> - Purchase flow (authenticated)</li>
+        <li><strong>/account</strong> - User profile and settings (authenticated)</li>
+      </ul>
+    </section>
+
+    <!-- Technology Section -->
+    <section id="tech">
+      <h2>Technology Stack</h2>
+      <p>DinGaming is built on modern, performant technologies optimized for user experience and scalability:</p>
+
+      <h3>Frontend Architecture</h3>
+      <div class="tech-stack">
+        <div class="tech-item">
+          <strong>Framework</strong>
+          <span>React</span>
+        </div>
+        <div class="tech-item">
+          <strong>Build Tool</strong>
+          <span>Vite</span>
+        </div>
+        <div class="tech-item">
+          <strong>Authentication</strong>
+          <span>Session-Based</span>
+        </div>
+        <div class="tech-item">
+          <strong>State Management</strong>
+          <span>React Context / Hooks</span>
+        </div>
+        <div class="tech-item">
+          <strong>Styling</strong>
+          <span>CSS Modules / Tailwind</span>
+        </div>
+        <div class="tech-item">
+          <strong>Routing</strong>
+          <span>React Router v6</span>
+        </div>
+      </div>
+
+      <h3>Design System</h3>
+      <div class="tech-stack">
+        <div class="tech-item">
+          <strong>Primary Font</strong>
+          <span>DM Sans</span>
+        </div>
+        <div class="tech-item">
+          <strong>Display Font</strong>
+          <span>Playfair Display</span>
+        </div>
+        <div class="tech-item">
+          <strong>Color Palette</strong>
+          <span>Modern, accessible colors</span>
+        </div>
+        <div class="tech-item">
+          <strong>Icons</strong>
+          <span>SVG-based icon system</span>
+        </div>
+      </div>
+
+      <h3>Key Technical Features</h3>
+      <div class="features">
+        <div class="feature-card">
+          <strong>⚡ Performance Optimized</strong>
+          <p>Vite provides fast development experience and optimized production builds with code splitting.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>🔐 Secure Authentication</strong>
+          <p>Session-based authentication with secure token management and CSRF protection.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>📱 Responsive Design</strong>
+          <p>Mobile-first responsive design ensuring optimal experience across all devices.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>🎯 Type Safety</strong>
+          <p>TypeScript integration for improved code reliability and developer experience.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>♿ Accessibility</strong>
+          <p>WCAG 2.1 AA compliance ensuring platform is usable by all visitors.</p>
+        </div>
+
+        <div class="feature-card">
+          <strong>📊 Analytics Ready</strong>
+          <p>Instrumented for user behavior tracking and conversion optimization.</p>
+        </div>
+      </div>
+
+      <h3>Integration Points</h3>
+      <p>The platform integrates with several external services and APIs:</p>
+      <div class="code-block">// Game Key Distribution APIs
+// - Steam API for key delivery
+// - PlayStation Network integration
+// - Xbox Live integration
+// - Nintendo eShop API
+
+// Payment Processing
+// - Stripe / Adyen for payments
+// - Multiple currency support
+
+// Analytics
+// - Google Analytics 4
+// - Conversion tracking
+// - User behavior monitoring</div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>DinGaming Visual Documentation</p>
+    <p>Generated on March 15, 2026 | <a href="https://dingaming.dk/" style="color: var(--accent-secondary); text-decoration: none;">Visit Platform →</a></p>
+  </footer>
+
+</body>
+</html>

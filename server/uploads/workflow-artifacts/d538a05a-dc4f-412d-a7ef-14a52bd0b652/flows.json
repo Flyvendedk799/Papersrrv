@@ -1,0 +1,29 @@
+{
+  "flows": [
+    {
+      "name": "Homepage / Landing",
+      "description": "Main DinGaming landing page showing hero section, featured games, deals, and platform navigation.",
+      "screenshots": ["homepage/01-homepage.png"]
+    },
+    {
+      "name": "Search Results",
+      "description": "Game search functionality - searching for 'FIFA' and displaying search results with game cards.",
+      "screenshots": ["search/02-search.png"]
+    },
+    {
+      "name": "Categories Browse",
+      "description": "Categories page showing game organization by genre/platform with filtering options.",
+      "screenshots": ["categories/03-categories.png"]
+    },
+    {
+      "name": "Product Detail",
+      "description": "Individual game product page with details, pricing, platform info, and purchase options.",
+      "screenshots": ["product-detail/04-product-detail.png"]
+    },
+    {
+      "name": "Club Section",
+      "description": "DinGaming Club loyalty program section with gamification, rewards, and member benefits.",
+      "screenshots": ["club/05-club.png"]
+    }
+  ]
+}

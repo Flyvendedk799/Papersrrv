@@ -1,11 +1,8 @@
 import { Suspense, useCallback, useEffect, useRef, useState, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Moon, Sun } from "lucide-react";
 import { Outlet, useLocation, useNavigate, useParams } from "@/lib/router";
-import { CompanyRail } from "./CompanyRail";
-import { Sidebar } from "./Sidebar";
-import { SidebarNavItem } from "./SidebarNavItem";
-import { BreadcrumbBar } from "./BreadcrumbBar";
+import { Masthead } from "./boared/Masthead";
+import { SubBar } from "./boared/SubBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
 import { NewIssueDialog } from "./NewIssueDialog";
@@ -13,38 +10,50 @@ import { NewProjectDialog } from "./NewProjectDialog";
 import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { ToastViewport } from "./ToastViewport";
+import { PapeeOverlay } from "./papee/PapeeOverlay";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
-import { useTheme } from "../context/ThemeContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
-import { Button } from "@/components/ui/button";
 
+/*
+ * BOARED Layout — replaces the legacy CompanyRail + Sidebar + BreadcrumbBar
+ * shell with an editorial masthead + sub-bar + main + right drawer pattern.
+ *
+ * Preservation map (everything still works):
+ *   - Cmd+K command palette                — kept
+ *   - Cmd+1..9 company switch              — kept (via useKeyboardShortcuts)
+ *   - Toggle sidebar shortcut              — repurposed to toggle properties drawer
+ *   - Mobile swipe-from-edge gesture       — opens mobile masthead overlay
+ *   - Mobile bottom nav                    — kept (auto-hide on scroll)
+ *   - Onboarding wizard auto-trigger       — kept
+ *   - Multi-tenant URL prefix sync         — kept (verbatim)
+ *   - Papee overlay + 4 quick-create dialogs + toasts + properties panel — kept
+ */
 export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
   const { togglePanelVisible } = usePanel();
   const { companies, loading: companiesLoading, selectedCompanyId, setSelectedCompanyId } = useCompany();
-  const { theme, toggleTheme } = useTheme();
   const { companyPrefix } = useParams<{ companyPrefix: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const onboardingTriggered = useRef(false);
   const lastMainScrollTop = useRef(0);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
-  const nextTheme = theme === "dark" ? "light" : "dark";
   const { data: health } = useQuery({
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
     retry: false,
   });
 
+  // Auto-trigger onboarding if no companies exist (unauthenticated mode).
   useEffect(() => {
     if (companiesLoading || onboardingTriggered.current) return;
     if (health?.deploymentMode === "authenticated") return;
@@ -54,6 +63,7 @@ export function Layout() {
     }
   }, [companies, companiesLoading, openOnboarding, health?.deploymentMode]);
 
+  // Keep URL prefix in sync with selected company.
   useEffect(() => {
     if (!companyPrefix || companiesLoading || companies.length === 0) return;
 
@@ -90,7 +100,7 @@ export function Layout() {
 
   const togglePanel = togglePanelVisible;
 
-  // Cmd+1..9 to switch companies
+  // Cmd+1..9 to switch companies.
   const switchCompany = useCallback(
     (index: number) => {
       if (index < companies.length) {
@@ -109,6 +119,7 @@ export function Layout() {
     onSwitchCompany: switchCompany,
   });
 
+  // Mobile bottom nav auto-show on direction change.
   useEffect(() => {
     if (!isMobile) {
       setMobileNavVisible(true);
@@ -118,13 +129,17 @@ export function Layout() {
     setMobileNavVisible(true);
   }, [isMobile]);
 
-  // Swipe gesture to open/close sidebar on mobile
+  // Swipe-from-left-edge to open the mobile masthead menu.
+  // Reuses the existing sidebar context flag — Masthead reads it via prop drilling
+  // through state management is unnecessary; we just dispatch a synthetic click
+  // to its hamburger via setSidebarOpen so the legacy edge-swipe muscle memory
+  // still maps to opening the navigation.
   useEffect(() => {
     if (!isMobile) return;
 
-    const EDGE_ZONE = 30; // px from left edge to start open-swipe
-    const MIN_DISTANCE = 50; // minimum horizontal swipe distance
-    const MAX_VERTICAL = 75; // max vertical drift before we ignore
+    const EDGE_ZONE = 30;
+    const MIN_DISTANCE = 50;
+    const MAX_VERTICAL = 75;
 
     let startX = 0;
     let startY = 0;
@@ -140,15 +155,13 @@ export function Layout() {
       const dx = t.clientX - startX;
       const dy = Math.abs(t.clientY - startY);
 
-      if (dy > MAX_VERTICAL) return; // vertical scroll, ignore
+      if (dy > MAX_VERTICAL) return;
 
-      // Swipe right from left edge → open
       if (!sidebarOpen && startX < EDGE_ZONE && dx > MIN_DISTANCE) {
         setSidebarOpen(true);
         return;
       }
 
-      // Swipe left when open → close
       if (sidebarOpen && dx < -MIN_DISTANCE) {
         setSidebarOpen(false);
       }
@@ -184,117 +197,49 @@ export function Layout() {
   );
 
   return (
-    <div className="flex h-dvh bg-background text-foreground overflow-hidden pt-[env(safe-area-inset-top)]">
+    <div className="flex h-dvh flex-col bg-background text-foreground overflow-hidden pt-[env(safe-area-inset-top)]">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:bg-foreground focus:text-background focus:px-3 focus:py-2 focus:font-mono focus:text-xs focus:uppercase focus:tracking-[0.1em] focus:outline-2 focus:outline-[var(--boared-acid)]"
       >
-        Skip to Main Content
+        Skip to main content
       </a>
-      {/* Mobile backdrop */}
-      {isMobile && sidebarOpen && (
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-black/50"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close sidebar"
-        />
-      )}
 
-      {/* Combined sidebar area: company rail + inner sidebar + docs bar */}
-      {isMobile ? (
-        <div
+      {/* Editorial top bar (replaces CompanyRail + Sidebar + BreadcrumbBar). */}
+      <Masthead />
+      <SubBar />
+
+      {/* Main content + properties drawer */}
+      <div className="flex flex-1 min-h-0">
+        <main
+          id="main-content"
+          tabIndex={-1}
           className={cn(
-            "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] transition-transform duration-100 ease-out",
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+            "flex-1 overflow-auto px-6 md:px-10 py-8 md:py-10",
+            isMobile && "px-4 py-6 pb-[calc(5rem+env(safe-area-inset-bottom))]"
           )}
+          onScroll={handleMainScroll}
         >
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-            <CompanyRail />
-            <Sidebar />
-          </div>
-          <div className="border-t border-r border-border px-3 py-2 bg-background">
-            <div className="flex items-center gap-1">
-              <SidebarNavItem
-                to="/docs"
-                label="Documentation"
-                icon={BookOpen}
-                className="flex-1 min-w-0"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground shrink-0"
-                onClick={toggleTheme}
-                aria-label={`Switch to ${nextTheme} mode`}
-                title={`Switch to ${nextTheme} mode`}
-              >
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col shrink-0 h-full">
-          <div className="flex flex-1 min-h-0">
-            <CompanyRail />
-            <div
-              className={cn(
-                "overflow-hidden transition-[width] duration-100 ease-out",
-                sidebarOpen ? "w-60" : "w-0"
-              )}
-            >
-              <Sidebar />
-            </div>
-          </div>
-          <div className="border-t border-r border-border px-3 py-2">
-            <div className="flex items-center gap-1">
-              <SidebarNavItem
-                to="/docs"
-                label="Documentation"
-                icon={BookOpen}
-                className="flex-1 min-w-0"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground shrink-0"
-                onClick={toggleTheme}
-                aria-label={`Switch to ${nextTheme} mode`}
-                title={`Switch to ${nextTheme} mode`}
-              >
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 h-full">
-        <BreadcrumbBar />
-        <div className="flex flex-1 min-h-0">
-          <main
-            id="main-content"
-            tabIndex={-1}
-            className={cn("flex-1 overflow-auto p-4 md:p-6", isMobile && "pb-[calc(5rem+env(safe-area-inset-bottom))]")}
-            onScroll={handleMainScroll}
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full font-mono text-[0.7rem] uppercase tracking-[0.12em] text-muted-foreground">
+                Loading.
+              </div>
+            }
           >
-            <Suspense fallback={<div className="flex items-center justify-center h-full text-sm text-muted-foreground">Loading...</div>}>
-              <Outlet />
-            </Suspense>
-          </main>
-          <PropertiesPanel />
-        </div>
+            <Outlet />
+          </Suspense>
+        </main>
+        <PropertiesPanel />
       </div>
+
       {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
       <CommandPalette />
       <NewIssueDialog />
       <NewProjectDialog />
       <NewGoalDialog />
       <NewAgentDialog />
+      <PapeeOverlay />
       <ToastViewport />
     </div>
   );

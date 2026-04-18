@@ -1,0 +1,240 @@
+{
+  "projectSource": "https://dingaming.dk/",
+  "projectName": "DinGaming",
+  "description": "Danish digital game keys marketplace. Buy game keys for Steam, PlayStation, Xbox, and Nintendo. Instant delivery via email within 30 seconds. Customer Club loyalty program with Shards.",
+  "techStack": {
+    "frontend": {
+      "framework": "React",
+      "bundler": "Vite",
+      "routing": "Client-side routing (SPA)",
+      "fonts": ["DM Sans", "Playfair Display"],
+      "language": "Danish (da)"
+    },
+    "backend": {
+      "database": "Supabase",
+      "auth": "Supabase Auth (email/password)"
+    },
+    "hosting": {
+      "static": "Cloudflare",
+      "assets": "R2 (Cloudflare) for images and media"
+    },
+    "analytics": {
+      "provider": "Flock",
+      "proxyPath": "/~api/analytics"
+    },
+    "platform": {
+      "pwa": true,
+      "meta": ["apple-mobile-web-app-capable", "theme-color", "mobile-web-app-capable"]
+    },
+    "payment": {
+      "methods": ["MobilePay", "Card", "PayPal"]
+    }
+  },
+  "sitemap": {
+    "public": [
+      {
+        "path": "/",
+        "title": "Home",
+        "description": "Landing page with hero, deals, testimonials, platform keys (Steam, PlayStation, Xbox, Nintendo)"
+      },
+      {
+        "path": "/deals",
+        "title": "Dagens Tilbud",
+        "description": "Daily deals, flash deals, up to 70% discount, countdown timers"
+      },
+      {
+        "path": "/categories",
+        "title": "Categories",
+        "description": "Browse game categories (loads dynamically)"
+      },
+      {
+        "path": "/search",
+        "title": "Søg efter spil",
+        "description": "Search for games in catalog"
+      },
+      {
+        "path": "/support",
+        "title": "Support & Hjælp",
+        "description": "FAQ, activation guide, refund policy, contact form (support@dingaming.dk)"
+      },
+      {
+        "path": "/checkout",
+        "title": "Checkout",
+        "description": "Payment flow (redirects to home when cart empty)"
+      }
+    ],
+    "auth": [
+      {
+        "path": "/login",
+        "title": "Log ind",
+        "description": "Customer Club login with email and password"
+      },
+      {
+        "path": "/signup",
+        "title": "Opret konto",
+        "description": "Register with username, email, password. 500 Shards welcome bonus"
+      },
+      {
+        "path": "/forgot-password",
+        "title": "Glemt adgangskode",
+        "description": "Password reset via email link"
+      }
+    ],
+    "protected": [
+      {
+        "path": "/club",
+        "title": "Customer Club",
+        "description": "Member area (redirects to /login when unauthenticated)"
+      },
+      {
+        "path": "/club/games",
+        "title": "Club Games"
+      },
+      {
+        "path": "/club/cases",
+        "title": "Club Cases"
+      },
+      {
+        "path": "/club/casino",
+        "title": "Club Casino"
+      },
+      {
+        "path": "/club/casino/blackjack",
+        "title": "Blackjack"
+      },
+      {
+        "path": "/club/casino/roulette",
+        "title": "Roulette"
+      },
+      {
+        "path": "/club/casino/dice",
+        "title": "Dice"
+      },
+      {
+        "path": "/club/casino/hilo",
+        "title": "Hi-Lo"
+      },
+      {
+        "path": "/club/casino/lines",
+        "title": "Lines"
+      },
+      {
+        "path": "/club/casino/mines",
+        "title": "Mines"
+      },
+      {
+        "path": "/club/history",
+        "title": "Club History"
+      },
+      {
+        "path": "/club/rewards",
+        "title": "Club Rewards"
+      }
+    ],
+    "dynamic": [
+      {
+        "path": "/product/:slug",
+        "title": "Product detail",
+        "description": "Individual game key product page (404 when product not found)"
+      }
+    ]
+  },
+  "flowList": [
+    {
+      "id": "auth-login",
+      "name": "Login flow",
+      "steps": [
+        "User visits /login or /club",
+        "Enter email and password",
+        "Optional: Forgot password → /forgot-password",
+        "Submit → Supabase Auth",
+        "Redirect to Customer Club or previous page"
+      ],
+      "entryPoints": ["/login", "/club"],
+      "requiresAuth": false
+    },
+    {
+      "id": "auth-signup",
+      "name": "Signup flow",
+      "steps": [
+        "User visits /signup",
+        "Enter username, email, password, confirm password",
+        "Submit → Create account",
+        "Receive 500 Shards welcome bonus",
+        "Redirect to login or dashboard"
+      ],
+      "entryPoints": ["/signup"],
+      "requiresAuth": false
+    },
+    {
+      "id": "auth-forgot-password",
+      "name": "Password reset flow",
+      "steps": [
+        "User visits /forgot-password",
+        "Enter email",
+        "Receive reset link via email",
+        "Click link → Reset password"
+      ],
+      "entryPoints": ["/login", "/forgot-password"],
+      "requiresAuth": false
+    },
+    {
+      "id": "purchase-flow",
+      "name": "Game purchase flow",
+      "steps": [
+        "Find game: Home, /search, /categories, or /deals",
+        "Add to cart",
+        "Go to checkout (/checkout)",
+        "Pay with MobilePay, card, or PayPal",
+        "Receive key via email within 30 seconds"
+      ],
+      "entryPoints": ["/", "/deals", "/search", "/categories"],
+      "requiresAuth": false
+    },
+    {
+      "id": "club-rewards",
+      "name": "Customer Club rewards flow",
+      "steps": [
+        "Log in to Customer Club (/club)",
+        "Earn Shards (1% cashback on purchases)",
+        "Daily login bonuses",
+        "Exchange Shards for discounts",
+        "Optional: Play casino games (blackjack, roulette, dice, hilo, lines, mines)"
+      ],
+      "entryPoints": ["/club"],
+      "requiresAuth": true
+    },
+    {
+      "id": "support-flow",
+      "name": "Support flow",
+      "steps": [
+        "Visit /support",
+        "Browse FAQ (activation, refund, delivery, payment methods)",
+        "Optional: Submit contact form (name, email, message)",
+        "Support at support@dingaming.dk, response within 24 hours"
+      ],
+      "entryPoints": ["/support"],
+      "requiresAuth": false
+    }
+  ],
+  "navigationStructure": {
+    "header": {
+      "logo": "DinGaming → /",
+      "links": [
+        { "label": "Search", "path": "/search" },
+        { "label": "Login", "path": "/login" },
+        { "label": "Kurv (Cart)", "path": "checkout/cart (modal or /checkout)" }
+      ]
+    },
+    "footer": {
+      "newsletter": "Email signup for 10% first order discount",
+      "cta": "Opret Gratis Konto → /signup",
+      "stats": "50.000+ customers, 4.9/5 Trustpilot"
+    },
+    "authLinks": {
+      "login": "/login",
+      "signup": "/signup",
+      "forgotPassword": "/forgot-password"
+    }
+  }
+}

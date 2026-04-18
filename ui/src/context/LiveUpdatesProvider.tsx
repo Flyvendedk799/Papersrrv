@@ -563,6 +563,12 @@ function handleLiveEvent(
   }
 }
 
+/**
+ * External event listeners can register here to receive raw LiveEvent objects.
+ * Used by Papee reactions to subscribe without duplicating the WebSocket connection.
+ */
+export const liveEventListeners = new Set<(event: LiveEvent) => void>();
+
 export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
@@ -633,6 +639,10 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
             userId: currentUserIdRef.current,
             agentId: null,
           });
+          // Notify external listeners (e.g. Papee reactions)
+          for (const listener of liveEventListeners) {
+            try { listener(parsed); } catch { /* swallow */ }
+          }
         } catch {
           // Ignore non-JSON payloads.
         }

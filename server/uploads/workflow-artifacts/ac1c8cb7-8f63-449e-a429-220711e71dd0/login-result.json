@@ -1,0 +1,28 @@
+{
+  "loginSucceeded": false,
+  "foundIndicator": null,
+  "finalUrl": "https://dingaming.dk/login",
+  "cookies": [
+    {
+      "name": "__cf_bm",
+      "value": "u.ZOyyvnRNS3z9KQ7lgWc3jusGbspcbIthDckUYj44o-1773503096.236389-1.0.1.1-CnJkYHZ26Mm8uWkhjBNx6VMldbdJglYaFNb7cdk_bdnXXSmfaMl7oZPxWefZlNVPM7.7NkH3lVNbN9DElDz5Okm4aMJboAzcvdbL2mNGUaF4KawkE3niwPWIo274rrEH",
+      "domain": ".dingaming.dk",
+      "path": "/",
+      "expires": 1773504896.588827,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_cfuvid",
+      "value": "5sc3Bm0fy.irfaA3RnHStKB44ug0XZTyGBToT_neDUw-1773503097888-0.0.1.1-604800000",
+      "domain": ".kinguin.net",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    }
+  ],
+  "screenshotsLocation": "/tmp/dingaming-screenshots"
+}

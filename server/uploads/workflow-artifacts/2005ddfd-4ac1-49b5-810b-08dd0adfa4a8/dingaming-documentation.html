@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DinGaming - Project Documentation</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        primaryColor: '#1e3a5f',
+        primaryTextColor: '#faf7f5',
+        primaryBorderColor: '#d4a73a',
+        lineColor: '#d4a73a',
+        secondaryColor: '#c2410c',
+        tertiaryColor: '#0891b2',
+        background: '#1e3a5f',
+        mainBkg: '#1e3a5f',
+        secondBkg: '#2a4a6f',
+        tertiaryBkg: '#364f7a',
+        textColor: '#faf7f5',
+        border1: '#d4a73a',
+        border2: '#c2410c',
+        noteBkgColor: '#2a4a6f',
+        noteTextColor: '#faf7f5',
+        noteBorderColor: '#d4a73a',
+        fontFamily: 'IBM Plex Sans, system-ui, sans-serif',
+        fontSize: '16px'
+      }
+    });
+  </script>
+  <style>
+    :root {
+      /* Light theme (Editorial aesthetic) */
+      --bg: #faf7f5;
+      --surface: #ffffff;
+      --surface-elevated: #ffffff;
+      --border: rgba(30, 58, 95, 0.12);
+      --text: #1a1a1a;
+      --text-dim: #666666;
+      --accent-navy: #1e3a5f;
+      --accent-gold: #d4a73a;
+      --accent-terra: #c2410c;
+      --accent-teal: #0891b2;
+      --accent-navy-bg: rgba(30, 58, 95, 0.08);
+      --accent-gold-bg: rgba(212, 167, 58, 0.12);
+      --accent-terra-bg: rgba(194, 65, 12, 0.08);
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+      --font-serif: 'Instrument Serif', Georgia, serif;
+      --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1419;
+        --surface: #1a1f28;
+        --surface-elevated: #252b36;
+        --border: rgba(255, 255, 255, 0.1);
+        --text: #e8e6e3;
+        --text-dim: #a0a0a0;
+        --accent-navy: #4a7cb8;
+        --accent-gold: #f4d574;
+        --accent-terra: #ff6b35;
+        --accent-teal: #22d3ee;
+        --accent-navy-bg: rgba(74, 124, 184, 0.15);
+        --accent-gold-bg: rgba(244, 213, 116, 0.12);
+        --accent-terra-bg: rgba(255, 107, 53, 0.12);
+        --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+        --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+      }
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+
+    /* Header */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 2rem 0;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      background: rgba(250, 247, 245, 0.95);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .header {
+        background: rgba(26, 31, 40, 0.95);
+      }
+    }
+
+    .header-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 2rem;
+    }
+
+    .project-title {
+      font-family: var(--font-serif);
+      font-size: 2.5rem;
+      font-weight: 400;
+      color: var(--accent-navy);
+      margin-bottom: 0.5rem;
+    }
+
+    .project-subtitle {
+      font-size: 1.125rem;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+
+    .project-url {
+      color: var(--accent-teal);
+      text-decoration: none;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+      display: inline-block;
+    }
+
+    /* Navigation */
+    .nav-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      display: flex;
+      gap: 3rem;
+      position: relative;
+    }
+
+    .nav-sidebar {
+      position: sticky;
+      top: 120px;
+      width: 240px;
+      height: fit-content;
+      flex-shrink: 0;
+      padding: 1.5rem 0;
+    }
+
+    .nav-list {
+      list-style: none;
+    }
+
+    .nav-item {
+      margin-bottom: 0.5rem;
+    }
+
+    .nav-link {
+      display: block;
+      padding: 0.5rem 1rem;
+      color: var(--text-dim);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+      transition: all 0.2s ease;
+      font-size: 0.938rem;
+    }
+
+    .nav-link:hover {
+      color: var(--accent-navy);
+      border-left-color: var(--accent-gold);
+      background: var(--accent-gold-bg);
+    }
+
+    .nav-link.active {
+      color: var(--accent-navy);
+      border-left-color: var(--accent-gold);
+      font-weight: 500;
+    }
+
+    /* Mobile nav */
+    .nav-mobile {
+      display: none;
+      position: sticky;
+      top: 120px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      z-index: 50;
+      padding: 1rem 2rem;
+      margin: 0 -2rem;
+    }
+
+    .nav-mobile-list {
+      display: flex;
+      gap: 1rem;
+      list-style: none;
+      white-space: nowrap;
+    }
+
+    .nav-mobile-link {
+      padding: 0.5rem 1rem;
+      color: var(--text-dim);
+      text-decoration: none;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+      font-size: 0.875rem;
+    }
+
+    .nav-mobile-link:hover,
+    .nav-mobile-link.active {
+      color: var(--accent-navy);
+      border-bottom-color: var(--accent-gold);
+    }
+
+    @media (max-width: 900px) {
+      .nav-sidebar {
+        display: none;
+      }
+      .nav-mobile {
+        display: block;
+      }
+    }
+
+    /* Main content */
+    .main-content {
+      flex: 1;
+      min-width: 0;
+      padding: 3rem 0;
+    }
+
+    section {
+      margin-bottom: 5rem;
+      scroll-margin-top: 140px;
+    }
+
+    .section-header {
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid var(--accent-gold);
+    }
+
+    .section-title {
+      font-family: var(--font-serif);
+      font-size: 2rem;
+      font-weight: 400;
+      color: var(--accent-navy);
+      margin-bottom: 0.5rem;
+    }
+
+    .section-subtitle {
+      font-size: 1rem;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+
+    /* Cards */
+    .ve-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow 0.2s ease;
+    }
+
+    .ve-card:hover {
+      box-shadow: var(--shadow-md);
+    }
+
+    .ve-card--hero {
+      background: var(--accent-navy-bg);
+      border-color: var(--accent-navy);
+      padding: 2rem;
+      box-shadow: var(--shadow-md);
+    }
+
+    .card-title {
+      font-family: var(--font-serif);
+      font-size: 1.5rem;
+      color: var(--accent-navy);
+      margin-bottom: 1rem;
+    }
+
+    .card-label {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent-gold);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-label::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+    }
+
+    /* Grid layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+
+    .stat-card {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-family: var(--font-serif);
+      font-size: 2rem;
+      color: var(--accent-navy);
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+      font-size: 0.875rem;
+      color: var(--text-dim);
+    }
+
+    /* Flow documentation */
+    .flow-item {
+      margin-bottom: 3rem;
+    }
+
+    .flow-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .flow-number {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--accent-navy);
+      color: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    .flow-title {
+      font-family: var(--font-serif);
+      font-size: 1.75rem;
+      color: var(--accent-navy);
+    }
+
+    .flow-description {
+      background: var(--surface-elevated);
+      border-left: 3px solid var(--accent-gold);
+      padding: 1rem 1.5rem;
+      margin-bottom: 1.5rem;
+      border-radius: 4px;
+    }
+
+    .flow-steps {
+      list-style: none;
+      margin: 1.5rem 0;
+      counter-reset: step-counter;
+    }
+
+    .flow-steps li {
+      counter-increment: step-counter;
+      position: relative;
+      padding-left: 2.5rem;
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+
+    .flow-steps li::before {
+      content: counter(step-counter);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 50%;
+      background: var(--accent-gold-bg);
+      color: var(--accent-navy);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .screenshots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .screenshot-card {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+    }
+
+    .screenshot-img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .screenshot-caption {
+      padding: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+    }
+
+    /* Code blocks */
+    .code-block {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 1.5rem 0;
+    }
+
+    .code-header {
+      background: var(--accent-navy-bg);
+      padding: 0.75rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.813rem;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .code-content {
+      padding: 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      background: var(--accent-navy-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      font-size: 0.875em;
+    }
+
+    /* Tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .data-table thead {
+      background: var(--accent-navy-bg);
+      position: sticky;
+      top: 140px;
+    }
+
+    .data-table th {
+      padding: 1rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text);
+      border-bottom: 2px solid var(--accent-gold);
+    }
+
+    .data-table td {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .data-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table tbody tr:nth-child(even) {
+      background: rgba(0, 0, 0, 0.02);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .data-table tbody tr:nth-child(even) {
+        background: rgba(255, 255, 255, 0.02);
+      }
+    }
+
+    .data-table tbody tr:hover {
+      background: var(--accent-gold-bg);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge--primary {
+      background: var(--accent-navy-bg);
+      color: var(--accent-navy);
+      border: 1px solid var(--accent-navy);
+    }
+
+    .badge--success {
+      background: rgba(5, 150, 105, 0.12);
+      color: #059669;
+      border: 1px solid #059669;
+    }
+
+    .badge--warning {
+      background: rgba(217, 119, 6, 0.12);
+      color: #d97706;
+      border: 1px solid #d97706;
+    }
+
+    /* Mermaid container */
+    .mermaid-wrap {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      margin: 2rem 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+
+    .mermaid {
+      max-width: 100%;
+    }
+
+    .zoom-controls {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      display: flex;
+      gap: 0.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.25rem;
+    }
+
+    .zoom-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 1rem;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .zoom-btn:hover {
+      background: var(--accent-gold-bg);
+      color: var(--accent-navy);
+    }
+
+    /* Collapsible sections */
+    details {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin: 1rem 0;
+      overflow: hidden;
+    }
+
+    summary {
+      padding: 1rem 1.5rem;
+      cursor: pointer;
+      font-weight: 500;
+      color: var(--accent-navy);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      user-select: none;
+      transition: background 0.2s ease;
+    }
+
+    summary:hover {
+      background: var(--accent-gold-bg);
+    }
+
+    summary::before {
+      content: '▶';
+      font-size: 0.75rem;
+      transition: transform 0.2s ease;
+    }
+
+    details[open] summary::before {
+      transform: rotate(90deg);
+    }
+
+    details[open] summary {
+      border-bottom: 1px solid var(--border);
+    }
+
+    .details-content {
+      padding: 1.5rem;
+    }
+
+    /* Animations */
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .fade-up {
+      animation: fadeUp 0.6s ease-out;
+    }
+
+    .fade-up-delay-1 {
+      animation: fadeUp 0.6s ease-out 0.1s both;
+    }
+
+    .fade-up-delay-2 {
+      animation: fadeUp 0.6s ease-out 0.2s both;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header-content,
+      .nav-container {
+        padding: 0 1rem;
+      }
+
+      .project-title {
+        font-size: 2rem;
+      }
+
+      .section-title {
+        font-size: 1.75rem;
+      }
+
+      .grid-2,
+      .grid-3,
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .screenshots-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .data-table {
+        font-size: 0.813rem;
+      }
+
+      .data-table th,
+      .data-table td {
+        padding: 0.75rem 0.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header fade-up">
+    <div class="header-content">
+      <h1 class="project-title">DinGaming</h1>
+      <p class="project-subtitle">Danish Digital Game Keys Marketplace - Project Documentation</p>
+      <a href="https://dingaming.dk/" class="project-url" target="_blank">https://dingaming.dk/</a>
+    </div>
+  </header>
+
+  <!-- Navigation & Content -->
+  <div class="nav-container">
+    <!-- Desktop sidebar nav -->
+    <nav class="nav-sidebar fade-up-delay-1">
+      <ul class="nav-list">
+        <li class="nav-item"><a href="#overview" class="nav-link active">Overview</a></li>
+        <li class="nav-item"><a href="#flows" class="nav-link">User Flows</a></li>
+        <li class="nav-item"><a href="#architecture" class="nav-link">Architecture</a></li>
+        <li class="nav-item"><a href="#authentication" class="nav-link">Authentication</a></li>
+        <li class="nav-item"><a href="#api" class="nav-link">API Reference</a></li>
+      </ul>
+    </nav>
+
+    <!-- Mobile horizontal nav -->
+    <nav class="nav-mobile">
+      <ul class="nav-mobile-list">
+        <li><a href="#overview" class="nav-mobile-link active">Overview</a></li>
+        <li><a href="#flows" class="nav-mobile-link">Flows</a></li>
+        <li><a href="#architecture" class="nav-mobile-link">Architecture</a></li>
+        <li><a href="#authentication" class="nav-mobile-link">Auth</a></li>
+        <li><a href="#api" class="nav-mobile-link">API</a></li>
+      </ul>
+    </nav>
+
+    <!-- Main content -->
+    <main class="main-content">
+      <!-- Project Overview -->
+      <section id="overview" class="fade-up-delay-2">
+        <div class="section-header">
+          <h2 class="section-title">Project Overview</h2>
+          <p class="section-subtitle">Danish e-commerce platform for digital game keys</p>
+        </div>
+
+        <div class="ve-card ve-card--hero">
+          <div class="card-label">Business Model</div>
+          <p style="margin-bottom: 1.5rem; line-height: 1.8;">
+            DinGaming is a Danish e-commerce platform for purchasing digital game keys with instant delivery via email (within 30 seconds).
+            The platform offers multi-platform support (Steam, PlayStation, Xbox, Nintendo), a Customer Club loyalty program with Shards rewards system,
+            casino-style gamification features, and up to 70% discounts on daily deals.
+          </p>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value">50k+</div>
+              <div class="stat-label">Customers</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">4.9/5</div>
+              <div class="stat-label">Trustpilot</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">30s</div>
+              <div class="stat-label">Delivery Time</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">70%</div>
+              <div class="stat-label">Max Discount</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="ve-card">
+            <div class="card-label">Frontend Stack</div>
+            <h3 class="card-title">Client Architecture</h3>
+            <ul style="list-style: none; line-height: 2;">
+              <li><strong>Framework:</strong> React SPA</li>
+              <li><strong>Build Tool:</strong> Vite</li>
+              <li><strong>Routing:</strong> Client-side (SPA)</li>
+              <li><strong>Typography:</strong> DM Sans, Playfair Display</li>
+              <li><strong>PWA:</strong> Enabled</li>
+              <li><strong>Language:</strong> Danish (da)</li>
+            </ul>
+          </div>
+
+          <div class="ve-card">
+            <div class="card-label">Backend Stack</div>
+            <h3 class="card-title">Services</h3>
+            <ul style="list-style: none; line-height: 2;">
+              <li><strong>Database:</strong> Supabase (PostgreSQL)</li>
+              <li><strong>Auth:</strong> Supabase Auth</li>
+              <li><strong>CDN:</strong> Cloudflare R2</li>
+              <li><strong>Analytics:</strong> Flock Analytics</li>
+              <li><strong>Payments:</strong> MobilePay, Card, PayPal</li>
+            </ul>
+          </div>
+        </div>
+
+        <details style="margin-top: 1.5rem;">
+          <summary>Platform Features</summary>
+          <div class="details-content">
+            <div class="grid-3">
+              <div>
+                <h4 style="color: var(--accent-navy); margin-bottom: 0.75rem; font-family: var(--font-serif);">Public Marketplace</h4>
+                <ul style="color: var(--text-dim); font-size: 0.938rem; line-height: 1.8;">
+                  <li>Product catalog browsing</li>
+                  <li>Search functionality</li>
+                  <li>Category filtering by platform</li>
+                  <li>Daily deals with countdown timers</li>
+                  <li>Shopping cart and checkout</li>
+                </ul>
+              </div>
+              <div>
+                <h4 style="color: var(--accent-navy); margin-bottom: 0.75rem; font-family: var(--font-serif);">Customer Club</h4>
+                <ul style="color: var(--text-dim); font-size: 0.938rem; line-height: 1.8;">
+                  <li>Loyalty rewards dashboard</li>
+                  <li>Shards balance (1% cashback)</li>
+                  <li>Daily login bonuses</li>
+                  <li>Game library management</li>
+                  <li>Transaction history</li>
+                </ul>
+              </div>
+              <div>
+                <h4 style="color: var(--accent-navy); margin-bottom: 0.75rem; font-family: var(--font-serif);">Gamification</h4>
+                <ul style="color: var(--text-dim); font-size: 0.938rem; line-height: 1.8;">
+                  <li>Club Games & Cases</li>
+                  <li>Casino: Blackjack</li>
+                  <li>Casino: Roulette</li>
+                  <li>Casino: Dice, Hi-Lo, Lines, Mines</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- User Flows -->
+      <section id="flows">
+        <div class="section-header">
+          <h2 class="section-title">User Flows</h2>
+          <p class="section-subtitle">Documented user journeys with screenshots</p>
+        </div>
+
+        <!-- Flow 1: Homepage -->
+        <div class="flow-item">
+          <div class="flow-header">
+            <div class="flow-number">1</div>
+            <h3 class="flow-title">Homepage / Landing</h3>
+          </div>
+          <div class="flow-description">
+            Main landing page for DinGaming featuring hero section, game deals, platform categories (Steam, PlayStation, Xbox, Nintendo), and Customer Club benefits.
+          </div>
+          <div class="screenshots-grid">
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/homepage/01-homepage.png" alt="Homepage" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">01-homepage.png</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flow 2: Login -->
+        <div class="flow-item">
+          <div class="flow-header">
+            <div class="flow-number">2</div>
+            <h3 class="flow-title">Login Flow</h3>
+            <span class="badge badge--primary">Authentication Required</span>
+          </div>
+          <div class="flow-description">
+            Login page with email and password fields. Features Customer Club benefits (1% cashback, daily login bonuses, Shards rewards). Post-login state captured.
+          </div>
+          <ul class="flow-steps">
+            <li>User navigates to /login or /club (auto-redirect)</li>
+            <li>Enters email address and password</li>
+            <li>Optional: Click "Forgot Password" → /forgot-password</li>
+            <li>Submits form to Supabase Auth</li>
+            <li>Session token issued</li>
+            <li>Redirect to Customer Club (/club) or previous protected page</li>
+          </ul>
+          <div class="screenshots-grid">
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/login/01-login-page.png" alt="Login page" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">01-login-page.png</div>
+            </div>
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/login/02-credentials-filled.png" alt="Credentials filled" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">02-credentials-filled.png</div>
+            </div>
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/login/03-post-submit.png" alt="Post submit" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">03-post-submit.png</div>
+            </div>
+          </div>
+          <div class="ve-card" style="margin-top: 1.5rem; background: var(--accent-terra-bg);">
+            <div class="card-label" style="color: var(--accent-terra);">Test Credentials</div>
+            <div class="code-block" style="margin-bottom: 0;">
+              <div class="code-content" style="padding: 1rem;">Email: tobiasflyvende@gmail.com
+Password: abe12345</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flow 3: Product Browsing -->
+        <div class="flow-item">
+          <div class="flow-header">
+            <div class="flow-number">3</div>
+            <h3 class="flow-title">Product Browsing</h3>
+          </div>
+          <div class="flow-description">
+            Browse products by platform categories. Homepage displays game deals organized by platform (Steam, PlayStation, Xbox, Nintendo Switch).
+          </div>
+          <div class="screenshots-grid">
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/browse/01-homepage-products.png" alt="Homepage products" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">01-homepage-products.png</div>
+            </div>
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/browse/02-platform-filter.png" alt="Platform filter" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">02-platform-filter.png</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flow 4: Product Detail -->
+        <div class="flow-item">
+          <div class="flow-header">
+            <div class="flow-number">4</div>
+            <h3 class="flow-title">Product Detail & Purchase</h3>
+          </div>
+          <div class="flow-description">
+            Product detail page showing game information, pricing, platform availability, and purchase options. Example product: Two Point Hospital PC Steam Account.
+          </div>
+          <div class="screenshots-grid">
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/product/01-product-detail.png" alt="Product detail" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">01-product-detail.png</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flow 5: Search -->
+        <div class="flow-item">
+          <div class="flow-header">
+            <div class="flow-number">5</div>
+            <h3 class="flow-title">Search Flow</h3>
+          </div>
+          <div class="flow-description">
+            Search functionality allows users to find games by keyword. Example search: "FIFA".
+          </div>
+          <div class="screenshots-grid">
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/search/01-before-search.png" alt="Before search" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">01-before-search.png</div>
+            </div>
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/search/02-search-filled.png" alt="Search filled" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">02-search-filled.png</div>
+            </div>
+            <div class="screenshot-card">
+              <img src="http://localhost:3100/api/workflow-artifacts/c4868e61-fb1b-47c8-a9cf-50813178869e/search/03-search-results.png" alt="Search results" class="screenshot-img" onerror="this.parentElement.style.display='none'">
+              <div class="screenshot-caption">03-search-results.png</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Architecture -->
+      <section id="architecture">
+        <div class="section-header">
+          <h2 class="section-title">Technical Architecture</h2>
+          <p class="section-subtitle">System components and infrastructure</p>
+        </div>
+
+        <div class="mermaid-wrap">
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomMermaid(this, 1.2)" title="Zoom in">+</button>
+            <button class="zoom-btn" onclick="zoomMermaid(this, 0.8)" title="Zoom out">−</button>
+            <button class="zoom-btn" onclick="resetZoom(this)" title="Reset">⟲</button>
+            <button class="zoom-btn" onclick="openMermaidInNewTab(this)" title="Expand">⛶</button>
+          </div>
+          <div class="mermaid">
+graph TD
+    A[Client Layer<br/>React SPA Vite] --> B[Supabase Services]
+    A --> C[Cloudflare R2<br/>CDN]
+    A --> D[Flock Analytics<br/>/~api/analytics]
+
+    B --> B1[Auth]
+    B --> B2[Database<br/>PostgreSQL]
+    B --> B3[API]
+
+    A --> E[Payment Gateways]
+    E --> E1[MobilePay]
+    E --> E2[Card Payment]
+    E --> E3[PayPal]
+
+    E --> F[Game Key Delivery<br/>Email within 30s]
+
+    classDef client fill:#4a7cb8,stroke:#d4a73a,color:#fff
+    classDef service fill:#2a4a6f,stroke:#d4a73a,color:#fff
+    classDef payment fill:#c2410c,stroke:#d4a73a,color:#fff
+    classDef cdn fill:#0891b2,stroke:#d4a73a,color:#fff
+
+    class A client
+    class B,B1,B2,B3,D service
+    class E,E1,E2,E3,F payment
+    class C cdn
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="ve-card">
+            <div class="card-label">Core Components</div>
+            <h3 class="card-title">System Architecture</h3>
+            <ul style="line-height: 2; color: var(--text-dim);">
+              <li><strong style="color: var(--text);">Client Layer:</strong> React SPA with Vite, PWA capabilities</li>
+              <li><strong style="color: var(--text);">Backend Services:</strong> Supabase (Auth, DB, API)</li>
+              <li><strong style="color: var(--text);">Asset Delivery:</strong> Cloudflare R2 CDN</li>
+              <li><strong style="color: var(--text);">Analytics:</strong> Flock Analytics (GDPR-compliant)</li>
+              <li><strong style="color: var(--text);">Payments:</strong> MobilePay, Card, PayPal</li>
+              <li><strong style="color: var(--text);">Delivery:</strong> Email service (30s SLA)</li>
+            </ul>
+          </div>
+
+          <div class="ve-card">
+            <div class="card-label">Service Levels</div>
+            <h3 class="card-title">SLOs & Performance</h3>
+            <table style="width: 100%; line-height: 2;">
+              <tr>
+                <td><strong>Game Key Delivery</strong></td>
+                <td style="text-align: right; color: var(--accent-teal); font-family: var(--font-mono);">&lt; 30s</td>
+              </tr>
+              <tr>
+                <td><strong>Support Response</strong></td>
+                <td style="text-align: right; color: var(--accent-teal); font-family: var(--font-mono);">&lt; 24h</td>
+              </tr>
+              <tr>
+                <td><strong>Uptime Target</strong></td>
+                <td style="text-align: right; color: var(--accent-teal); font-family: var(--font-mono);">99.9%</td>
+              </tr>
+              <tr>
+                <td><strong>Page Load Time</strong></td>
+                <td style="text-align: right; color: var(--accent-teal); font-family: var(--font-mono);">&lt; 2s</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+
+        <details>
+          <summary>Security Architecture</summary>
+          <div class="details-content">
+            <div class="grid-2">
+              <div>
+                <h4 style="color: var(--accent-navy); margin-bottom: 1rem; font-family: var(--font-serif);">Authentication Security</h4>
+                <ul style="line-height: 1.8; color: var(--text-dim);">
+                  <li>Supabase Auth (OAuth 2.0)</li>
+                  <li>Password hashing (bcrypt)</li>
+                  <li>Session token management</li>
+                  <li>HTTPS-only communication</li>
+                  <li>Rate limiting (5 attempts/hour)</li>
+                </ul>
+              </div>
+              <div>
+                <h4 style="color: var(--accent-navy); margin-bottom: 1rem; font-family: var(--font-serif);">Data Protection</h4>
+                <ul style="line-height: 1.8; color: var(--text-dim);">
+                  <li>GDPR compliance</li>
+                  <li>Email delivery for game keys</li>
+                  <li>PCI DSS compliant payment gateways</li>
+                  <li>XSS protection (React escaping)</li>
+                  <li>Environment-based configuration</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- Authentication -->
+      <section id="authentication">
+        <div class="section-header">
+          <h2 class="section-title">Authentication System</h2>
+          <p class="section-subtitle">Supabase Auth integration with email/password</p>
+        </div>
+
+        <div class="ve-card ve-card--hero">
+          <div class="card-label">Provider</div>
+          <h3 class="card-title">Supabase Auth</h3>
+          <p style="line-height: 1.8; margin-bottom: 1.5rem;">
+            Email & password authentication with session management, password recovery, and protected route handling.
+            All authentication requests go over HTTPS with automatic token refresh and secure session storage.
+          </p>
+          <div class="grid-3">
+            <div class="stat-card">
+              <div class="stat-value">500</div>
+              <div class="stat-label">Welcome Shards</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">1hr</div>
+              <div class="stat-label">Token Expiry</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">8+</div>
+              <div class="stat-label">Min Password</div>
+            </div>
+          </div>
+        </div>
+
+        <h3 style="font-family: var(--font-serif); font-size: 1.5rem; color: var(--accent-navy); margin: 2rem 0 1rem;">Authentication Flows</h3>
+
+        <div class="mermaid-wrap">
+          <div class="zoom-controls">
+            <button class="zoom-btn" onclick="zoomMermaid(this, 1.2)">+</button>
+            <button class="zoom-btn" onclick="zoomMermaid(this, 0.8)">−</button>
+            <button class="zoom-btn" onclick="resetZoom(this)">⟲</button>
+            <button class="zoom-btn" onclick="openMermaidInNewTab(this)">⛶</button>
+          </div>
+          <div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant C as Client
+    participant S as Supabase Auth
+    participant D as Database
+
+    Note over U,D: Login Flow
+    U->>C: Navigate to /login
+    U->>C: Enter email & password
+    C->>S: POST /auth/v1/token
+    S->>S: Validate credentials
+    S->>D: Fetch user metadata
+    D->>S: User data + Shards balance
+    S->>C: Access token + refresh token
+    C->>C: Store session
+    C->>U: Redirect to /club
+
+    Note over U,D: Protected Route Access
+    U->>C: Navigate to /club/casino
+    C->>C: Check session
+    alt Valid session
+        C->>U: Show protected content
+    else Invalid/expired
+        C->>U: Redirect to /login
+    end
+
+    Note over U,D: Token Refresh
+    C->>S: POST /auth/v1/token (refresh)
+    S->>C: New access token
+          </div>
+        </div>
+
+        <h3 style="font-family: var(--font-serif); font-size: 1.5rem; color: var(--accent-navy); margin: 2rem 0 1rem;">Protected Routes</h3>
+
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Route</th>
+              <th>Description</th>
+              <th>Redirect</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/club</code></td>
+              <td>Customer Club dashboard</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/games</code></td>
+              <td>Club games</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/cases</code></td>
+              <td>Loot cases</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/casino</code></td>
+              <td>Casino hub</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/casino/blackjack</code></td>
+              <td>Blackjack game</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/casino/roulette</code></td>
+              <td>Roulette game</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/casino/dice</code></td>
+              <td>Dice game</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/casino/hilo</code></td>
+              <td>Hi-Lo game</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/casino/lines</code></td>
+              <td>Lines game</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/casino/mines</code></td>
+              <td>Mines game</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/history</code></td>
+              <td>Transaction history</td>
+              <td><code>/login</code></td>
+            </tr>
+            <tr>
+              <td><code>/club/rewards</code></td>
+              <td>Rewards dashboard</td>
+              <td><code>/login</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <details>
+          <summary>User Metadata Structure</summary>
+          <div class="details-content">
+            <div class="code-block">
+              <div class="code-header">JSON Schema</div>
+              <div class="code-content">{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "user@example.com",
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-03-14T14:20:00Z",
+  "user_metadata": {
+    "username": "gamer123",
+    "shards_balance": 1250,
+    "total_purchases": 15,
+    "member_since": "2024-01-15",
+    "last_login_bonus": "2024-03-14",
+    "loyalty_tier": "silver"
+  },
+  "app_metadata": {
+    "provider": "email",
+    "providers": ["email"]
+  }
+}</div>
+            </div>
+          </div>
+        </details>
+
+        <details>
+          <summary>Password Reset Flow</summary>
+          <div class="details-content">
+            <ol style="line-height: 2; padding-left: 1.5rem;">
+              <li>User clicks "Forgot Password" on login page</li>
+              <li>Navigate to <code>/forgot-password</code></li>
+              <li>Enter email address and submit</li>
+              <li>Supabase sends password reset email</li>
+              <li>User clicks link in email</li>
+              <li>Redirect to password reset page</li>
+              <li>Enter new password and confirm</li>
+              <li>Password updated, redirect to login</li>
+            </ol>
+          </div>
+        </details>
+      </section>
+
+      <!-- API Reference -->
+      <section id="api">
+        <div class="section-header">
+          <h2 class="section-title">API Reference</h2>
+          <p class="section-subtitle">REST endpoints and integrations</p>
+        </div>
+
+        <div class="ve-card">
+          <div class="card-label">Base URLs</div>
+          <table style="width: 100%; line-height: 2;">
+            <tr>
+              <td style="width: 200px;"><strong>Supabase API</strong></td>
+              <td><code>https://[project-id].supabase.co</code></td>
+            </tr>
+            <tr>
+              <td><strong>Supabase Auth</strong></td>
+              <td><code>https://[project-id].supabase.co/auth/v1</code></td>
+            </tr>
+            <tr>
+              <td><strong>Flock Analytics</strong></td>
+              <td><code>/~api/analytics</code></td>
+            </tr>
+          </table>
+        </div>
+
+        <h3 style="font-family: var(--font-serif); font-size: 1.5rem; color: var(--accent-navy); margin: 2rem 0 1rem;">Authentication Endpoints</h3>
+
+        <div class="ve-card">
+          <div class="card-label">POST</div>
+          <h4 style="font-family: var(--font-mono); font-size: 1rem; color: var(--accent-navy); margin-bottom: 1rem;">/auth/v1/signup</h4>
+          <p style="color: var(--text-dim); margin-bottom: 1rem;">Register a new user account with welcome bonus.</p>
+          <div class="code-block">
+            <div class="code-header">Request</div>
+            <div class="code-content">{
+  "email": "user@example.com",
+  "password": "secure_password",
+  "data": {
+    "username": "gamer123",
+    "shards_balance": 500
+  }
+}</div>
+          </div>
+          <div class="code-block">
+            <div class="code-header">Response (201 Created)</div>
+            <div class="code-content">{
+  "user": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "user_metadata": {
+      "username": "gamer123",
+      "shards_balance": 500
+    }
+  },
+  "session": {
+    "access_token": "jwt-token",
+    "refresh_token": "refresh-token",
+    "expires_in": 3600
+  }
+}</div>
+          </div>
+        </div>
+
+        <div class="ve-card">
+          <div class="card-label">POST</div>
+          <h4 style="font-family: var(--font-mono); font-size: 1rem; color: var(--accent-navy); margin-bottom: 1rem;">/auth/v1/token?grant_type=password</h4>
+          <p style="color: var(--text-dim); margin-bottom: 1rem;">Authenticate user with email and password.</p>
+          <div class="code-block">
+            <div class="code-header">Request</div>
+            <div class="code-content">{
+  "email": "user@example.com",
+  "password": "secure_password"
+}</div>
+          </div>
+          <div class="code-block">
+            <div class="code-header">Response (200 OK)</div>
+            <div class="code-content">{
+  "access_token": "eyJhbGci...",
+  "token_type": "bearer",
+  "expires_in": 3600,
+  "refresh_token": "refresh-token",
+  "user": { ... }
+}</div>
+          </div>
+        </div>
+
+        <details>
+          <summary>Database API Endpoints</summary>
+          <div class="details-content">
+            <h4 style="color: var(--accent-navy); margin-bottom: 1rem; font-family: var(--font-serif);">Products</h4>
+            <ul style="line-height: 2; margin-bottom: 2rem; list-style: none;">
+              <li><code style="color: var(--accent-teal);">GET</code> <code>/rest/v1/products</code> - Get all products</li>
+              <li><code style="color: var(--accent-teal);">GET</code> <code>/rest/v1/products?slug=eq.{slug}</code> - Get product by slug</li>
+              <li><code style="color: var(--accent-teal);">GET</code> <code>/rest/v1/products?platform=eq.steam</code> - Filter by platform</li>
+              <li><code style="color: var(--accent-teal);">GET</code> <code>/rest/v1/products?name=ilike.*fifa*</code> - Search products</li>
+            </ul>
+
+            <h4 style="color: var(--accent-navy); margin-bottom: 1rem; font-family: var(--font-serif);">Orders</h4>
+            <ul style="line-height: 2; margin-bottom: 2rem; list-style: none;">
+              <li><code style="color: var(--accent-terra);">POST</code> <code>/rest/v1/orders</code> - Create order</li>
+              <li><code style="color: var(--accent-teal);">GET</code> <code>/rest/v1/orders?user_id=eq.{id}</code> - Get user orders</li>
+            </ul>
+
+            <h4 style="color: var(--accent-navy); margin-bottom: 1rem; font-family: var(--font-serif);">Shards</h4>
+            <ul style="line-height: 2; list-style: none;">
+              <li><code style="color: var(--accent-teal);">GET</code> <code>/rest/v1/profiles?id=eq.{id}</code> - Get user profile & balance</li>
+              <li><code style="color: var(--accent-gold);">PATCH</code> <code>/rest/v1/profiles?id=eq.{id}</code> - Update Shards balance</li>
+              <li><code style="color: var(--accent-teal);">GET</code> <code>/rest/v1/shards_transactions?user_id=eq.{id}</code> - Transaction history</li>
+            </ul>
+          </div>
+        </details>
+
+        <details>
+          <summary>Payment Integration</summary>
+          <div class="details-content">
+            <div class="grid-2">
+              <div>
+                <h4 style="color: var(--accent-navy); margin-bottom: 1rem; font-family: var(--font-serif);">MobilePay</h4>
+                <div class="code-block">
+                  <div class="code-header">Create Payment</div>
+                  <div class="code-content">POST /api/payments/mobilepay/create
+
+{
+  "order_id": 12345,
+  "amount": 199.00,
+  "currency": "DKK",
+  "return_url": "https://dingaming.dk/checkout/success"
+}</div>
+                </div>
+              </div>
+              <div>
+                <h4 style="color: var(--accent-navy); margin-bottom: 1rem; font-family: var(--font-serif);">PayPal</h4>
+                <div class="code-block">
+                  <div class="code-header">Create Order</div>
+                  <div class="code-content">POST /api/payments/paypal/create
+
+{
+  "order_id": 12345,
+  "amount": 199.00,
+  "currency": "DKK"
+}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details>
+          <summary>Error Codes</summary>
+          <div class="details-content">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Status</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>INVALID_CREDENTIALS</code></td>
+                  <td>401</td>
+                  <td>Wrong email/password</td>
+                </tr>
+                <tr>
+                  <td><code>UNAUTHORIZED</code></td>
+                  <td>401</td>
+                  <td>Missing or invalid token</td>
+                </tr>
+                <tr>
+                  <td><code>FORBIDDEN</code></td>
+                  <td>403</td>
+                  <td>Insufficient permissions</td>
+                </tr>
+                <tr>
+                  <td><code>NOT_FOUND</code></td>
+                  <td>404</td>
+                  <td>Resource not found</td>
+                </tr>
+                <tr>
+                  <td><code>RATE_LIMIT_EXCEEDED</code></td>
+                  <td>429</td>
+                  <td>Too many requests</td>
+                </tr>
+                <tr>
+                  <td><code>VALIDATION_ERROR</code></td>
+                  <td>422</td>
+                  <td>Invalid request data</td>
+                </tr>
+                <tr>
+                  <td><code>SERVER_ERROR</code></td>
+                  <td>500</td>
+                  <td>Internal server error</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <details>
+          <summary>Rate Limits</summary>
+          <div class="details-content">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Endpoint Type</th>
+                  <th>Rate Limit</th>
+                  <th>Window</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Authentication</td>
+                  <td>5 requests</td>
+                  <td>1 hour</td>
+                </tr>
+                <tr>
+                  <td>Database Reads</td>
+                  <td>100 requests</td>
+                  <td>1 minute</td>
+                </tr>
+                <tr>
+                  <td>Database Writes</td>
+                  <td>20 requests</td>
+                  <td>1 minute</td>
+                </tr>
+                <tr>
+                  <td>Analytics</td>
+                  <td>1000 requests</td>
+                  <td>1 hour</td>
+                </tr>
+                <tr>
+                  <td>Payments</td>
+                  <td>10 requests</td>
+                  <td>1 minute</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // Navigation active state
+    const sections = document.querySelectorAll('section[id]');
+    const navLinks = document.querySelectorAll('.nav-link, .nav-mobile-link');
+
+    function updateActiveNav() {
+      const scrollPos = window.scrollY + 200;
+
+      sections.forEach(section => {
+        const top = section.offsetTop;
+        const height = section.offsetHeight;
+        const id = section.getAttribute('id');
+
+        if (scrollPos >= top && scrollPos < top + height) {
+          navLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === `#${id}`) {
+              link.classList.add('active');
+            }
+          });
+        }
+      });
+    }
+
+    window.addEventListener('scroll', updateActiveNav);
+    updateActiveNav();
+
+    // Smooth scroll
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    // Mermaid zoom controls
+    let currentZoom = 1;
+
+    function zoomMermaid(btn, factor) {
+      const wrap = btn.closest('.mermaid-wrap');
+      const mermaid = wrap.querySelector('.mermaid');
+      currentZoom *= factor;
+      mermaid.style.transform = `scale(${currentZoom})`;
+      mermaid.style.transformOrigin = 'center top';
+    }
+
+    function resetZoom(btn) {
+      const wrap = btn.closest('.mermaid-wrap');
+      const mermaid = wrap.querySelector('.mermaid');
+      currentZoom = 1;
+      mermaid.style.transform = 'scale(1)';
+    }
+
+    function openMermaidInNewTab(btn) {
+      const wrap = btn.closest('.mermaid-wrap');
+      const mermaidSvg = wrap.querySelector('.mermaid svg');
+      if (!mermaidSvg) return;
+
+      const svgData = new XMLSerializer().serializeToString(mermaidSvg);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      const win = window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
+
+    // Click-to-expand on mermaid diagrams
+    document.querySelectorAll('.mermaid').forEach(diagram => {
+      let isDragging = false;
+      let startX, startY;
+
+      diagram.addEventListener('mousedown', (e) => {
+        isDragging = false;
+        startX = e.clientX;
+        startY = e.clientY;
+      });
+
+      diagram.addEventListener('mousemove', (e) => {
+        if (Math.abs(e.clientX - startX) > 5 || Math.abs(e.clientY - startY) > 5) {
+          isDragging = true;
+        }
+      });
+
+      diagram.addEventListener('click', (e) => {
+        if (!isDragging) {
+          const wrap = diagram.closest('.mermaid-wrap');
+          const expandBtn = wrap.querySelector('.zoom-btn[title="Expand"]');
+          if (expandBtn) openMermaidInNewTab(expandBtn);
+        }
+      });
+
+      diagram.style.cursor = 'pointer';
+    });
+
+    // Ctrl/Cmd + scroll zoom
+    document.querySelectorAll('.mermaid-wrap').forEach(wrap => {
+      wrap.addEventListener('wheel', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          const factor = e.deltaY < 0 ? 1.1 : 0.9;
+          const zoomBtn = wrap.querySelector('.zoom-btn[title="Zoom in"]');
+          zoomMermaid(zoomBtn, factor);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

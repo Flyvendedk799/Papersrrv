@@ -1,0 +1,75 @@
+{
+  "projectUrl": "https://dingaming.dk",
+  "projectName": "DinGaming",
+  "description": "Danish digital game key marketplace with integrated gaming club",
+  "techStack": {
+    "frontend": ["React", "JavaScript/TypeScript"],
+    "bundler": "Vite (inferred from asset naming)",
+    "fonts": ["Google Fonts: DM Sans, Playfair Display"],
+    "analytics": "Flock Analytics"
+  },
+  "sitemap": {
+    "public": [
+      "/",
+      "/categories",
+      "/search",
+      "/deals",
+      "/product/:handle",
+      "/support",
+      "/login",
+      "/signup",
+      "/forgot-password"
+    ],
+    "authenticated": [
+      "/club",
+      "/club/games",
+      "/club/rewards",
+      "/club/cases",
+      "/club/casino",
+      "/club/casino/blackjack",
+      "/club/casino/dice",
+      "/club/casino/hilo",
+      "/club/casino/lines",
+      "/club/casino/mines",
+      "/club/casino/roulette",
+      "/checkout",
+      "/admin"
+    ]
+  },
+  "flowList": [
+    "Browse Games (/ → /categories → /product/:handle)",
+    "Search Products (/search → /product/:handle)",
+    "Purchase Flow (/ → /product/:handle → /checkout)",
+    "User Registration (/signup → /login)",
+    "Password Recovery (/forgot-password)",
+    "Club/Gaming (login → /club → /club/games | /club/casino/* | /club/rewards | /club/cases)",
+    "Admin Dashboard (/admin - requires authentication)"
+  ],
+  "navigationStructure": {
+    "root": "/",
+    "main_sections": {
+      "shop": ["/categories", "/search", "/deals"],
+      "product": "/product/:handle",
+      "checkout": "/checkout",
+      "auth": ["/login", "/signup", "/forgot-password"],
+      "user_club": "/club with subsections (games, rewards, cases, casino)",
+      "support": "/support",
+      "admin": "/admin"
+    },
+    "casino_games": [
+      "blackjack",
+      "dice",
+      "hilo",
+      "lines",
+      "mines",
+      "roulette"
+    ]
+  },
+  "metadata": {
+    "language": "Danish",
+    "region": "Denmark",
+    "robotsPolicy": "Allow all crawlers",
+    "hasSitemap": false,
+    "theme_color": "#12100e"
+  }
+}

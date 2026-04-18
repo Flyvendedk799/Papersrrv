@@ -1,0 +1,216 @@
+{
+  "projectUrl": "https://dingaming.dk/",
+  "projectName": "DinGaming",
+  "techStack": {
+    "framework": "React",
+    "buildTool": "Vite",
+    "rendering": "SPA (Single Page Application)",
+    "language": "Danish (da)",
+    "fonts": ["DM Sans", "Playfair Display"],
+    "cdn": "Cloudflare R2",
+    "analytics": "Flock Analytics (self-hosted)",
+    "styling": "CSS Modules (Vite bundled)",
+    "deployment": "Static hosting"
+  },
+  "sitemap": {
+    "public": [
+      {
+        "path": "/",
+        "name": "Home",
+        "description": "Homepage with game listings"
+      },
+      {
+        "path": "/search",
+        "name": "Search",
+        "description": "Search for games"
+      },
+      {
+        "path": "/categories",
+        "name": "Categories",
+        "description": "Browse games by category/platform"
+      },
+      {
+        "path": "/deals",
+        "name": "Deals",
+        "description": "Special offers and discounts"
+      },
+      {
+        "path": "/product/:handle",
+        "name": "Product Details",
+        "description": "Individual game product page"
+      },
+      {
+        "path": "/support",
+        "name": "Support",
+        "description": "Customer support"
+      },
+      {
+        "path": "/login",
+        "name": "Login",
+        "description": "User authentication"
+      },
+      {
+        "path": "/signup",
+        "name": "Sign Up",
+        "description": "User registration"
+      },
+      {
+        "path": "/forgot-password",
+        "name": "Forgot Password",
+        "description": "Password recovery"
+      }
+    ],
+    "authenticated": [
+      {
+        "path": "/checkout",
+        "name": "Checkout",
+        "description": "Purchase flow and payment"
+      },
+      {
+        "path": "/club",
+        "name": "Club Hub",
+        "description": "Loyalty/rewards program dashboard"
+      },
+      {
+        "path": "/club/cases",
+        "name": "Club Cases",
+        "description": "Loot boxes or case opening feature"
+      },
+      {
+        "path": "/club/games",
+        "name": "Club Games",
+        "description": "Mini-games for club members"
+      },
+      {
+        "path": "/club/rewards",
+        "name": "Club Rewards",
+        "description": "Rewards and benefits"
+      },
+      {
+        "path": "/club/history",
+        "name": "Club History",
+        "description": "User activity history"
+      },
+      {
+        "path": "/club/casino",
+        "name": "Casino Games Hub",
+        "description": "Collection of casino-style mini-games"
+      },
+      {
+        "path": "/club/casino/blackjack",
+        "name": "Blackjack",
+        "description": "Blackjack mini-game"
+      },
+      {
+        "path": "/club/casino/dice",
+        "name": "Dice",
+        "description": "Dice mini-game"
+      },
+      {
+        "path": "/club/casino/hilo",
+        "name": "Hi-Lo",
+        "description": "Hi-Lo card game"
+      },
+      {
+        "path": "/club/casino/lines",
+        "name": "Lines",
+        "description": "Lines casino game"
+      },
+      {
+        "path": "/club/casino/mines",
+        "name": "Mines",
+        "description": "Minesweeper-style game"
+      },
+      {
+        "path": "/club/casino/roulette",
+        "name": "Roulette",
+        "description": "Roulette mini-game"
+      },
+      {
+        "path": "/admin",
+        "name": "Admin Dashboard",
+        "description": "Administrative interface"
+      }
+    ]
+  },
+  "flowList": [
+    {
+      "name": "Browse and Search Games",
+      "description": "Users browse homepage, search for games, filter by categories/platforms",
+      "pages": ["/", "/search", "/categories", "/#spil"]
+    },
+    {
+      "name": "Product Discovery and Purchase",
+      "description": "View game details, add to cart, proceed to checkout",
+      "pages": ["/product/:handle", "/checkout"],
+      "requiresAuth": true
+    },
+    {
+      "name": "User Authentication",
+      "description": "Sign up, login, password recovery",
+      "pages": ["/signup", "/login", "/forgot-password"]
+    },
+    {
+      "name": "Club Membership Activities",
+      "description": "Access club features, open cases, earn rewards, view history",
+      "pages": ["/club", "/club/cases", "/club/games", "/club/rewards", "/club/history"],
+      "requiresAuth": true
+    },
+    {
+      "name": "Casino Mini-Games",
+      "description": "Play various casino-style games within the club",
+      "pages": [
+        "/club/casino",
+        "/club/casino/blackjack",
+        "/club/casino/dice",
+        "/club/casino/hilo",
+        "/club/casino/lines",
+        "/club/casino/mines",
+        "/club/casino/roulette"
+      ],
+      "requiresAuth": true
+    },
+    {
+      "name": "Admin Dashboard",
+      "description": "Manage products, orders, users, and site content",
+      "pages": ["/admin"],
+      "requiresAuth": true,
+      "requiresAdminRole": true
+    }
+  ],
+  "navigationStructure": {
+    "mainNav": [
+      { "label": "Home", "path": "/" },
+      { "label": "Search", "path": "/search" },
+      { "label": "Categories", "path": "/categories" },
+      { "label": "Deals", "path": "/deals" },
+      { "label": "Club", "path": "/club" }
+    ],
+    "userNav": [
+      { "label": "Cart", "path": "/checkout", "icon": "cart" },
+      { "label": "Profile", "path": "/profile", "icon": "user" },
+      { "label": "Login", "path": "/login", "whenLoggedOut": true },
+      { "label": "Sign Up", "path": "/signup", "whenLoggedOut": true }
+    ],
+    "footerNav": [
+      { "label": "Support", "path": "/support" }
+    ],
+    "platforms": [
+      "PC",
+      "Steam",
+      "PlayStation",
+      "Xbox",
+      "Nintendo Switch",
+      "Epic Games"
+    ]
+  },
+  "businessModel": "Digital game key marketplace with instant delivery",
+  "targetMarket": "Danish gaming community (Scandinavian market)",
+  "uniqueFeatures": [
+    "Club loyalty program with gamification",
+    "Casino-style mini-games for entertainment",
+    "Case opening/loot box mechanic",
+    "Instant delivery system",
+    "Multi-platform game keys"
+  ]
+}

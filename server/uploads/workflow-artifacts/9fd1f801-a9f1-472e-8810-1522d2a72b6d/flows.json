@@ -1,0 +1,101 @@
+{
+  "flows": [
+    {
+      "name": "Homepage / Landing",
+      "screenshots": [
+        "homepage/homepage-01-full-page.png",
+        "homepage/homepage-02-header-nav.png",
+        "homepage/homepage-03-hero-section.png",
+        "homepage/homepage-04-scrolled-deals.png",
+        "homepage/homepage-05-footer.png"
+      ],
+      "videos": [
+        "homepage/videos"
+      ],
+      "description": "Main landing page for DinGaming. Features hero section with call-to-action, game deals with platform categories (Steam, PlayStation, Xbox, Nintendo Switch), customer testimonials, and Customer Club benefits. Footer includes newsletter signup and trust indicators (50,000+ customers, 4.9/5 Trustpilot)."
+    },
+    {
+      "name": "Login Flow",
+      "screenshots": [
+        "login/login-01-initial-page.png",
+        "login/login-02-form-section.png",
+        "login/login-03-email-filled.png",
+        "login/login-04-form-complete.png",
+        "login/login-05-after-submit.png"
+      ],
+      "videos": [
+        "login/videos"
+      ],
+      "description": "Customer Club login flow. Users enter email and password to access member benefits including 1% cashback (Shards), daily login bonuses, and casino games. Features link to password reset and signup. Login is handled via Supabase Auth."
+    },
+    {
+      "name": "Signup Flow",
+      "screenshots": [
+        "signup/signup-01-initial-page.png",
+        "signup/signup-02-form-section.png"
+      ],
+      "videos": [
+        "signup/videos"
+      ],
+      "description": "New user registration flow. Users create account with username, email, and password. Upon signup, users receive 500 Shards welcome bonus. Registration creates Supabase account and redirects to Customer Club or login."
+    },
+    {
+      "name": "Forgot Password Flow",
+      "screenshots": [
+        "forgot-password/forgot-password-01-initial-page.png",
+        "forgot-password/forgot-password-02-form.png",
+        "forgot-password/forgot-password-03-email-filled.png"
+      ],
+      "videos": [
+        "forgot-password/videos"
+      ],
+      "description": "Password recovery flow. Users enter their email address to receive a password reset link. Email is sent via Supabase Auth system. Link allows user to set new password."
+    },
+    {
+      "name": "Search Flow",
+      "screenshots": [
+        "search/search-01-initial-page.png",
+        "search/search-02-search-input.png",
+        "search/search-03-query-entered.png",
+        "search/search-04-results.png"
+      ],
+      "videos": [
+        "search/videos"
+      ],
+      "description": "Game search functionality. Users can search the catalog by game title, keyword, or platform. Results display matching game keys with prices and platform availability. Example search: \"Call of Duty\"."
+    },
+    {
+      "name": "Deals / Daily Offers",
+      "screenshots": [
+        "deals/deals-01-page-top.png",
+        "deals/deals-03-scrolled.png"
+      ],
+      "videos": [
+        "deals/videos"
+      ],
+      "description": "Daily deals page featuring flash sales and discounted game keys. Shows up to 70% discounts with countdown timers. Games organized by popularity and discount percentage."
+    },
+    {
+      "name": "Product Detail & Purchase",
+      "screenshots": [
+        "product/product-01-detail-page.png"
+      ],
+      "videos": [
+        "product/videos"
+      ],
+      "description": "Product detail page showing game information, pricing, platform compatibility, and purchase options. Users can add to cart and proceed to checkout. Game keys delivered via email within 30 seconds of purchase."
+    },
+    {
+      "name": "Support Flow",
+      "screenshots": [
+        "support/support-01-page-top.png",
+        "support/support-03-scrolled-to-form.png",
+        "support/support-04-contact-form.png"
+      ],
+      "videos": [
+        "support/videos"
+      ],
+      "description": "Support and help center. Features FAQ sections covering activation guides, refund policy, delivery information, and payment methods. Includes contact form for direct support (support@dingaming.dk, 24-hour response time)."
+    }
+  ]
+}

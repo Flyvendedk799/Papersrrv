@@ -1,0 +1,230 @@
+{
+  "projectUrl": "https://dingaming.dk/",
+  "projectName": "DinGaming",
+  "description": "Danish digital game key marketplace. Buy game keys for Steam, PlayStation, Xbox, and Nintendo. Instant delivery to email within 30 seconds.",
+  "techStack": {
+    "frontend": {
+      "framework": "React",
+      "bundler": "Vite",
+      "architecture": "SPA (Single Page Application)",
+      "fonts": ["DM Sans", "Playfair Display"],
+      "fontSource": "Google Fonts"
+    },
+    "infrastructure": {
+      "cdn": "Cloudflare",
+      "storage": "Cloudflare R2 (assets)",
+      "buildPlatform": "Lovable.app (formerly GPT Engineer)"
+    },
+    "features": [
+      "Client-side routing",
+      "Module preloading",
+      "PWA-ready (apple-mobile-web-app-capable, theme-color)",
+      "Analytics proxy (~flock.js)"
+    ]
+  },
+  "sitemap": {
+    "public": [
+      {
+        "path": "/",
+        "title": "Home",
+        "description": "Landing page with hero, deals, testimonials, platform overview"
+      },
+      {
+        "path": "/categories",
+        "title": "Categories",
+        "description": "Browse game categories by platform"
+      },
+      {
+        "path": "/deals",
+        "title": "Deals",
+        "description": "Daily deals, flash deals, weekly favorites"
+      },
+      {
+        "path": "/search",
+        "title": "Search",
+        "description": "Search for games"
+      },
+      {
+        "path": "/checkout",
+        "title": "Checkout",
+        "description": "Purchase flow (may require auth)"
+      },
+      {
+        "path": "/login",
+        "title": "Log ind",
+        "description": "Customer Club login"
+      },
+      {
+        "path": "/signup",
+        "title": "Opret konto",
+        "description": "Create account, 500 Shards welcome bonus"
+      },
+      {
+        "path": "/forgot-password",
+        "title": "Glemt adgangskode",
+        "description": "Password reset via email"
+      },
+      {
+        "path": "/support",
+        "title": "Support",
+        "description": "24/7 Danish customer support"
+      }
+    ],
+    "authenticated": [
+      {
+        "path": "/club",
+        "title": "Customer Club",
+        "description": "Member dashboard, Shards, rewards"
+      },
+      {
+        "path": "/club/games",
+        "title": "Club Games",
+        "description": "Games available in Customer Club"
+      },
+      {
+        "path": "/club/rewards",
+        "title": "Club Rewards",
+        "description": "Redeem Shards for discounts"
+      },
+      {
+        "path": "/club/history",
+        "title": "Club History",
+        "description": "Purchase/activity history"
+      },
+      {
+        "path": "/club/cases",
+        "title": "Club Cases",
+        "description": "Loot case mechanics"
+      },
+      {
+        "path": "/club/casino",
+        "title": "Club Casino",
+        "description": "Casino games hub"
+      },
+      {
+        "path": "/club/casino/blackjack",
+        "title": "Blackjack"
+      },
+      {
+        "path": "/club/casino/roulette",
+        "title": "Roulette"
+      },
+      {
+        "path": "/club/casino/dice",
+        "title": "Dice"
+      },
+      {
+        "path": "/club/casino/hilo",
+        "title": "Hi-Lo"
+      },
+      {
+        "path": "/club/casino/lines",
+        "title": "Lines"
+      },
+      {
+        "path": "/club/casino/mines",
+        "title": "Mines"
+      }
+    ],
+    "admin": [
+      {
+        "path": "/admin",
+        "title": "Admin",
+        "description": "Admin panel"
+      }
+    ]
+  },
+  "flowList": [
+    {
+      "id": "auth-login",
+      "name": "Login Flow",
+      "steps": [
+        "Navigate to /login or /club",
+        "Enter email and password",
+        "Optional: Use 'Glemt?' for password reset",
+        "Submit → Redirect to Customer Club"
+      ],
+      "entryPoints": ["/login", "/club"]
+    },
+    {
+      "id": "auth-signup",
+      "name": "Signup Flow",
+      "steps": [
+        "Navigate to /signup",
+        "Enter username, email, password, confirm password",
+        "Submit → Receive 500 Shards welcome bonus",
+        "Redirect to Customer Club"
+      ],
+      "entryPoints": ["/signup"]
+    },
+    {
+      "id": "auth-forgot-password",
+      "name": "Password Reset Flow",
+      "steps": [
+        "Navigate to /forgot-password from login",
+        "Enter email",
+        "Receive reset link via email",
+        "Reset password"
+      ],
+      "entryPoints": ["/login → Glemt?"]
+    },
+    {
+      "id": "purchase-flow",
+      "name": "Game Purchase Flow",
+      "steps": [
+        "Find game (home, /categories, /deals, /search)",
+        "Add to cart",
+        "Navigate to /checkout",
+        "Pay (MobilePay, card, PayPal)",
+        "Receive key via email within 30 seconds"
+      ],
+      "entryPoints": ["/", "/categories", "/deals", "/search"]
+    },
+    {
+      "id": "browse-flow",
+      "name": "Browse & Search Flow",
+      "steps": [
+        "Home or /categories or /deals",
+        "Optional: Use /search for specific games",
+        "Filter by platform (Steam, PlayStation, Xbox, Nintendo)",
+        "View product details and add to cart"
+      ],
+      "entryPoints": ["/", "/categories", "/deals", "/search"]
+    },
+    {
+      "id": "customer-club-flow",
+      "name": "Customer Club Flow",
+      "steps": [
+        "Login required",
+        "Access /club dashboard",
+        "Earn Shards (1% cashback, daily login bonuses)",
+        "Redeem at /club/rewards",
+        "Optional: Play casino games (/club/casino/*) or cases (/club/cases)"
+      ],
+      "entryPoints": ["/club"],
+      "requiresAuth": true
+    }
+  ],
+  "navigationStructure": {
+    "header": {
+      "logo": "DinGaming → /",
+      "links": [
+        { "label": "Search", "path": "/search" },
+        { "label": "Login", "path": "/login" },
+        { "label": "Kurv (Cart)", "path": "cart (client-side)" }
+      ]
+    },
+    "footer": {
+      "newsletter": "Email signup for 10% first order + weekly deals",
+      "ctAs": ["Opret Gratis Konto", "Se Alle Spil"]
+    },
+    "platforms": ["Steam", "PlayStation", "Xbox", "Nintendo"],
+    "trustSignals": [
+      "Trustpilot 4.9/5",
+      "50.000+ kunder",
+      "200K+ solgte keys",
+      "Pengene tilbage garanti",
+      "24/7 Dansk support"
+    ]
+  }
+}

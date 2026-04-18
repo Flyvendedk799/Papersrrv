@@ -1,0 +1,12 @@
+{
+  "name": "flow-capture-visual-project-documenter",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "setup": "playwright install chromium",
+    "document-flows": "node document-flows.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

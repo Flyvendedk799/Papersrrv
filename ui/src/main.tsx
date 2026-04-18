@@ -12,6 +12,7 @@ import { DialogProvider } from "./context/DialogContext";
 import { ToastProvider } from "./context/ToastContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { PapeeProvider } from "./context/PapeeContext";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
 
@@ -39,6 +40,7 @@ createRoot(document.getElementById("root")!).render(
           <ToastProvider>
             <LiveUpdatesProvider>
               <BrowserRouter>
+                <PapeeProvider>
                 <TooltipProvider>
                   <BreadcrumbProvider>
                     <SidebarProvider>
@@ -50,6 +52,7 @@ createRoot(document.getElementById("root")!).render(
                     </SidebarProvider>
                   </BreadcrumbProvider>
                 </TooltipProvider>
+                </PapeeProvider>
               </BrowserRouter>
             </LiveUpdatesProvider>
           </ToastProvider>
