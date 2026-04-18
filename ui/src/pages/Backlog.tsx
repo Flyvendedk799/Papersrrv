@@ -29,8 +29,11 @@ import {
   BACKLOG_ITEM_STATUSES,
   type BacklogItemSource,
   type BacklogItemStatus,
+  type BacklogPlan,
   type BulkBacklogItemInput,
   type BulkBacklogItemResult,
+  type CreateBacklogPlanInput,
+  type UpdateBacklogPlanInput,
 } from "@paperclipai/shared";
 import { backlogApi } from "../api/backlog";
 import { useCompany } from "../context/CompanyContext";
@@ -60,6 +63,8 @@ import { BacklogBoardView } from "../components/backlog/BacklogBoardView";
 import { useBacklogReorder } from "../components/backlog/useBacklogReorder";
 import { BulkActionBar } from "../components/backlog/BulkActionBar";
 import { BacklogInsightsStrip } from "../components/backlog/BacklogInsightsStrip";
+import { PlanEditorDialog } from "../components/backlog/PlanEditorDialog";
+import { ArchivePlanDialog } from "../components/backlog/ArchivePlanDialog";
 import { useToast } from "../context/ToastContext";
 
 type StatusFilter = BacklogItemStatus | "all";
@@ -134,6 +139,12 @@ export function Backlog() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [planFilter, setPlanFilter] = useState<string | null | "all">("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Plans management (D1). `planEditorPlan === null` while creating;
+  // set to the plan being edited when opening from the plan manager.
+  const [planEditorOpen, setPlanEditorOpen] = useState(false);
+  const [planEditorPlan, setPlanEditorPlan] = useState<BacklogPlan | null>(null);
+  const [archivePlanTarget, setArchivePlanTarget] =
+    useState<BacklogPlan | null>(null);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selection, setSelection] = useState<Set<string>>(() => new Set());
@@ -383,6 +394,119 @@ export function Backlog() {
     },
   });
 
+  // ─── Plans CRUD (D1) ────────────────────────────────────────────────
+  const invalidatePlans = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.backlog.plans(selectedCompanyId ?? ""),
+    });
+    // Overview depends on plan membership for progress numbers.
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.backlog.overview(selectedCompanyId ?? ""),
+    });
+  }, [queryClient, selectedCompanyId]);
+
+  const createPlan = useMutation({
+    mutationFn: (input: CreateBacklogPlanInput) =>
+      backlogApi.createPlan(selectedCompanyId!, input),
+    onSuccess: (plan) => {
+      invalidatePlans();
+      setPlanEditorOpen(false);
+      setPlanEditorPlan(null);
+      pushToast({
+        title: "Plan created",
+        body: plan.title,
+        tone: "success",
+      });
+    },
+    onError: (err) =>
+      pushToast({
+        title: "Couldn't create plan",
+        body: (err as Error).message,
+        tone: "error",
+      }),
+  });
+
+  const updatePlan = useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: UpdateBacklogPlanInput;
+    }) => backlogApi.updatePlan(selectedCompanyId!, id, input),
+    onSuccess: (plan) => {
+      invalidatePlans();
+      setPlanEditorOpen(false);
+      setPlanEditorPlan(null);
+      pushToast({
+        title: "Plan updated",
+        body: plan.title,
+        tone: "success",
+      });
+    },
+    onError: (err) =>
+      pushToast({
+        title: "Couldn't update plan",
+        body: (err as Error).message,
+        tone: "error",
+      }),
+  });
+
+  /**
+   * Archive a plan while preserving its items (D1).
+   *
+   * Flow: we first move the plan's items to the chosen destination
+   * (null = unplanned, or another plan id) via the existing bulk
+   * patch endpoint, then archive the plan itself. If the move fails
+   * we bail before touching the plan so rank positions aren't
+   * orphaned on a ghost plan.
+   */
+  const archivePlan = useMutation({
+    mutationFn: async ({
+      plan,
+      moveTo,
+    }: {
+      plan: BacklogPlan;
+      moveTo: string | null;
+    }) => {
+      const planItems = (items ?? []).filter((i) => i.planId === plan.id);
+      const movedCount = planItems.length;
+      if (movedCount > 0) {
+        await backlogApi.bulkApply(selectedCompanyId!, {
+          ids: planItems.map((i) => i.id),
+          action: "patch",
+          patch: { planId: moveTo },
+        });
+      }
+      await backlogApi.archivePlan(selectedCompanyId!, plan.id);
+      return { plan, moveTo, movedCount };
+    },
+    onSuccess: ({ plan, moveTo, movedCount }) => {
+      invalidatePlans();
+      queryClient.invalidateQueries({
+        queryKey: ["backlog", selectedCompanyId],
+      });
+      setArchivePlanTarget(null);
+      if (planFilter === plan.id) setPlanFilter("all");
+      pushToast({
+        title: `Archived "${plan.title}"`,
+        body:
+          movedCount > 0
+            ? `${movedCount} item${movedCount === 1 ? "" : "s"} moved to ${
+                moveTo ? "another plan" : "unplanned"
+              }`
+            : undefined,
+        tone: "success",
+      });
+    },
+    onError: (err) =>
+      pushToast({
+        title: "Couldn't archive plan",
+        body: (err as Error).message,
+        tone: "error",
+      }),
+  });
+
   const toggleCollapse = useCallback(
     (groupKey: string) => {
       updateView({
@@ -534,36 +658,105 @@ export function Backlog() {
             ))}
           </div>
         </div>
-        {(plans?.length ?? 0) > 0 && (
-          <div>
-            <div className="mb-1 text-[0.65rem] font-mono uppercase tracking-wide text-muted-foreground">
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <div className="text-[0.65rem] font-mono uppercase tracking-wide text-muted-foreground">
               Plan
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Chip
-                active={planFilter === "all"}
-                onClick={() => setPlanFilter("all")}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs"
+                onClick={() => {
+                  setPlanEditorPlan(null);
+                  setPlanEditorOpen(true);
+                }}
+                title="Create a new plan"
               >
-                all
-              </Chip>
-              <Chip
-                active={planFilter === null}
-                onClick={() => setPlanFilter(null)}
-              >
-                unplanned
-              </Chip>
-              {(plans ?? []).map((p) => (
-                <Chip
-                  key={p.id}
-                  active={planFilter === p.id}
-                  onClick={() => setPlanFilter(p.id)}
-                >
-                  {p.title}
-                </Chip>
-              ))}
+                <Plus className="size-3" />
+                New plan
+              </Button>
+              {(plans?.length ?? 0) > 0 && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs"
+                      title="Manage plans"
+                    >
+                      <FolderKanban className="size-3" />
+                      Manage
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-1">
+                    <div className="max-h-80 overflow-y-auto">
+                      {(plans ?? []).map((p) => (
+                        <div
+                          key={p.id}
+                          className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent/50"
+                        >
+                          <span className="flex-1 truncate text-xs">
+                            <span className="font-medium">{p.title}</span>
+                            <span className="ml-1 text-muted-foreground">
+                              {p.kind}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            className="text-[10px] text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              setPlanEditorPlan(p);
+                              setPlanEditorOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="text-[10px] text-destructive hover:underline"
+                            onClick={() => setArchivePlanTarget(p)}
+                          >
+                            Archive
+                          </button>
+                        </div>
+                      ))}
+                      {(plans ?? []).length === 0 && (
+                        <div className="px-2 py-3 text-xs text-muted-foreground">
+                          No plans yet.
+                        </div>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
             </div>
           </div>
-        )}
+          <div className="flex flex-wrap gap-2">
+            <Chip
+              active={planFilter === "all"}
+              onClick={() => setPlanFilter("all")}
+            >
+              all
+            </Chip>
+            <Chip
+              active={planFilter === null}
+              onClick={() => setPlanFilter(null)}
+            >
+              unplanned
+            </Chip>
+            {(plans ?? []).map((p) => (
+              <Chip
+                key={p.id}
+                active={planFilter === p.id}
+                onClick={() => setPlanFilter(p.id)}
+              >
+                {p.title}
+              </Chip>
+            ))}
+          </div>
+        </div>
       </section>
 
       {selection.size > 0 && (
@@ -658,6 +851,50 @@ export function Backlog() {
         onSubmit={(input) => createItem.mutate(input)}
         submitting={createItem.isPending}
         error={createItem.error instanceof Error ? createItem.error.message : null}
+      />
+
+      <PlanEditorDialog
+        open={planEditorOpen}
+        onOpenChange={(open) => {
+          setPlanEditorOpen(open);
+          if (!open) setPlanEditorPlan(null);
+        }}
+        plan={planEditorPlan}
+        submitting={createPlan.isPending || updatePlan.isPending}
+        error={
+          (createPlan.error instanceof Error
+            ? createPlan.error.message
+            : null) ??
+          (updatePlan.error instanceof Error
+            ? updatePlan.error.message
+            : null)
+        }
+        onCreate={(input) => createPlan.mutate(input)}
+        onUpdate={(id, input) => updatePlan.mutate({ id, input })}
+      />
+
+      <ArchivePlanDialog
+        open={!!archivePlanTarget}
+        onOpenChange={(open) => {
+          if (!open) setArchivePlanTarget(null);
+        }}
+        plan={archivePlanTarget}
+        itemCount={
+          archivePlanTarget
+            ? (items ?? []).filter((i) => i.planId === archivePlanTarget.id).length
+            : 0
+        }
+        otherPlans={(plans ?? []).filter(
+          (p) => p.id !== archivePlanTarget?.id && p.status === "active",
+        )}
+        submitting={archivePlan.isPending}
+        error={
+          archivePlan.error instanceof Error ? archivePlan.error.message : null
+        }
+        onConfirm={({ moveTo }) => {
+          if (!archivePlanTarget) return;
+          archivePlan.mutate({ plan: archivePlanTarget, moveTo });
+        }}
       />
     </div>
   );
