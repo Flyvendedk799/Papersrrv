@@ -259,6 +259,26 @@ export {
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";
+export {
+  BACKLOG_ITEM_STATUSES,
+  BACKLOG_ITEM_SOURCES,
+  BACKLOG_PLAN_KINDS,
+  BACKLOG_PLAN_STATUSES,
+} from "./types/backlog.js";
+export type {
+  BacklogItem,
+  BacklogItemStatus,
+  BacklogItemSource,
+  BacklogItemSourceRef,
+  BacklogPlan,
+  BacklogPlanKind,
+  BacklogPlanStatus,
+  CreateBacklogItemInput,
+  UpdateBacklogItemInput,
+  CreateBacklogPlanInput,
+  UpdateBacklogPlanInput,
+  BacklogItemFilters,
+} from "./types/backlog.js";
 export { normalizeAgentUrlKey, deriveAgentUrlKey, isUuidLike } from "./agent-url-key.js";
 export { deriveProjectUrlKey, normalizeProjectUrlKey } from "./project-url-key.js";
 export {

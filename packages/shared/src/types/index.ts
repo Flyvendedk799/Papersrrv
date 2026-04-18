@@ -89,3 +89,23 @@ export type {
   WorkflowDefinition,
   TriggerInput,
 } from "./workflow.js";
+export {
+  BACKLOG_ITEM_STATUSES,
+  BACKLOG_ITEM_SOURCES,
+  BACKLOG_PLAN_KINDS,
+  BACKLOG_PLAN_STATUSES,
+} from "./backlog.js";
+export type {
+  BacklogItem,
+  BacklogItemStatus,
+  BacklogItemSource,
+  BacklogItemSourceRef,
+  BacklogPlan,
+  BacklogPlanKind,
+  BacklogPlanStatus,
+  CreateBacklogItemInput,
+  UpdateBacklogItemInput,
+  CreateBacklogPlanInput,
+  UpdateBacklogPlanInput,
+  BacklogItemFilters,
+} from "./backlog.js";

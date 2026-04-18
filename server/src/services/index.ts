@@ -18,6 +18,7 @@ export { logActivity, type LogActivityInput } from "./activity-log.js";
 export { notifyHireApproved, type NotifyHireApprovedInput } from "./hire-hook.js";
 export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";
 export { fileService } from "./files.js";
+export { backlogService } from "./backlog.js";
 export { budgetAlertService, type BudgetAlert } from "./budget-alerts.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
 export { getSessionStore, type SessionStore } from "./session-store.js";

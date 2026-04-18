@@ -49,3 +49,18 @@ export { agentTaskOutcomes } from "./agent_task_outcomes.js";
 export { knowledgeBaseEntries } from "./knowledge_base.js";
 export { auditLogEntries } from "./audit_log.js";
 export { companySkills } from "./company_skills.js";
+export {
+  backlogPlans,
+  type BacklogPlanRow,
+  type NewBacklogPlanRow,
+} from "./backlog_plans.js";
+export {
+  backlogItems,
+  type BacklogItemRow,
+  type NewBacklogItemRow,
+} from "./backlog_items.js";
+export {
+  backlogItemLabels,
+  type BacklogItemLabelRow,
+  type NewBacklogItemLabelRow,
+} from "./backlog_item_labels.js";

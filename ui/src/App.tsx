@@ -24,6 +24,7 @@ import { InviteLandingPage } from "./pages/InviteLanding";
 import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
 import { useDialog } from "./context/DialogContext";
+import { isFeatureEnabled } from "./lib/featureFlags";
 
 // Route-based code splitting: lazy-load heavier page components
 const AgentDetail = lazy(() => import("./pages/AgentDetail").then(m => ({ default: m.AgentDetail })));
@@ -37,6 +38,7 @@ const Files = lazy(() => import("./pages/Files").then(m => ({ default: m.Files }
 const OrgChart = lazy(() => import("./pages/OrgChart").then(m => ({ default: m.OrgChart })));
 const DesignGuide = lazy(() => import("./pages/DesignGuide").then(m => ({ default: m.DesignGuide })));
 const WorkflowDetail = lazy(() => import("./pages/WorkflowDetail").then(m => ({ default: m.WorkflowDetail })));
+const Backlog = lazy(() => import("./pages/Backlog").then(m => ({ default: m.Backlog })));
 
 function BootstrapPendingPage() {
   return (
@@ -142,6 +144,9 @@ function boardRoutes() {
       <Route path="inbox/new" element={<Inbox />} />
       <Route path="inbox/all" element={<Inbox />} />
       <Route path="design-guide" element={<DesignGuide />} />
+      {isFeatureEnabled("backlog_tab_enabled") ? (
+        <Route path="backlog" element={<Backlog />} />
+      ) : null}
     </>
   );
 }
@@ -253,6 +258,9 @@ export function App() {
           <Route path="approvals/:approvalId" element={<UnprefixedBoardRedirect />} />
           <Route path="company/settings" element={<UnprefixedBoardRedirect />} />
           <Route path="dashboard" element={<UnprefixedBoardRedirect />} />
+          {isFeatureEnabled("backlog_tab_enabled") ? (
+            <Route path="backlog" element={<UnprefixedBoardRedirect />} />
+          ) : null}
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>

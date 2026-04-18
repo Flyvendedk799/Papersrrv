@@ -12,12 +12,14 @@ import {
   FolderOpen,
   Workflow,
   Puzzle,
+  ListTodo,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarProjects } from "./SidebarProjects";
 import { SidebarAgents } from "./SidebarAgents";
+import { isFeatureEnabled } from "../lib/featureFlags";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { sidebarBadgesApi } from "../api/sidebarBadges";
@@ -95,6 +97,9 @@ export function Sidebar() {
           <SidebarNavItem to="/files" label="Files" icon={FolderOpen} />
           <SidebarNavItem to="/workflows" label="Workflows" icon={Workflow} />
           <SidebarNavItem to="/skills" label="Skills" icon={Puzzle} />
+          {isFeatureEnabled("backlog_tab_enabled") ? (
+            <SidebarNavItem to="/backlog" label="Backlog" icon={ListTodo} />
+          ) : null}
         </SidebarSection>
 
         <SidebarProjects />
