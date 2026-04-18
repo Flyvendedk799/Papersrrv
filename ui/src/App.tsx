@@ -40,6 +40,9 @@ const OrgChart = lazy(() => import("./pages/OrgChart").then(m => ({ default: m.O
 const DesignGuide = lazy(() => import("./pages/DesignGuide").then(m => ({ default: m.DesignGuide })));
 const WorkflowDetail = lazy(() => import("./pages/WorkflowDetail").then(m => ({ default: m.WorkflowDetail })));
 const Backlog = lazy(() => import("./pages/Backlog").then(m => ({ default: m.Backlog })));
+const BacklogItemDetail = lazy(() =>
+  import("./pages/BacklogItemDetail").then((m) => ({ default: m.BacklogItemDetail })),
+);
 
 function BootstrapPendingPage() {
   return (
@@ -147,7 +150,10 @@ function boardRoutes() {
       <Route path="inbox/all" element={<Inbox />} />
       <Route path="design-guide" element={<DesignGuide />} />
       {isFeatureEnabled("backlog_tab_enabled") ? (
-        <Route path="backlog" element={<Backlog />} />
+        <>
+          <Route path="backlog" element={<Backlog />} />
+          <Route path="backlog/items/:itemId" element={<BacklogItemDetail />} />
+        </>
       ) : null}
     </>
   );

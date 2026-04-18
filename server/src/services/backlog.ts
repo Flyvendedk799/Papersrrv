@@ -13,9 +13,13 @@
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  agents,
+  backlogItemComments,
   backlogItemLabels,
   backlogItems,
   backlogPlans,
+  issueComments,
+  type BacklogItemCommentRow,
   type BacklogItemRow,
   type BacklogPlanRow,
 } from "@paperclipai/db";
@@ -24,6 +28,7 @@ import type {
   BacklogBulkAction,
   BacklogBulkPatch,
   BacklogItem,
+  BacklogItemComment,
   BacklogItemFilters,
   BacklogItemSource,
   BacklogItemSourceRef,
@@ -39,11 +44,13 @@ import type {
   BulkPromoteBacklogItemInput,
   BulkPromoteBacklogItemResult,
   BulkPromoteBacklogItemResultEntry,
+  CreateBacklogItemCommentInput,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
   PromoteBacklogItemInput,
   PromoteBacklogItemResult,
   ReorderBacklogItemInput,
+  UpdateBacklogItemCommentInput,
   UpdateBacklogItemInput,
   UpdateBacklogPlanInput,
 } from "@paperclipai/shared";
@@ -55,6 +62,34 @@ import {
   BACKLOG_PLAN_STATUSES,
 } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
+
+function commentToApi(
+  row: BacklogItemCommentRow,
+  agent: {
+    id: string;
+    displayName: string;
+    iconName: string | null;
+  } | null,
+): BacklogItemComment {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    backlogItemId: row.backlogItemId,
+    authorAgentId: row.authorAgentId,
+    authorUserId: row.authorUserId,
+    body: row.body,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    authorAgent: agent
+      ? {
+          id: agent.id,
+          displayName: agent.displayName,
+          iconName: agent.iconName,
+          avatarUrl: null,
+        }
+      : null,
+  };
+}
 
 function itemToApi(row: BacklogItemRow): BacklogItem {
   return {
@@ -618,6 +653,32 @@ export function backlogService(db: Db) {
         .returning()
         .then((rs) => rs[0]);
 
+      // backlog3.0 D3: copy comments forward into the new Issue so
+      // the refinement thread travels with the work. Backlog
+      // comments remain on the source row for lineage — restoring
+      // the Issue later (C4 undo) leaves the Issue's copies intact.
+      const priorComments = await db
+        .select()
+        .from(backlogItemComments)
+        .where(
+          and(
+            eq(backlogItemComments.companyId, companyId),
+            eq(backlogItemComments.backlogItemId, id),
+          ),
+        )
+        .orderBy(asc(backlogItemComments.createdAt));
+      if (priorComments.length > 0) {
+        await db.insert(issueComments).values(
+          priorComments.map((c) => ({
+            companyId,
+            issueId: created.id,
+            authorAgentId: c.authorAgentId,
+            authorUserId: c.authorUserId,
+            body: `_(carried from backlog item)_\n\n${c.body}`,
+          })),
+        );
+      }
+
       return {
         item: itemToApi(updatedRow),
         issue: {
@@ -869,6 +930,177 @@ export function backlogService(db: Db) {
         failed: results.length - succeeded,
         results,
       };
+    },
+
+    // ─── Comments (backlog3.0 D3) ────────────────────────────────────
+
+    async listComments(
+      companyId: string,
+      backlogItemId: string,
+    ): Promise<BacklogItemComment[]> {
+      const rows = await db
+        .select({
+          c: backlogItemComments,
+          agent: {
+            id: agents.id,
+            displayName: agents.name,
+            iconName: agents.icon,
+          },
+        })
+        .from(backlogItemComments)
+        .leftJoin(agents, eq(agents.id, backlogItemComments.authorAgentId))
+        .where(
+          and(
+            eq(backlogItemComments.companyId, companyId),
+            eq(backlogItemComments.backlogItemId, backlogItemId),
+          ),
+        )
+        .orderBy(asc(backlogItemComments.createdAt));
+      return rows.map((r) => commentToApi(r.c, r.agent));
+    },
+
+    async createComment(
+      companyId: string,
+      backlogItemId: string,
+      input: CreateBacklogItemCommentInput,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<BacklogItemComment> {
+      const body = (input?.body ?? "").trim();
+      if (!body) throw unprocessable("body is required");
+      // Validate the item exists and is company-scoped so cross-tenant
+      // writes are impossible even if the id is guessed.
+      const item = await db
+        .select({ id: backlogItems.id })
+        .from(backlogItems)
+        .where(
+          and(
+            eq(backlogItems.companyId, companyId),
+            eq(backlogItems.id, backlogItemId),
+          ),
+        )
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!item) throw notFound("Backlog item not found");
+
+      const inserted = await db
+        .insert(backlogItemComments)
+        .values({
+          companyId,
+          backlogItemId,
+          authorUserId: actor.userId,
+          authorAgentId: actor.agentId,
+          body,
+        })
+        .returning()
+        .then((rs) => rs[0]);
+
+      // Hydrate agent author if present so the caller can render
+      // without a follow-up roundtrip.
+      const agent = actor.agentId
+        ? await db
+            .select({
+              id: agents.id,
+              displayName: agents.name,
+              iconName: agents.icon,
+            })
+            .from(agents)
+            .where(eq(agents.id, actor.agentId))
+            .limit(1)
+            .then((rs) => rs[0] ?? null)
+        : null;
+
+      return commentToApi(inserted, agent);
+    },
+
+    async updateComment(
+      companyId: string,
+      commentId: string,
+      input: UpdateBacklogItemCommentInput,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<BacklogItemComment> {
+      const body = (input?.body ?? "").trim();
+      if (!body) throw unprocessable("body is required");
+      const existing = await db
+        .select()
+        .from(backlogItemComments)
+        .where(
+          and(
+            eq(backlogItemComments.companyId, companyId),
+            eq(backlogItemComments.id, commentId),
+          ),
+        )
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!existing) throw notFound("Comment not found");
+      // Authors can edit their own comments. We allow both user and
+      // agent authorship here; the stricter policy (e.g. admin
+      // override) can layer on later without schema change.
+      const ownsByUser =
+        !!actor.userId && existing.authorUserId === actor.userId;
+      const ownsByAgent =
+        !!actor.agentId && existing.authorAgentId === actor.agentId;
+      if (!ownsByUser && !ownsByAgent) {
+        throw unprocessable("Only the author can edit this comment");
+      }
+
+      const updated = await db
+        .update(backlogItemComments)
+        .set({ body, updatedAt: new Date() })
+        .where(
+          and(
+            eq(backlogItemComments.companyId, companyId),
+            eq(backlogItemComments.id, commentId),
+          ),
+        )
+        .returning()
+        .then((rs) => rs[0]);
+      const agent = updated.authorAgentId
+        ? await db
+            .select({
+              id: agents.id,
+              displayName: agents.name,
+              iconName: agents.icon,
+            })
+            .from(agents)
+            .where(eq(agents.id, updated.authorAgentId))
+            .limit(1)
+            .then((rs) => rs[0] ?? null)
+        : null;
+      return commentToApi(updated, agent);
+    },
+
+    async deleteComment(
+      companyId: string,
+      commentId: string,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<void> {
+      const existing = await db
+        .select()
+        .from(backlogItemComments)
+        .where(
+          and(
+            eq(backlogItemComments.companyId, companyId),
+            eq(backlogItemComments.id, commentId),
+          ),
+        )
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!existing) throw notFound("Comment not found");
+      const ownsByUser =
+        !!actor.userId && existing.authorUserId === actor.userId;
+      const ownsByAgent =
+        !!actor.agentId && existing.authorAgentId === actor.agentId;
+      if (!ownsByUser && !ownsByAgent) {
+        throw unprocessable("Only the author can delete this comment");
+      }
+      await db
+        .delete(backlogItemComments)
+        .where(
+          and(
+            eq(backlogItemComments.companyId, companyId),
+            eq(backlogItemComments.id, commentId),
+          ),
+        );
     },
 
     /**

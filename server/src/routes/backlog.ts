@@ -689,6 +689,89 @@ export function backlogRoutes(db: Db) {
     res.json(overview);
   });
 
+  // ─── Comments (backlog3.0 D3) ────────────────────────────────────
+
+  router.get(
+    "/companies/:companyId/backlog/items/:id/comments",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      assertCompanyAccess(req, companyId);
+      const comments = await svc.listComments(companyId, id);
+      res.json(comments);
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/backlog/items/:id/comments",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      assertCompanyAccess(req, companyId);
+      const body = (req.body ?? {}) as { body?: unknown };
+      if (typeof body.body !== "string") throw badRequest("body is required");
+      const actor = getActorInfo(req);
+      const comment = await svc.createComment(
+        companyId,
+        id,
+        { body: body.body },
+        {
+          userId: actor.actorType === "user" ? actor.actorId : null,
+          agentId: actor.agentId,
+        },
+      );
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "backlog_item.commented",
+        entityType: "backlog_item",
+        entityId: id,
+        details: { commentId: comment.id },
+      });
+      res.status(201).json(comment);
+    },
+  );
+
+  router.patch(
+    "/companies/:companyId/backlog/comments/:id",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      assertCompanyAccess(req, companyId);
+      const body = (req.body ?? {}) as { body?: unknown };
+      if (typeof body.body !== "string") throw badRequest("body is required");
+      const actor = getActorInfo(req);
+      const updated = await svc.updateComment(
+        companyId,
+        id,
+        { body: body.body },
+        {
+          userId: actor.actorType === "user" ? actor.actorId : null,
+          agentId: actor.agentId,
+        },
+      );
+      res.json(updated);
+    },
+  );
+
+  router.delete(
+    "/companies/:companyId/backlog/comments/:id",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      await svc.deleteComment(companyId, id, {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        agentId: actor.agentId,
+      });
+      res.status(204).end();
+    },
+  );
+
   // ─── Plans ──────────────────────────────────────────────────────────
 
   router.get("/companies/:companyId/backlog/plans", async (req, res) => {

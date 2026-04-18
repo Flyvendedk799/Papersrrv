@@ -253,6 +253,38 @@ export interface BulkPromoteBacklogItemResult {
 }
 
 /**
+ * Comments on backlog items (backlog3.0 D3).
+ *
+ * Shape mirrors `IssueComment` so the rendering surface can be
+ * shared. `authorAgent` is hydrated server-side when the author is
+ * an agent, matching the existing issue comments pattern.
+ */
+export interface BacklogItemComment {
+  id: string;
+  companyId: string;
+  backlogItemId: string;
+  authorAgentId: string | null;
+  authorUserId: string | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  authorAgent?: {
+    id: string;
+    displayName: string;
+    iconName?: string | null;
+    avatarUrl?: string | null;
+  } | null;
+}
+
+export interface CreateBacklogItemCommentInput {
+  body: string;
+}
+
+export interface UpdateBacklogItemCommentInput {
+  body: string;
+}
+
+/**
  * Overview / insights snapshot for the Backlog Tab (backlog3.0 B5).
  *
  * All counts are company-scoped. `promotedRecent` is the number of items

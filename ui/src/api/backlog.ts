@@ -1,5 +1,6 @@
 import type {
   BacklogItem,
+  BacklogItemComment,
   BacklogItemFilters,
   BacklogOverview,
   BacklogPlan,
@@ -7,11 +8,13 @@ import type {
   BulkBacklogItemResult,
   BulkPromoteBacklogItemInput,
   BulkPromoteBacklogItemResult,
+  CreateBacklogItemCommentInput,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
   PromoteBacklogItemInput,
   PromoteBacklogItemResult,
   ReorderBacklogItemInput,
+  UpdateBacklogItemCommentInput,
   UpdateBacklogItemInput,
   UpdateBacklogPlanInput,
 } from "@paperclipai/shared";
@@ -104,6 +107,31 @@ export const backlogApi = {
       `/companies/${companyId}/backlog/overview${qs ? `?${qs}` : ""}`,
     );
   },
+
+  listComments: (companyId: string, backlogItemId: string) =>
+    api.get<BacklogItemComment[]>(
+      `/companies/${companyId}/backlog/items/${backlogItemId}/comments`,
+    ),
+  createComment: (
+    companyId: string,
+    backlogItemId: string,
+    input: CreateBacklogItemCommentInput,
+  ) =>
+    api.post<BacklogItemComment>(
+      `/companies/${companyId}/backlog/items/${backlogItemId}/comments`,
+      input,
+    ),
+  updateComment: (
+    companyId: string,
+    commentId: string,
+    input: UpdateBacklogItemCommentInput,
+  ) =>
+    api.patch<BacklogItemComment>(
+      `/companies/${companyId}/backlog/comments/${commentId}`,
+      input,
+    ),
+  deleteComment: (companyId: string, commentId: string) =>
+    api.delete<void>(`/companies/${companyId}/backlog/comments/${commentId}`),
 
   listPlans: (companyId: string, includeArchived = false) => {
     const qs = includeArchived ? "?includeArchived=1" : "";
