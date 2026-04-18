@@ -29,6 +29,7 @@ import type {
   BacklogPlanStatus,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
+  ReorderBacklogItemInput,
   UpdateBacklogItemInput,
   UpdateBacklogPlanInput,
 } from "@paperclipai/shared";
@@ -126,6 +127,82 @@ function normalizeTitle(title: unknown): string {
   return trimmed;
 }
 
+/**
+ * Fractional-indexing rank utilities (backlog3.0 B3).
+ *
+ * Ranks are strings over the alphabet `0-9a-z` (base-36). We compute a
+ * midpoint between two existing ranks so that lexical ordering matches
+ * intended ordering without rebalancing on every move. Empty string is
+ * treated as "-∞" (head); the sentinel `"zzzzzz..."` as "+∞" (tail).
+ *
+ * This is a minimal implementation, not a full lexorank. Collisions on
+ * concurrent inserts are self-healing: the next move will pick a new
+ * midpoint deeper in the string.
+ */
+const RANK_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
+const RANK_MIN_CHAR = RANK_ALPHABET[0];
+const RANK_MAX_CHAR = RANK_ALPHABET[RANK_ALPHABET.length - 1];
+
+function rankCharToInt(c: string): number {
+  const idx = RANK_ALPHABET.indexOf(c);
+  return idx < 0 ? 0 : idx;
+}
+
+function rankIntToChar(n: number): string {
+  const clamped = Math.max(0, Math.min(RANK_ALPHABET.length - 1, n));
+  return RANK_ALPHABET[clamped];
+}
+
+/**
+ * Returns a rank strictly between `prev` and `next`. `prev` may be empty
+ * (= head) and `next` may be empty (= tail). Never throws.
+ */
+export function midpointRank(prev: string, next: string): string {
+  const a = prev ?? "";
+  const b = next ?? "";
+  // Walk positions, appending common prefix, until we find a spot.
+  const out: string[] = [];
+  let i = 0;
+  // Guardrail to avoid pathological loops on malformed input.
+  while (i < 256) {
+    const ca = a[i] ?? RANK_MIN_CHAR;
+    const cb = b[i] ?? (b.length > 0 ? RANK_MIN_CHAR : RANK_MAX_CHAR);
+    const ai = rankCharToInt(ca);
+    const bi = rankCharToInt(cb);
+    if (ai === bi) {
+      out.push(ca);
+      i++;
+      continue;
+    }
+    const diff = bi - ai;
+    if (diff > 1) {
+      out.push(rankIntToChar(ai + Math.floor(diff / 2)));
+      return out.join("");
+    }
+    // diff === 1 (cb > ca by one). Need to append a character beyond ca.
+    out.push(ca);
+    // The next char of `a` may be anything; we step "deeper" using `a`'s
+    // remaining suffix, and treat `b`'s remainder as "-∞" because any
+    // non-empty suffix is > ca itself.
+    // Find a midpoint between a[i+1..] and "zzzz".
+    i++;
+    let j = 0;
+    while (j < 256) {
+      const aj = a[i + j] ?? RANK_MIN_CHAR;
+      const aji = rankCharToInt(aj);
+      if (aji < RANK_ALPHABET.length - 1) {
+        out.push(rankIntToChar(aji + Math.ceil((RANK_ALPHABET.length - 1 - aji) / 2)));
+        return out.join("");
+      }
+      out.push(aj);
+      j++;
+    }
+    out.push(rankIntToChar(Math.floor((RANK_ALPHABET.length - 1) / 2)));
+    return out.join("");
+  }
+  return out.join("") || rankIntToChar(Math.floor((RANK_ALPHABET.length - 1) / 2));
+}
+
 function parseIsoDate(value: unknown, field: string): Date | null | undefined {
   if (value === undefined) return undefined;
   if (value === null) return null;
@@ -133,6 +210,20 @@ function parseIsoDate(value: unknown, field: string): Date | null | undefined {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) throw unprocessable(`${field} is not a valid date`);
   return d;
+}
+
+async function resolveNeighborRank(
+  db: Db,
+  companyId: string,
+  neighborId: string | null | undefined,
+): Promise<string | null> {
+  if (!neighborId) return null;
+  const row = await db
+    .select({ rank: backlogItems.rank })
+    .from(backlogItems)
+    .where(and(eq(backlogItems.companyId, companyId), eq(backlogItems.id, neighborId)))
+    .then((rs) => rs[0]);
+  return row?.rank ?? null;
 }
 
 export function backlogService(db: Db) {
@@ -191,6 +282,20 @@ export function backlogService(db: Db) {
       const status = assertStatus(input.status) ?? "idea";
       const source = assertSource(input.source) ?? "manual";
 
+      // Default-tail: compute a rank strictly after the current max so newly
+      // created items land at the end of the list (backlog3.0 B3).
+      let rank = input.rank;
+      if (!rank) {
+        const maxRow = await db
+          .select({ rank: backlogItems.rank })
+          .from(backlogItems)
+          .where(eq(backlogItems.companyId, companyId))
+          .orderBy(desc(backlogItems.rank))
+          .limit(1)
+          .then((rs) => rs[0]);
+        rank = midpointRank(maxRow?.rank ?? "", "");
+      }
+
       const inserted = await db
         .insert(backlogItems)
         .values({
@@ -208,7 +313,7 @@ export function backlogService(db: Db) {
           projectId: input.projectId ?? null,
           goalId: input.goalId ?? null,
           planId: input.planId ?? null,
-          rank: input.rank ?? "",
+          rank,
         })
         .returning()
         .then((rs) => rs[0]);
@@ -240,6 +345,46 @@ export function backlogService(db: Db) {
       if (input.ownerUserId !== undefined) patch.ownerUserId = input.ownerUserId;
       if (input.ownerAgentId !== undefined) patch.ownerAgentId = input.ownerAgentId;
       if (input.rank !== undefined) patch.rank = input.rank;
+
+      const updated = await db
+        .update(backlogItems)
+        .set(patch)
+        .where(and(eq(backlogItems.companyId, companyId), eq(backlogItems.id, id)))
+        .returning()
+        .then((rs) => rs[0]);
+      return itemToApi(updated);
+    },
+
+    /**
+     * Move an item to a new position within (or across) status/plan
+     * containers. Rank is picked as a midpoint between the supplied
+     * neighbours; missing neighbours mean "head" / "tail".
+     */
+    async reorderItem(
+      companyId: string,
+      id: string,
+      input: ReorderBacklogItemInput,
+    ): Promise<BacklogItem> {
+      const existing = await db
+        .select()
+        .from(backlogItems)
+        .where(and(eq(backlogItems.companyId, companyId), eq(backlogItems.id, id)))
+        .then((rs) => rs[0]);
+      if (!existing) throw notFound("Backlog item not found");
+
+      const prevRank = await resolveNeighborRank(db, companyId, input.prevId);
+      const nextRank = await resolveNeighborRank(db, companyId, input.nextId);
+      const rank = midpointRank(prevRank ?? "", nextRank ?? "");
+
+      const patch: Partial<typeof backlogItems.$inferInsert> = {
+        rank,
+        updatedAt: new Date(),
+      };
+      if (input.planId !== undefined) patch.planId = input.planId;
+      if (input.status !== undefined) {
+        assertStatus(input.status);
+        patch.status = input.status;
+      }
 
       const updated = await db
         .update(backlogItems)

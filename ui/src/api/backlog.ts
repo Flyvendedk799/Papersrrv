@@ -4,6 +4,7 @@ import type {
   BacklogPlan,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
+  ReorderBacklogItemInput,
   UpdateBacklogItemInput,
   UpdateBacklogPlanInput,
 } from "@paperclipai/shared";
@@ -35,6 +36,11 @@ export const backlogApi = {
     api.patch<BacklogItem>(`/companies/${companyId}/backlog/items/${id}`, input),
   archiveItem: (companyId: string, id: string) =>
     api.post<BacklogItem>(`/companies/${companyId}/backlog/items/${id}/archive`, {}),
+  reorderItem: (companyId: string, id: string, input: ReorderBacklogItemInput) =>
+    api.post<BacklogItem>(
+      `/companies/${companyId}/backlog/items/${id}/reorder`,
+      input,
+    ),
 
   listPlans: (companyId: string, includeArchived = false) => {
     const qs = includeArchived ? "?includeArchived=1" : "";

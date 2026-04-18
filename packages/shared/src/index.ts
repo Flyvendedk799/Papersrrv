@@ -327,6 +327,7 @@ export type {
   CreateBacklogPlanInput,
   UpdateBacklogPlanInput,
   BacklogItemFilters,
+  ReorderBacklogItemInput,
 } from "./types/backlog.js";
 export { normalizeAgentUrlKey, deriveAgentUrlKey, isUuidLike } from "./agent-url-key.js";
 export { deriveProjectUrlKey, normalizeProjectUrlKey } from "./project-url-key.js";

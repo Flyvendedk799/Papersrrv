@@ -144,3 +144,16 @@ export interface BacklogItemFilters {
   includeArchived?: boolean;
   q?: string;
 }
+
+/**
+ * Reorder payload (backlog3.0 B3). `prevId` and `nextId` identify the
+ * neighbour items the target should slot between; omit both to drop
+ * at the head of the list. `planId` / `status` optionally retarget the
+ * destination container (column / plan bucket).
+ */
+export interface ReorderBacklogItemInput {
+  prevId?: string | null;
+  nextId?: string | null;
+  planId?: string | null;
+  status?: BacklogItemStatus;
+}

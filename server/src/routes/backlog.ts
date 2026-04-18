@@ -105,6 +105,39 @@ export function backlogRoutes(db: Db) {
     res.json(updated);
   });
 
+  router.post("/companies/:companyId/backlog/items/:id/reorder", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const existing = await svc.getItem(companyId, id);
+    if (!existing) throw notFound("Backlog item not found");
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const updated = await svc.reorderItem(companyId, id, {
+      prevId: (body.prevId as string | null | undefined) ?? null,
+      nextId: (body.nextId as string | null | undefined) ?? null,
+      planId: body.planId === undefined ? undefined : (body.planId as string | null),
+      status: body.status as never,
+    });
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "backlog_item.reordered",
+      entityType: "backlog_item",
+      entityId: updated.id,
+      details: {
+        prevId: body.prevId ?? null,
+        nextId: body.nextId ?? null,
+        planId: updated.planId,
+        status: updated.status,
+      },
+    });
+    res.json(updated);
+  });
+
   router.post("/companies/:companyId/backlog/items/:id/archive", async (req, res) => {
     const companyId = req.params.companyId as string;
     const id = req.params.id as string;

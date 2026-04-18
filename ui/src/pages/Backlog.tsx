@@ -55,6 +55,7 @@ import {
   type BacklogGroupBy,
 } from "../components/backlog/BacklogListView";
 import { BacklogBoardView } from "../components/backlog/BacklogBoardView";
+import { useBacklogReorder } from "../components/backlog/useBacklogReorder";
 
 type StatusFilter = BacklogItemStatus | "all";
 type SourceFilter = BacklogItemSource | "all";
@@ -213,6 +214,8 @@ export function Backlog() {
       });
     },
   });
+
+  const { moveBetweenContainers } = useBacklogReorder(selectedCompanyId ?? undefined);
 
   const visibleItems = useMemo(() => items ?? [], [items]);
 
@@ -403,7 +406,12 @@ export function Backlog() {
             {error instanceof Error ? error.message : "Unknown error"}
           </div>
         ) : viewState.viewMode === "board" ? (
-          <BacklogBoardView items={visibleItems} />
+          <BacklogBoardView
+            items={visibleItems}
+            onReorder={(id, { status, destOrdered, insertIndex }) =>
+              moveBetweenContainers(id, destOrdered, insertIndex, { status })
+            }
+          />
         ) : viewState.viewMode === "plans" ? (
           <BacklogListView
             items={visibleItems}
@@ -417,6 +425,9 @@ export function Backlog() {
             }
             emptyAction="New item"
             onEmptyAction={() => setDialogOpen(true)}
+            onReorder={({ id, destOrdered, insertIndex, planId, status }) =>
+              moveBetweenContainers(id, destOrdered, insertIndex, { planId, status })
+            }
           />
         ) : (
           <BacklogListView
@@ -431,6 +442,9 @@ export function Backlog() {
             }
             emptyAction="New item"
             onEmptyAction={() => setDialogOpen(true)}
+            onReorder={({ id, destOrdered, insertIndex, planId, status }) =>
+              moveBetweenContainers(id, destOrdered, insertIndex, { planId, status })
+            }
           />
         )}
       </section>

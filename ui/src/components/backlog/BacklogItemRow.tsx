@@ -2,12 +2,12 @@
  * BacklogItemRow — shared row renderer used by list + plan-grouped views.
  *
  * Kept deliberately simple: a title, status + source chips, body preview,
- * and an archive action. Richer affordances (DnD handles, selection
- * checkboxes, promote action) arrive in later tickets (B3/B4/C3) and will
- * compose around this row via props rather than fork the component.
+ * and an archive action. DnD/keyboard affordances are layered via the
+ * optional `draggable`, `onDragStart`, `onDropOnRow`, `focused`, etc.
+ * props rather than forking the component (B3).
  */
 
-import { Archive } from "lucide-react";
+import { Archive, GripVertical } from "lucide-react";
 import type { BacklogItem } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { cn } from "../../lib/utils";
@@ -21,6 +21,14 @@ export interface BacklogItemRowProps {
   dragHandle?: React.ReactNode;
   trailing?: React.ReactNode;
   compact?: boolean;
+  rowRef?: React.Ref<HTMLLIElement>;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent<HTMLLIElement>) => void;
+  onDropOnRow?: (e: React.DragEvent<HTMLLIElement>) => void;
+  tabIndex?: number;
+  focused?: boolean;
+  onFocus?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLLIElement>) => void;
 }
 
 export function BacklogItemRow({
@@ -32,12 +40,36 @@ export function BacklogItemRow({
   dragHandle,
   trailing,
   compact,
+  rowRef,
+  draggable,
+  onDragStart,
+  onDropOnRow,
+  tabIndex,
+  focused,
+  onFocus,
+  onKeyDown,
 }: BacklogItemRowProps) {
   return (
     <li
+      ref={rowRef}
+      draggable={draggable}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
+      onKeyDown={onKeyDown}
+      onDragStart={onDragStart}
+      onDragOver={(e) => {
+        if (onDropOnRow) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        if (!onDropOnRow) return;
+        e.stopPropagation();
+        onDropOnRow(e);
+      }}
       className={cn(
-        "flex items-start gap-3 px-4 py-3",
+        "flex items-start gap-3 px-4 py-3 outline-none",
         selected && "bg-[var(--boared-paper-2)]",
+        focused &&
+          "outline outline-1 outline-[var(--boared-acid)] outline-offset-[-1px]",
       )}
       data-backlog-item-id={item.id}
     >
@@ -53,7 +85,13 @@ export function BacklogItemRow({
           }}
         />
       )}
-      {dragHandle}
+      {dragHandle ??
+        (draggable && (
+          <GripVertical
+            aria-hidden
+            className="mt-1 size-3.5 shrink-0 cursor-grab text-muted-foreground"
+          />
+        ))}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <Link
