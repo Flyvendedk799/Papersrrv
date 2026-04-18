@@ -220,10 +220,15 @@ export function Backlog() {
   });
 
   const createItem = useMutation({
-    mutationFn: (input: { title: string; body?: string }) =>
+    mutationFn: (input: {
+      title: string;
+      body?: string;
+      priority?: string | null;
+    }) =>
       backlogApi.createItem(selectedCompanyId!, {
         title: input.title,
         body: input.body || undefined,
+        priority: input.priority ?? null,
         source: "manual",
       }),
     onSuccess: () => {
@@ -340,6 +345,19 @@ export function Backlog() {
       return false;
     }
     function onKey(e: KeyboardEvent) {
+      // Cmd/Ctrl+Shift+B opens quick-capture from any focus state
+      // (even while typing). Picked over plain "c" because the
+      // modifier conveys intent and dodges text-entry collisions.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        !e.altKey &&
+        (e.key === "b" || e.key === "B")
+      ) {
+        e.preventDefault();
+        setDialogOpen(true);
+        return;
+      }
       if (isTypingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "Escape" && selection.size > 0) {
@@ -350,6 +368,12 @@ export function Backlog() {
         // future "add" shortcut so we don't fire it accidentally.
         e.preventDefault();
         selectAllVisible();
+      } else if (e.key === "c" && !e.shiftKey) {
+        // "c" = capture. Single-letter shortcut is idiomatic for
+        // issue trackers (linear/gh/jira) and safe here because we
+        // gate on isTypingTarget above.
+        e.preventDefault();
+        setDialogOpen(true);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -900,6 +924,48 @@ export function Backlog() {
   );
 }
 
+/**
+ * Quick-capture templates (backlog3.0 D2).
+ *
+ * Hardcoded defaults that give the most common capture modes an
+ * instant head-start. Per-company customization is intentionally
+ * deferred — these cover bug ideas, experiments, and doc tasks
+ * which are the three shapes real users consistently ask for.
+ * Future tickets can promote this to a server-backed collection
+ * without touching the dialog contract.
+ */
+const QUICK_CAPTURE_TEMPLATES: Array<{
+  id: string;
+  label: string;
+  placeholder: string;
+  bodyPrefix: string;
+  priority: string;
+}> = [
+  {
+    id: "bug",
+    label: "Bug idea",
+    placeholder: "Something's off…",
+    bodyPrefix: "Expected:\n\nActual:\n\nRepro:\n",
+    priority: "high",
+  },
+  {
+    id: "experiment",
+    label: "Experiment",
+    placeholder: "Let's try…",
+    bodyPrefix: "Hypothesis:\n\nMeasurement:\n\nSuccess criteria:\n",
+    priority: "medium",
+  },
+  {
+    id: "doc",
+    label: "Doc task",
+    placeholder: "Document…",
+    bodyPrefix: "What to document:\n\nAudience:\n\nOutline:\n",
+    priority: "low",
+  },
+];
+
+const QUICK_CAPTURE_PRIORITIES = ["critical", "high", "medium", "low"] as const;
+
 function NewBacklogItemDialog({
   open,
   onOpenChange,
@@ -909,33 +975,110 @@ function NewBacklogItemDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (input: { title: string; body?: string }) => void;
+  onSubmit: (input: {
+    title: string;
+    body?: string;
+    priority?: string | null;
+  }) => void;
   submitting: boolean;
   error: string | null;
 }) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [priority, setPriority] = useState<string | null>(null);
+  const [placeholderTitle, setPlaceholderTitle] = useState(
+    "What should we capture?",
+  );
+  const [pasteError, setPasteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       setTitle("");
       setBody("");
+      setPriority(null);
+      setPlaceholderTitle("What should we capture?");
+      setPasteError(null);
     }
   }, [open]);
+
+  const applyTemplate = (templateId: string) => {
+    const tpl = QUICK_CAPTURE_TEMPLATES.find((t) => t.id === templateId);
+    if (!tpl) return;
+    setPriority(tpl.priority);
+    setPlaceholderTitle(tpl.placeholder);
+    // Only overwrite the body if empty so we don't stomp user input.
+    setBody((prev) => (prev.trim() ? prev : tpl.bodyPrefix));
+  };
+
+  /**
+   * Paste-to-capture: pull clipboard contents into the dialog and
+   * split into title/body on the first newline so URLs and
+   * multi-line quotes fall into the notes field naturally.
+   * The first paste wins — we don't clobber user-typed content.
+   */
+  const handlePasteFromClipboard = async () => {
+    setPasteError(null);
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        setPasteError("Clipboard is empty");
+        return;
+      }
+      const firstNewline = text.indexOf("\n");
+      const titleCandidate =
+        firstNewline === -1 ? text : text.slice(0, firstNewline);
+      const bodyCandidate = firstNewline === -1 ? "" : text.slice(firstNewline + 1);
+      if (!title.trim()) setTitle(titleCandidate.trim().slice(0, 200));
+      if (!body.trim()) setBody(bodyCandidate.trim());
+    } catch (err) {
+      setPasteError(
+        err instanceof Error
+          ? err.message
+          : "Clipboard access was denied by the browser",
+      );
+    }
+  };
 
   const handleSubmit = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
-    onSubmit({ title: trimmed, body: body.trim() || undefined });
+    onSubmit({
+      title: trimmed,
+      body: body.trim() || undefined,
+      priority: priority ?? null,
+    });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New backlog item</DialogTitle>
+          <DialogTitle>Quick capture</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Template:
+            </span>
+            {QUICK_CAPTURE_TEMPLATES.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => applyTemplate(t.id)}
+                className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
+              >
+                {t.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => void handlePasteFromClipboard()}
+              className="ml-auto rounded border border-border px-2 py-0.5 text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
+              title="Paste clipboard contents into the capture form"
+            >
+              Paste
+            </button>
+          </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               Title
@@ -943,9 +1086,47 @@ function NewBacklogItemDialog({
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="What should we capture?"
+              placeholder={placeholderTitle}
               autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-muted-foreground">
+              Priority:
+            </label>
+            <button
+              type="button"
+              onClick={() => setPriority(null)}
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px]",
+                priority === null
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              none
+            </button>
+            {QUICK_CAPTURE_PRIORITIES.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPriority(p)}
+                className={cn(
+                  "rounded-full border px-2 py-0.5 text-[11px]",
+                  priority === p
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {p}
+              </button>
+            ))}
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -955,9 +1136,14 @@ function NewBacklogItemDialog({
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Add context, links, or acceptance criteria."
-              rows={4}
+              rows={5}
             />
           </div>
+          {pasteError && (
+            <div className="rounded border border-amber-400/40 bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+              {pasteError}
+            </div>
+          )}
           {error && (
             <div className="rounded border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
               {error}
