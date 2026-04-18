@@ -314,8 +314,14 @@ export {
   type CompanyPortabilityImport,
   createGithubConnectionSchema,
   listGithubPullsQuerySchema,
+  pullCommentSchema,
+  pullReviewSchema,
+  pullMergeSchema,
   type CreateGithubConnection,
   type ListGithubPullsQuery,
+  type PullCommentInput,
+  type PullReviewInput,
+  type PullMergeInput,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";
