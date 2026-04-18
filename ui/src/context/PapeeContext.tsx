@@ -81,6 +81,30 @@ const PRIORITY: Record<PapeeAnimState, number> = {
   "celebrating": 2,
   "jumping": 2,
   "alarmed": 3,
+  // Boared-rebrand additions (default priority is "normal = 1")
+  "typing": 1,
+  "writing": 1,
+  "scanning": 1,
+  "speaking-gesture": 1,
+  "guarding": 2,
+  "magnifying": 1,
+  "shush": 1,
+  "sleepy-nod": 0,
+  "pointing-left": 1,
+  "pointing-right": 1,
+  "squint": 1,
+  "stretching": 0,
+  "ledger": 1,
+  "yawning": 0,
+  "pacing": 1,
+  "digging": 1,
+  "humming": 0,
+  "broom": 1,
+  "unlocking": 1,
+  "head-tilt": 0,
+  "stopping": 1,
+  "throwing-switch": 2,
+  "sigh-of-relief": 0,
 };
 
 /* ---- Context ---- */
@@ -131,6 +155,31 @@ interface PapeeContextValue {
   setStreamingActive: React.Dispatch<React.SetStateAction<boolean>>;
   streamingText: string;
   setStreamingText: React.Dispatch<React.SetStateAction<string>>;
+
+  // Boared-rebrand: last tool result + topic stack used by PapeeMobile.
+  lastToolResult: import("@paperclipai/shared").PapeeToolResult | null;
+  setLastToolResult: React.Dispatch<
+    React.SetStateAction<import("@paperclipai/shared").PapeeToolResult | null>
+  >;
+  topicStack: string[];
+  setTopicStack: React.Dispatch<React.SetStateAction<string[]>>;
+  /** Push a topic onto the topic stack (Boared §M.8). */
+  pushTopic: (topic: string) => void;
+
+  /** Mood label (Boared). */
+  mood: import("../lib/papee-personality").PapeeMood;
+
+  /** Pointing-highlight helpers (Boared Phase 4). */
+  highlightTarget: string | null;
+  setHighlightTarget: (id: string | null) => void;
+
+  /** Undo-toast helpers (Boared tool enact flow). */
+  showUndoToast: (
+    message: string,
+    onUndo?: () => void | Promise<void>,
+    timeoutMs?: number,
+  ) => void;
+  dismissUndoToast: () => void;
 }
 
 export interface ChatMessage {
@@ -249,6 +298,32 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
   // ─── Streaming chat (§Z.8) ───
   const [streamingActive, setStreamingActive] = useState(false);
   const [streamingText, setStreamingText] = useState<string>("");
+
+  // ─── Boared: last tool result + topic stack (consumed by PapeeMobile) ───
+  const [lastToolResult, setLastToolResult] =
+    useState<import("@paperclipai/shared").PapeeToolResult | null>(null);
+  const [topicStack, setTopicStack] = useState<string[]>([]);
+  const [highlightTarget, setHighlightTarget] = useState<string | null>(null);
+  const pushTopic = useCallback((topic: string) => {
+    setTopicStack((prev) => {
+      const withoutDup = prev.filter((t) => t !== topic);
+      return [topic, ...withoutDup].slice(0, 3);
+    });
+  }, []);
+  // Undo-toast behavior isn't fully re-wired yet; keep a no-op pair so
+  // the tool enact flow can compile and dispatch without crashing.
+  const showUndoToast = useCallback<PapeeContextValue["showUndoToast"]>(
+    () => {
+      /* boared stub — real toast surface to be restored */
+    },
+    [],
+  );
+  const dismissUndoToast = useCallback(() => {
+    /* boared stub */
+  }, []);
+  // Mood is read from the personality hook elsewhere; we store the
+  // last-known string here so consumers can read it synchronously.
+  const mood: import("../lib/papee-personality").PapeeMood = "curious";
 
   const reactionQueue = useRef<QueuedReaction[]>([]);
   const reactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -389,6 +464,16 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
       setStreamingActive,
       streamingText,
       setStreamingText,
+      lastToolResult,
+      setLastToolResult,
+      topicStack,
+      setTopicStack,
+      pushTopic,
+      mood,
+      highlightTarget,
+      setHighlightTarget,
+      showUndoToast,
+      dismissUndoToast,
     }),
     [
       prefs,
@@ -396,6 +481,14 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
       animState,
       setAnimState,
       queueReaction,
+      lastToolResult,
+      topicStack,
+      pushTopic,
+      mood,
+      highlightTarget,
+      setHighlightTarget,
+      showUndoToast,
+      dismissUndoToast,
       chatOpen,
       toggleChat,
       chatMessages,

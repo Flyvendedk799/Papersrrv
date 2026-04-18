@@ -18,6 +18,32 @@ import { usePapeeConfirm } from "./usePapeeConfirm";
  *
  * Returns the PapeeToolResult so callers can react further.
  */
+/**
+ * Safety-gate predicate extracted from `usePapeeEnact` so tests can
+ * assert it independently and other call-sites can reuse the rule.
+ *
+ * Rule: all tier-2 tools require an explicit confirmation. A narrow
+ * set of tier-1 tools that touch data or fire off runs also require
+ * it. Tier-0 and low-risk tier-1 tools auto-execute.
+ */
+const TIER1_GUARDED: ReadonlyArray<string> = [
+  "commentOnIssue",
+  "setIssueStatus",
+  "setIssuePriority",
+  "assignIssue",
+  "createIssue",
+  "linkIssues",
+  "openIssue",
+  "openAgent",
+  "pauseAgent",
+];
+
+export function requiresPapeeConfirm(kind: string, tier: string): boolean {
+  if (tier === "tier-2") return true;
+  if (tier === "tier-1" && TIER1_GUARDED.includes(kind)) return true;
+  return false;
+}
+
 export function usePapeeEnact() {
   const papee = usePapee();
   const company = useCompany();

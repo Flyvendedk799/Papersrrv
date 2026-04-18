@@ -384,8 +384,7 @@ export function workflowEngine(db: Db) {
     publishLiveEvent({
       companyId: run.companyId,
       type: "heartbeat.run.queued",
-      agentId: agentId!,
-      runId: hbRun.id,
+      payload: { agentId: agentId!, runId: hbRun.id },
     });
 
     logger.info({ stepRunId: stepRun.id, agentId, wakeupId: wakeup.id, heartbeatRunId: hbRun.id }, "workflow: agent_run step enqueued with heartbeat_run");

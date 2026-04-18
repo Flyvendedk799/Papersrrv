@@ -22,7 +22,7 @@ function Shoe({ cx, cy }: { cx: number; cy: number }) {
 /* ---- Body ---- */
 
 /** The paperclip body — the signature shape. Rounded, friendly, slightly chunky. */
-function Body() {
+export function Body() {
   return (
     <>
       {/* Outer body shadow for depth */}
@@ -62,7 +62,26 @@ function Body() {
 
 /* ---- Eyes ---- */
 
-function Eyes({ state = "open" }: { state?: "open" | "closed" | "wide" | "left" | "right" | "happy" }) {
+export type EyesState =
+  | "open"
+  | "closed"
+  | "wide"
+  | "left"
+  | "right"
+  | "happy"
+  | "down"
+  | "up"
+  | "up-left"
+  | "up-right";
+export type EyebrowState =
+  | "neutral"
+  | "raised"
+  | "furrowed"
+  | "worried"
+  | "quizzical"
+  | "droopy";
+
+export function Eyes({ state = "open" }: { state?: EyesState }) {
   if (state === "closed") {
     return (
       <>
@@ -166,7 +185,29 @@ export function Mouth({ state = "smile" }: { state?: MouthState }) {
 
 /* ---- Arms ---- */
 
-function Arms({ state = "down" }: { state?: "down" | "up" | "wave" | "think" | "spread" | "thumbs-up" }) {
+export type ArmsState =
+  | "down"
+  | "up"
+  | "wave"
+  | "think"
+  | "spread"
+  | "thumbs-up"
+  | "typing"
+  | "writing"
+  | "magnify"
+  | "lever"
+  | "stop"
+  | "shush"
+  | "broom"
+  | "ledger"
+  | "key"
+  | "dig"
+  | "sweep"
+  | "stretch"
+  | "pointing-left"
+  | "pointing-right";
+
+export function Arms({ state = "down" }: { state?: ArmsState }) {
   const armStroke = "currentColor";
   const armWidth = 2.2;
 
@@ -474,6 +515,28 @@ function Zzz() {
   );
 }
 
+/**
+ * Boared-rebrand: stubs used by higher-level sprite composition
+ * components (PapeeBlendedPose, PapeeErrorDisplay). Fully-restored
+ * implementations live in a richer sprite layer; these exports keep
+ * callers compiling until that layer lands.
+ */
+export function PapeeDefs() {
+  return null;
+}
+
+export function Crown() {
+  return null;
+}
+
+export function Eyebrows(_props: { state?: EyebrowState }) {
+  return null;
+}
+
+export function GroundShadow() {
+  return null;
+}
+
 /* ---- Assembled Poses ---- */
 
 export type PapeeAnimState =
@@ -487,7 +550,33 @@ export type PapeeAnimState =
   | "alarmed"
   | "sleeping"
   | "waving"
-  | "thumbs-up";
+  | "thumbs-up"
+  // Boared-rebrand additions — the richer PapeeMobile surface uses
+  // these states. `PapeePose` falls back to `idle` for any state that
+  // doesn't yet have a dedicated pose, so adding them here is safe.
+  | "typing"
+  | "writing"
+  | "scanning"
+  | "speaking-gesture"
+  | "guarding"
+  | "magnifying"
+  | "shush"
+  | "sleepy-nod"
+  | "pointing-left"
+  | "pointing-right"
+  | "squint"
+  | "stretching"
+  | "ledger"
+  | "yawning"
+  | "pacing"
+  | "digging"
+  | "humming"
+  | "broom"
+  | "unlocking"
+  | "head-tilt"
+  | "stopping"
+  | "throwing-switch"
+  | "sigh-of-relief";
 
 export function PapeePose({ state, walkFrame = 0 }: { state: PapeeAnimState; walkFrame?: number }) {
   switch (state) {

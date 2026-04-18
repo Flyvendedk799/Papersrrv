@@ -14,6 +14,13 @@ import { StatusBadge } from "./StatusBadge";
 interface LiveRunWidgetProps {
   issueId: string;
   companyId?: string | null;
+  /**
+   * Boared-rebrand surface (PapeeMobile) renders the widget with a
+   * cancel affordance. Base widget doesn't expose cancel yet; accepting
+   * the prop so call-sites typecheck while the cancel behavior is still
+   * being wired up end-to-end.
+   */
+  allowCancel?: boolean;
 }
 
 type FeedTone = "info" | "warn" | "error" | "assistant" | "tool";

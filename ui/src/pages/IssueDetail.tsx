@@ -820,7 +820,7 @@ export function IssueDetail() {
           linkedApprovals={(linkedApprovals ?? []).map((a) => ({
             id: a.id,
             status: a.status,
-            requestedAt: a.requestedAt ?? a.createdAt ?? null,
+            requestedAt: (a as { requestedAt?: string | null }).requestedAt ?? a.createdAt ?? null,
             decidedAt: a.decidedAt ?? null,
           }))}
           height="clamp(420px, 60vh, 560px)"

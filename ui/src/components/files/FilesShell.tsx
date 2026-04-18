@@ -185,7 +185,7 @@ export function FilesShell({
 
   const scopeForRail = scope;
   const fileScope: FileScope = useMemo(() => {
-    if (scope === "artifacts") return "general";
+    if (scope === "artifacts" || scope === "projects" || scope === "agents") return "general";
     return scope;
   }, [scope]);
 

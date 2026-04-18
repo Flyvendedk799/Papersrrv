@@ -6,8 +6,31 @@ export type {
   PapeeToolKind,
   PapeeToolResult,
   PapeeRiskTier,
+  PapeeCompanionMode,
+  PapeeCompanionProfile,
+  PapeeInteractionEvent,
+  PapeeInteractionResponse,
+  PapeeLiveSignal,
+  PapeeMobileSnapshot,
+  PapeeRitualId,
+  PapeeRitualProgressResponse,
+  PapeeRitualState,
+  PapeeRitualTrack,
 } from "@paperclipai/shared";
 export { PAPEE_TOOL_TIER } from "@paperclipai/shared";
+
+/**
+ * Boared companion — legacy alias used by PapeeMobile.tsx. The canonical
+ * type is `PapeeInteractionEvent["type"]`. Kept here for back-compat.
+ */
+export type PapeeInteractionEventType =
+  | "pet"
+  | "cue"
+  | "toy"
+  | "mission_step"
+  | "swipe"
+  | "chat_prompt"
+  | "focus_action";
 
 export interface PapeeAction {
   type: "navigate" | "wake_agent" | "show_issue" | "grant_secret";
@@ -151,4 +174,50 @@ export const papeeApi = {
       `/companies/${companyId}/papee/memory${qs ? `?${qs}` : ""}`,
     );
   },
+
+  /**
+   * Boared companion — mobile/check-in snapshot used by PapeeMobile.
+   */
+  mobileSnapshot: (companyId: string) =>
+    api.get<import("@paperclipai/shared").PapeeMobileSnapshot>(
+      `/companies/${companyId}/papee/mobile-snapshot`,
+    ),
+
+  /**
+   * Boared companion — record an interaction event (pet/cue/toy/mission_step/...).
+   * Server endpoint is still being restored; the client is wired up so
+   * the mobile surface can render a stable UX in the meantime.
+   */
+  interact: (
+    companyId: string,
+    event: {
+      type: string;
+      ritualId?: import("@paperclipai/shared").PapeeRitualId | null;
+      idempotencyKey?: string | null;
+      detail?: string | null;
+      metadata?: Record<string, unknown> | null;
+      payload?: Record<string, unknown>;
+    },
+  ) =>
+    api.post<import("@paperclipai/shared").PapeeInteractionResponse>(
+      `/companies/${companyId}/papee/interact`,
+      event,
+    ),
+
+  /**
+   * Boared companion — advance or complete a ritual for the current user.
+   * PapeeMobile calls this as `progressRitual(companyId, ritualId, body)`.
+   */
+  progressRitual: (
+    companyId: string,
+    ritualId: import("@paperclipai/shared").PapeeRitualId,
+    body: {
+      action?: "advance" | "complete";
+      idempotencyKey?: string | null;
+    },
+  ) =>
+    api.post<import("@paperclipai/shared").PapeeRitualProgressResponse>(
+      `/companies/${companyId}/papee/rituals/${ritualId}/progress`,
+      body,
+    ),
 };

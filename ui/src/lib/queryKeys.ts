@@ -84,6 +84,30 @@ export const queryKeys = {
       ["files", companyId, "summary", issueId] as const,
     raw: (companyId: string, filePath: string) =>
       ["files", "raw", companyId, filePath] as const,
+    indexingStatus: (companyId: string) =>
+      ["files", companyId, "indexing-status"] as const,
+    presence: (companyId: string) =>
+      ["files", companyId, "presence"] as const,
+    handoffChecklist: (companyId: string, issueId: string) =>
+      ["files", companyId, "handoff-checklist", issueId] as const,
+    search: (companyId: string, q: string) =>
+      ["files", companyId, "search", q] as const,
+    hot: (companyId: string, opts?: { windowDays?: number; limit?: number }) =>
+      ["files", companyId, "hot", opts?.windowDays ?? 7, opts?.limit ?? 12] as const,
+    reviewQueue: (companyId: string) =>
+      ["files", companyId, "review-queue"] as const,
+    projectSummaries: (companyId: string) =>
+      ["files", companyId, "project-summaries"] as const,
+    locks: (companyId: string) => ["files", companyId, "locks"] as const,
+    conflicts: (companyId: string) => ["files", companyId, "conflicts"] as const,
+    churn: (companyId: string, filePath: string, windowDays?: number) =>
+      ["files", companyId, "churn", filePath, windowDays ?? 30] as const,
+    commentEvidence: (issueId: string) =>
+      ["files", "comment-evidence", issueId] as const,
+    evidenceSets: (companyId: string, issueId: string) =>
+      ["files", companyId, "evidence-sets", issueId] as const,
+    analytics: (companyId: string, windowDays?: number) =>
+      ["files", companyId, "analytics", windowDays ?? 30] as const,
   },
   workflows: {
     list: (companyId: string) => ["workflows", companyId] as const,

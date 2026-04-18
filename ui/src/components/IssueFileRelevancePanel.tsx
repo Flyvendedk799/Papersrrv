@@ -48,7 +48,7 @@ export function IssueFileRelevancePanel({ companyId, issueId }: Props) {
 
   const { data: relevant, isLoading } = useQuery({
     queryKey: ["issue-relevant-files", companyId, issueId],
-    queryFn: () => filesApi.issueRelevant(companyId, issueId, 15),
+    queryFn: () => filesApi.issueRelevant(companyId, issueId, { limit: 15 }),
     enabled: enabled && !!companyId && !!issueId,
   });
 

@@ -94,26 +94,28 @@ export type FileScope =
   | "unread"
   | "all"
   | "review"
-  | "locks";
+  | "locks"
+  | "general";
 
 /**
  * Reason a reviewer wants a file looked at; used as the key in a
  * Record<ReviewQueueItem["reason"], string> label map.
  */
 export type ReviewQueueReason =
-  | "evidence-missing"
-  | "checklist-block"
-  | "heat"
-  | "stale-approval"
-  | "other";
+  | "summary"
+  | "evidence"
+  | "checklist";
 
 export interface ReviewQueueItem {
   id: string;
   filePath: string;
   reason: ReviewQueueReason;
   queuedAt: string;
-  issueId?: string | null;
+  issueId: string;
+  issueKey?: string | null;
+  issueTitle?: string | null;
   issueIdentifier?: string | null;
+  waitingSince?: string | null;
   runId?: string | null;
   note?: string | null;
 }
@@ -127,4 +129,16 @@ export interface HotFile {
   lastEditorAgentName?: string | null;
   editCount?: number;
   contentHash?: string | null;
+  /** UX-layer enrichments used by the Boared Files Overview hero card. */
+  projectColor?: string | null;
+  projectName?: string | null;
+  sparkline?: number[];
+  churn?: number;
+  agents?: Array<{
+    agentId: string;
+    agentName?: string | null;
+    status?: string | null;
+    lastSeenAt?: string | null;
+  }>;
+  lastCapturedAt?: string | null;
 }

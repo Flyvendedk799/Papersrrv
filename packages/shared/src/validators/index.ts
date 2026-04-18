@@ -140,3 +140,10 @@ export {
   type UpdateMemberPermissions,
   type UpdateUserCompanyAccess,
 } from "./access.js";
+
+export {
+  createGithubConnectionSchema,
+  listGithubPullsQuerySchema,
+  type CreateGithubConnection,
+  type ListGithubPullsQuery,
+} from "./github.js";

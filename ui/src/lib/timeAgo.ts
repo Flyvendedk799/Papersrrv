@@ -4,9 +4,11 @@ const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
 const MONTH = 30 * DAY;
 
-export function timeAgo(date: Date | string): string {
+export function timeAgo(date: Date | string | null | undefined): string {
+  if (date === null || date === undefined) return "—";
   const now = Date.now();
   const then = new Date(date).getTime();
+  if (Number.isNaN(then)) return "—";
   const seconds = Math.round((now - then) / 1000);
 
   if (seconds < MINUTE) return "just now";

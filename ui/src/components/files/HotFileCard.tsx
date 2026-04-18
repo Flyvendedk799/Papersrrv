@@ -70,11 +70,11 @@ export function HotFileCard({
       )}
 
       <div className="flex items-center gap-2 mt-1">
-        <ChurnSparkline values={file.sparkline} width={110} height={22} />
+        <ChurnSparkline values={file.sparkline ?? []} width={110} height={22} />
         <div className="flex items-baseline gap-1 font-mono">
           <TrendingUp className="h-3 w-3 text-foreground/70" />
           <span className="text-sm font-semibold text-foreground tabular-nums">
-            {file.churn}
+            {file.churn ?? file.editCount ?? 0}
           </span>
           <span className="text-[0.55rem] uppercase tracking-[0.08em] text-muted-foreground">
             changes
@@ -83,15 +83,18 @@ export function HotFileCard({
       </div>
 
       <div className="flex items-center justify-between gap-2 mt-1">
-        {file.agents.length > 0 ? (
-          <AgentPresenceChip agents={file.agents} reason="touched" />
+        {(file.agents?.length ?? 0) > 0 ? (
+          <AgentPresenceChip
+            agents={(file.agents ?? []).map((a) => a.agentName || a.agentId)}
+            reason="touched"
+          />
         ) : (
           <span className="text-[0.6rem] font-mono text-muted-foreground">
             no agent data
           </span>
         )}
         <span className="font-mono text-[0.58rem] text-muted-foreground shrink-0">
-          {timeAgo(file.lastCapturedAt)}
+          {timeAgo(file.lastCapturedAt ?? file.lastEditedAt)}
         </span>
       </div>
 

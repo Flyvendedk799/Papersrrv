@@ -80,13 +80,13 @@ export function ReviewQueueList({
             <Link
               to={`/issues/${it.issueId}`}
               className="font-mono text-[0.6rem] text-muted-foreground hover:text-foreground truncate max-w-[220px] inline-flex items-center gap-1"
-              title={it.issueTitle}
+              title={it.issueTitle ?? undefined}
             >
               <span>{it.issueKey}</span>
               <span className="truncate">{it.issueTitle}</span>
             </Link>
             <span className="font-mono text-[0.58rem] text-muted-foreground">
-              {timeAgo(it.waitingSince)}
+              {timeAgo(it.waitingSince ?? it.queuedAt)}
             </span>
           </div>
           <Link

@@ -35,6 +35,8 @@ export type PapeeTool =
   | { kind: "tailRunLogs"; runId: string; lines?: number }
   | { kind: "listRecentChanges"; since?: string }
   | { kind: "summarizeThread"; issueId: string }
+  | { kind: "listIssueRelevantFiles"; issueId: string; limit?: number }
+  | { kind: "searchFiles"; query: string; limit?: number }
   // ── Tier 1 — Safe writes ─────────────────────────────────────────
   | { kind: "commentOnIssue"; issueId: string; body: string }
   | { kind: "setIssueStatus"; issueId: string; status: string }
@@ -66,6 +68,8 @@ export const PAPEE_TOOL_TIER: Record<PapeeToolKind, PapeeRiskTier> = {
   tailRunLogs: "tier-0",
   listRecentChanges: "tier-0",
   summarizeThread: "tier-0",
+  listIssueRelevantFiles: "tier-0",
+  searchFiles: "tier-0",
   commentOnIssue: "tier-1",
   setIssueStatus: "tier-1",
   setIssuePriority: "tier-1",

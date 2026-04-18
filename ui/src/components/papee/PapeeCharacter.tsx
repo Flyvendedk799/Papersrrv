@@ -9,6 +9,12 @@ interface PapeeCharacterProps {
   className?: string;
   onClick?: () => void;
   chatOpen?: boolean;
+  /**
+   * Boared-rebrand prop. Accepted for forward compatibility with the
+   * mobile companion surfaces; currently unused by the base sprite
+   * renderer (mood is rendered via overlay/effects elsewhere).
+   */
+  mood?: string;
 }
 
 const SIZE_MAP = {

@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 import { agentStatusDot, agentStatusDotDefault } from "@/lib/status-colors";
 import { timeAgo } from "@/lib/timeAgo";
 
-export type LeftRailScope = FileScope | "artifacts";
+export type LeftRailScope = FileScope | "artifacts" | "projects" | "agents";
 
 const SCOPES: Array<{ id: LeftRailScope; label: string; icon: React.ComponentType<{ className?: string }>; hint: string }> = [
   { id: "projects", label: "Projects", icon: Briefcase, hint: "by project" },

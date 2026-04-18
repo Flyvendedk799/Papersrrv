@@ -66,3 +66,33 @@ export {
 } from "./backlog_item_labels.js";
 export { papeeMemory, type PapeeMemoryRow, type NewPapeeMemoryRow } from "./papee_memory.js";
 export { issueLinks, type IssueLinkRow, type NewIssueLinkRow } from "./issue_links.js";
+export {
+  githubConnections,
+  type GithubConnectionRow,
+  type NewGithubConnectionRow,
+} from "./github_connections.js";
+export {
+  githubRepos,
+  type GithubRepoRow,
+  type NewGithubRepoRow,
+} from "./github_repos.js";
+export {
+  githubPullRequests,
+  type GithubPullRequestRow,
+  type NewGithubPullRequestRow,
+} from "./github_pull_requests.js";
+export { commentFileEvidence } from "./comment_file_evidence.js";
+export {
+  issueEvidenceSets,
+  issueEvidenceSetItems,
+} from "./issue_evidence_sets.js";
+export {
+  issueHandoffChecklists,
+  HANDOFF_DEFAULT_ITEMS,
+  type HandoffChecklistItem,
+} from "./issue_handoff_checklists.js";
+export {
+  papeeCompanionProfiles,
+  type PapeeCompanionProfileRow,
+  type NewPapeeCompanionProfileRow,
+} from "./papee_companion_profiles.js";

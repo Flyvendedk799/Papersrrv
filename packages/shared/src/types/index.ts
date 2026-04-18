@@ -111,19 +111,41 @@ export type {
 } from "./backlog.js";
 
 // ─── Papee companion action plumbing ──────────────────────────────
-export { PAPEE_TOOL_TIER } from "./papee.js";
+export { PAPEE_TOOL_TIER, papeeChatSchema } from "./papee.js";
 export type {
   PapeeTool,
   PapeeToolKind,
   PapeeToolResult,
   PapeeRiskTier,
+  PapeeAction,
+  PapeeChatResponse,
+  PapeeToolEntityRef,
 } from "./papee.js";
+export type {
+  PapeeCompanionProfile,
+  PapeeCompanionMode,
+  PapeeInteractionEvent,
+  PapeeInteractionResponse,
+  PapeeLiveSignal,
+  PapeeRitualId,
+  PapeeRitualProgressResponse,
+  PapeeRitualState,
+  PapeeRitualTrack,
+  PapeeMobileSnapshot,
+} from "./papee-companion.js";
 
 // ─── GitHub integration ───────────────────────────────────────────
 export type {
   GithubConnection,
+  GithubConnectionAuthType,
   GithubRepoView,
+  GithubRepoCache,
+  GithubPullRequestView,
+  GithubPullRequestCache,
+  GithubPullRequestState,
   GithubPullRequestListResult,
+  GithubRateLimitMeta,
+  GithubApiError,
 } from "./github.js";
 
 // ─── Files + evidence ─────────────────────────────────────────────

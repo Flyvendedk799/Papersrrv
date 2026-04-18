@@ -78,13 +78,13 @@ export function usePapeeChat() {
             },
             onDone: (final) => {
               papee.setStreamingActive(false);
-              papee.setStreamingText(null);
+              papee.setStreamingText("");
               streamRef.current = null;
               resolve(final);
             },
             onError: (err) => {
               papee.setStreamingActive(false);
-              papee.setStreamingText(null);
+              papee.setStreamingText("");
               streamRef.current = null;
               reject(new Error(err));
             },
@@ -366,6 +366,11 @@ export function usePapeeChat() {
     error: mutation.error ? (mutation.error as Error).message : null,
     clearHistory,
     suggestedActions,
+    /**
+     * Boared: expose the tool-enact helper so PapeeMobile power deck can
+     * dispatch tools through the same confirmation flow as chat.
+     */
+    enact,
     /** Caller must render this so tier-2 confirmations actually pop. */
     EnactConfirmDialog,
   };

@@ -41,6 +41,12 @@ interface ToastContextValue {
   pushToast: (input: ToastInput) => string | null;
   dismissToast: (id: string) => void;
   clearToasts: () => void;
+  /**
+   * Boared-rebrand alias used by the Papee surface. Accepts the same
+   * shape as `pushToast` so call-sites can read more naturally
+   * ("push a Papee toast") without a separate implementation.
+   */
+  pushPapeeToast: (input: ToastInput) => string | null;
 }
 
 const DEFAULT_TTL_BY_TONE: Record<ToastTone, number> = {
@@ -156,6 +162,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       pushToast,
       dismissToast,
       clearToasts,
+      pushPapeeToast: pushToast,
     }),
     [toasts, pushToast, dismissToast, clearToasts],
   );

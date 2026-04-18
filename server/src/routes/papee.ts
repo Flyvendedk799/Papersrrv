@@ -39,14 +39,14 @@ export function papeeRoutes(db: Db) {
     const svc = papeeChatService(db);
     try {
       await svc.chatStream(companyId, req.body, {
-        onChunk: (text) => {
+        onChunk: (text: string) => {
           res.write(`event: chunk\ndata: ${JSON.stringify(text)}\n\n`);
         },
-        onDone: (final) => {
+        onDone: (final: unknown) => {
           res.write(`event: done\ndata: ${JSON.stringify(final)}\n\n`);
           res.end();
         },
-        onError: (err) => {
+        onError: (err: string) => {
           res.write(`event: error\ndata: ${JSON.stringify({ error: err })}\n\n`);
           res.end();
         },

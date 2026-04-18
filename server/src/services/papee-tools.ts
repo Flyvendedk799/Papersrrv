@@ -465,6 +465,16 @@ export function papeeToolsService(db: Db) {
               : undefined,
           };
         }
+
+        /* ─────── Boared recovery stubs (full impl pending) ─────── */
+        default: {
+          const kind = (tool as { kind: string }).kind ?? "unknown";
+          return {
+            ok: false,
+            summary: `Papee tool "${kind}" is not yet wired server-side.`,
+            error: "not_implemented",
+          };
+        }
       }
     },
   };

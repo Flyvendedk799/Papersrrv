@@ -12,12 +12,46 @@
  */
 
 export type FeatureFlagKey =
-  | "backlog_tab_enabled"; // 3.0 E3 — umbrella flag for the Backlog tab
+  | "backlog_tab_enabled" // 3.0 E3 — umbrella flag for the Backlog tab
+  | "github_tab_enabled" // 4.0 F1 — umbrella flag for the GitHub tab
+  | "github_pat_auth" // 4.0 F1 — allow PAT-based GitHub connections
+  // Boared / Files-evidence rebrand flags
+  | "issue_relevance_panel"
+  | "markdown_reader_core"
+  | "perf_instrumentation"
+  | "issue_handoff_checklist"
+  | "issue_inline_compare"
+  | "evidence_sets"
+  | "markdown_version_highlight"
+  | "files_workflow_artifacts"
+  | "file_lock_awareness"
+  | "recently_viewed_files"
+  | "provenance_rails"
+  | "comment_file_evidence"
+  | "files_insights_panel";
 
 const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   // Backlog tab is default-off. Opt in via VITE_FF_BACKLOG_TAB_ENABLED=on,
   // `?ff=backlog_tab_enabled`, or `localStorage["paperclip.ff.backlog_tab_enabled"]="on"`.
   backlog_tab_enabled: false,
+  // GitHub tab is default-off. Opt in via VITE_FF_GITHUB_TAB_ENABLED=on,
+  // `?ff=github_tab_enabled`, or `localStorage["paperclip.ff.github_tab_enabled"]="on"`.
+  github_tab_enabled: false,
+  // PAT-based GitHub auth is default-off; GitHub App auth is preferred.
+  github_pat_auth: false,
+  issue_relevance_panel: false,
+  markdown_reader_core: false,
+  perf_instrumentation: false,
+  issue_handoff_checklist: false,
+  issue_inline_compare: false,
+  evidence_sets: false,
+  markdown_version_highlight: false,
+  files_workflow_artifacts: false,
+  file_lock_awareness: false,
+  recently_viewed_files: false,
+  provenance_rails: false,
+  comment_file_evidence: false,
+  files_insights_panel: false,
 };
 
 function envFlag(key: FeatureFlagKey): boolean | null {

@@ -148,15 +148,35 @@ export type {
 } from "./types/index.js";
 
 // ─── Papee / GitHub / Evidence types (added as part of the Boared rebrand) ─
-export { PAPEE_TOOL_TIER } from "./types/index.js";
+export { PAPEE_TOOL_TIER, papeeChatSchema } from "./types/index.js";
 export type {
   PapeeTool,
   PapeeToolKind,
   PapeeToolResult,
   PapeeRiskTier,
+  PapeeAction,
+  PapeeChatResponse,
+  PapeeToolEntityRef,
+  PapeeCompanionProfile,
+  PapeeCompanionMode,
+  PapeeInteractionEvent,
+  PapeeInteractionResponse,
+  PapeeLiveSignal,
+  PapeeRitualId,
+  PapeeRitualProgressResponse,
+  PapeeRitualState,
+  PapeeRitualTrack,
+  PapeeMobileSnapshot,
   GithubConnection,
+  GithubConnectionAuthType,
   GithubRepoView,
+  GithubRepoCache,
+  GithubPullRequestView,
+  GithubPullRequestCache,
+  GithubPullRequestState,
   GithubPullRequestListResult,
+  GithubRateLimitMeta,
+  GithubApiError,
   CommentFileEvidence,
   IssueRelevantFile,
   IssueEvidenceSet,
@@ -170,6 +190,7 @@ export type {
   ReviewQueueReason,
   HotFile,
 } from "./types/index.js";
+export { parseRepoUrl, canonicalRepoKey, type ParsedGithubRepo } from "./github-url.js";
 
 export {
   createCompanySchema,
@@ -280,6 +301,10 @@ export {
   type CompanyPortabilityExport,
   type CompanyPortabilityPreview,
   type CompanyPortabilityImport,
+  createGithubConnectionSchema,
+  listGithubPullsQuerySchema,
+  type CreateGithubConnection,
+  type ListGithubPullsQuery,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";
