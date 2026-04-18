@@ -1235,10 +1235,13 @@ export function issueService(db: Db) {
         .from(agents).where(eq(agents.companyId, companyId));
       // Normalize so @senior-product-engineer matches "Senior Product Engineer"
       const toSlug = (s: string) => s.toLowerCase().replace(/[\s_()]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      // Also strip all separators so "processchainmanager" matches "Process Chain Manager"
+      const toSquished = (s: string) => s.toLowerCase().replace(/[\s\-_()]+/g, "");
       return rows.filter(a => {
         const nameLower = a.name.toLowerCase();
         const nameSlug = toSlug(a.name);
-        return tokens.has(nameLower) || tokens.has(nameSlug);
+        const nameSquished = toSquished(a.name);
+        return [...tokens].some(t => t === nameLower || t === nameSlug || toSquished(t) === nameSquished);
       }).map(a => a.id);
     },
 

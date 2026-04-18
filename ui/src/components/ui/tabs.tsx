@@ -4,6 +4,12 @@ import { Tabs as TabsPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+/*
+ * BOARED tabs — section editor pattern. There is no pill background. Tabs
+ * sit on a hairline rule; the active tab paints an acid bar above it. Mono
+ * caps with wide tracking, like newspaper section flags.
+ */
+
 function Tabs({
   className,
   orientation = "horizontal",
@@ -15,7 +21,7 @@ function Tabs({
       data-orientation={orientation}
       orientation={orientation}
       className={cn(
-        "group/tabs flex gap-2 data-[orientation=horizontal]:flex-col",
+        "group/tabs flex gap-4 data-[orientation=horizontal]:flex-col",
         className
       )}
       {...props}
@@ -24,12 +30,20 @@ function Tabs({
 }
 
 const tabsListVariants = cva(
-  "p-[3px] group-data-[orientation=horizontal]/tabs:h-9 group/tabs-list text-muted-foreground inline-flex w-fit items-center justify-center group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col",
+  [
+    "group/tabs-list inline-flex w-fit items-stretch text-muted-foreground",
+    "border-b border-[var(--boared-rule)] gap-6",
+    "group-data-[orientation=horizontal]/tabs:h-9",
+    "group-data-[orientation=vertical]/tabs:flex-col group-data-[orientation=vertical]/tabs:border-b-0 group-data-[orientation=vertical]/tabs:border-r group-data-[orientation=vertical]/tabs:gap-3",
+  ].join(" "),
   {
     variants: {
       variant: {
-        default: "bg-muted",
-        line: "gap-1 bg-transparent",
+        // The default and the "line" variant are now identical — there's
+        // only one tabs aesthetic in Boared. The variant prop is preserved
+        // for backwards compatibility with callers but no longer matters.
+        default: "",
+        line: "",
       },
     },
     defaultVariants: {
@@ -62,10 +76,22 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring text-foreground/60 hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow] group-data-[orientation=vertical]/tabs:w-full group-data-[orientation=vertical]/tabs:justify-start focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 group-data-[variant=default]/tabs-list:data-[state=active]:shadow-sm group-data-[variant=line]/tabs-list:data-[state=active]:shadow-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:border-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent",
-        "data-[state=active]:bg-background dark:data-[state=active]:text-foreground dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 data-[state=active]:text-foreground",
-        "after:bg-foreground after:absolute after:opacity-0 after:transition-opacity group-data-[orientation=horizontal]/tabs:after:inset-x-0 group-data-[orientation=horizontal]/tabs:after:bottom-[-5px] group-data-[orientation=horizontal]/tabs:after:h-0.5 group-data-[orientation=vertical]/tabs:after:inset-y-0 group-data-[orientation=vertical]/tabs:after:-right-1 group-data-[orientation=vertical]/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-[state=active]:after:opacity-100",
+        "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap",
+        "font-mono uppercase tracking-[0.12em] text-[0.66rem] leading-none",
+        "px-0 pb-2 pt-1 border-0",
+        "text-muted-foreground hover:text-foreground",
+        "transition-colors outline-none",
+        "focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)] focus-visible:outline-offset-4",
+        "disabled:pointer-events-none disabled:opacity-40",
+        "data-[state=active]:text-foreground",
+        // Active = thick acid underline anchored at the parent's bottom rule
+        "after:absolute after:left-0 after:right-0 after:-bottom-px after:h-[3px] after:bg-[var(--boared-acid)] after:opacity-0",
+        "data-[state=active]:after:opacity-100",
+        // Vertical orientation tweaks
+        "group-data-[orientation=vertical]/tabs:w-full group-data-[orientation=vertical]/tabs:justify-start",
+        "group-data-[orientation=vertical]/tabs:py-2 group-data-[orientation=vertical]/tabs:px-3 group-data-[orientation=vertical]/tabs:pb-2",
+        "group-data-[orientation=vertical]/tabs:after:left-auto group-data-[orientation=vertical]/tabs:after:-right-px group-data-[orientation=vertical]/tabs:after:bottom-auto group-data-[orientation=vertical]/tabs:after:top-0 group-data-[orientation=vertical]/tabs:after:h-full group-data-[orientation=vertical]/tabs:after:w-[3px]",
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className
       )}
       {...props}

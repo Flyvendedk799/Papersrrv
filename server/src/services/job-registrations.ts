@@ -59,6 +59,21 @@ export function registerAllJobs(db: Db) {
     retries: 1,
   });
 
+  // 5. Papee memory decay (PAPEE_TOOLS_PLAN.md §M.1 + §M.11)
+  // Decays confidence on every memory row by -0.05 per week since
+  // last_confirmed_at. Idempotent — safe to re-run. When the queue
+  // upgrades to BullMQ this job inherits distributed-safe execution
+  // automatically alongside the others.
+  queue.register({
+    name: "papee-memory-decay",
+    handler: async (_data) => {
+      const { decayConfidence } = await import("./papee-memory.js");
+      await decayConfidence(db);
+      logger.debug("job: papee-memory-decay completed");
+    },
+    retries: 1,
+  });
+
   // 5. Backfill job (for file re-indexing) — placeholder until fileService.backfillFromLogs is implemented
   // queue.register({
   //   name: "file-backfill",

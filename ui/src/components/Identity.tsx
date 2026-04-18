@@ -1,39 +1,45 @@
 import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 type IdentitySize = "xs" | "sm" | "default" | "lg";
 
 export interface IdentityProps {
   name: string;
+  /** Kept for API compatibility but unused — Boared identities have no avatar. */
   avatarUrl?: string | null;
+  /** Kept for API compatibility but unused. */
   initials?: string;
   size?: IdentitySize;
   className?: string;
 }
 
-function deriveInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
+/*
+ * BOARED Identity — newspaper-byline name strip.
+ *
+ * Replaces the SaaS pattern of avatar-bubble + name with a typographic
+ * byline. People in this product are referred to like correspondents in a
+ * register: a small uppercase tracking name, no portrait, no badge.
+ *
+ * The avatar is gone entirely. The shape, the gap, the bubble — all of it.
+ */
 
-const textSize: Record<IdentitySize, string> = {
-  xs: "text-sm",
-  sm: "text-xs",
-  default: "text-sm",
-  lg: "text-sm",
+const sizeClass: Record<IdentitySize, string> = {
+  xs: "text-[0.62rem]",
+  sm: "text-[0.66rem]",
+  default: "text-[0.72rem]",
+  lg: "text-[0.78rem]",
 };
 
-export function Identity({ name, avatarUrl, initials, size = "default", className }: IdentityProps) {
-  const displayInitials = initials ?? deriveInitials(name);
-
+export function Identity({ name, size = "default", className }: IdentityProps) {
   return (
-    <span className={cn("inline-flex gap-1.5", size === "xs" ? "items-baseline gap-1" : "items-center", size === "lg" && "gap-2", className)}>
-      <Avatar size={size} className={size === "xs" ? "relative -top-px" : undefined}>
-        {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
-        <AvatarFallback>{displayInitials}</AvatarFallback>
-      </Avatar>
-      <span className={cn("truncate", textSize[size])}>{name}</span>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 font-mono uppercase tracking-[0.06em] text-foreground truncate",
+        sizeClass[size],
+        className,
+      )}
+    >
+      <span className="text-muted-foreground">·</span>
+      <span className="truncate">{name}</span>
     </span>
   );
 }

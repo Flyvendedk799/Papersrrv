@@ -49,3 +49,5 @@ export { agentTaskOutcomes } from "./agent_task_outcomes.js";
 export { knowledgeBaseEntries } from "./knowledge_base.js";
 export { auditLogEntries } from "./audit_log.js";
 export { companySkills } from "./company_skills.js";
+export { papeeMemory, type PapeeMemoryRow, type NewPapeeMemoryRow } from "./papee_memory.js";
+export { issueLinks, type IssueLinkRow, type NewIssueLinkRow } from "./issue_links.js";

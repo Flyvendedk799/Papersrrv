@@ -1,0 +1,66 @@
+/* Ring pulse around target */
+@keyframes papee-highlight-pulse {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.75 0.15 85 / 0.6), 0 0 0 0 oklch(0.75 0.15 85 / 0.4);
+    border-color: oklch(0.75 0.15 85 / 0.8);
+  }
+  50% {
+    box-shadow: 0 0 0 6px oklch(0.75 0.15 85 / 0.2), 0 0 0 12px oklch(0.75 0.15 85 / 0.08);
+    border-color: oklch(0.75 0.15 85 / 1);
+  }
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.75 0.15 85 / 0), 0 0 0 0 oklch(0.75 0.15 85 / 0);
+    border-color: oklch(0.75 0.15 85 / 0.6);
+  }
+}
+
+.papee-highlight-ring {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid oklch(0.75 0.15 85 / 0.8);
+  border-radius: 8px;
+  animation: papee-highlight-pulse 1.3s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  transition: opacity 300ms ease-out, left 300ms ease-out, top 300ms ease-out, width 300ms ease-out, height 300ms ease-out;
+}
+
+/* Line draw-in effect */
+@keyframes papee-highlight-line-draw {
+  0% {
+    stroke-dashoffset: 1000;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+.papee-highlight-line {
+  fill: none;
+  stroke: oklch(0.75 0.15 85 / 0.8);
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+  animation: papee-highlight-line-draw 600ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Fade out for entire overlay */
+@keyframes papee-highlight-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.papee-highlight-fading-out {
+  animation: papee-highlight-fade-out 500ms ease-out forwards;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .papee-highlight-ring,
+  .papee-highlight-line,
+  .papee-highlight-fading-out {
+    animation: none !important;
+  }
+}

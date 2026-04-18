@@ -514,6 +514,10 @@ if (config.heartbeatSchedulerEnabled) {
 
 // Schedule cost aggregation (budget alerts) via job queue - every 15 minutes
 jobQueue.schedule("cost-aggregation", {}, 15 * 60 * 1000);
+
+// Schedule Papee memory decay - daily (PAPEE_TOOLS_PLAN.md §M.1)
+jobQueue.schedule("papee-memory-decay", {}, 24 * 60 * 60 * 1000);
+
 logger.info("Background job queue: all recurring jobs scheduled");
 
 if (config.databaseBackupEnabled) {

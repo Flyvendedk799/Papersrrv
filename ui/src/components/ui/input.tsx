@@ -2,15 +2,26 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+/*
+ * BOARED input — hairline rule below, no border above. Reads as a form field
+ * in a printed application, not a SaaS box. Focus draws an acid underline.
+ */
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <input
       type={type}
       data-slot="input"
       className={cn(
-        "file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
-        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-        "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+        "block w-full min-w-0 bg-transparent text-foreground",
+        "font-mono text-[0.78rem] leading-tight tracking-tight",
+        "border-0 border-b border-[var(--boared-rule)]",
+        "px-0 py-2",
+        "placeholder:text-muted-foreground placeholder:font-mono placeholder:text-[0.72rem] placeholder:tracking-[0.04em]",
+        "outline-none transition-[border-color,box-shadow]",
+        "focus-visible:border-[var(--boared-acid)] focus-visible:[box-shadow:0_1px_0_0_var(--boared-acid)]",
+        "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+        "file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-xs file:font-mono file:uppercase file:tracking-[0.08em] file:text-foreground",
+        "aria-invalid:border-destructive aria-invalid:focus-visible:[box-shadow:0_1px_0_0_var(--destructive)]",
         className
       )}
       {...props}

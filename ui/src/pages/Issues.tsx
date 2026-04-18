@@ -5,14 +5,16 @@ import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
-import { CircleDot } from "lucide-react";
+import { CircleDot, Plus } from "lucide-react";
 
 export function Issues() {
   const { selectedCompanyId } = useCompany();
+  const { openNewIssue } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -85,18 +87,58 @@ export function Issues() {
     return <EmptyState icon={CircleDot} message="Select a company to view issues." />;
   }
 
+  const issueList = issues ?? [];
+  const liveCount = liveIssueIds.size;
+
   return (
-    <IssuesList
-      issues={issues ?? []}
-      isLoading={isLoading}
-      error={error as Error | null}
-      agents={agents}
-      liveIssueIds={liveIssueIds}
-      viewStateKey="paperclip:issues-view"
-      initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}
-      initialSearch={initialSearch}
-      onSearchChange={handleSearchChange}
-      onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
-    />
+    <div className="boared-reveal max-w-[1400px] mx-auto pb-32">
+      {/* Editorial masthead — asymmetric two-column header. */}
+      <header className="grid grid-cols-12 gap-6 pb-8 mb-8 border-b-2 border-foreground">
+        <div className="col-span-12 md:col-span-4 flex flex-col justify-end gap-3">
+          <div className="boared-label text-foreground">§04 · The Docket</div>
+          <div className="font-mono text-[0.7rem] leading-relaxed text-muted-foreground">
+            <span className="block">
+              {isLoading
+                ? "Fetching the wire"
+                : `${issueList.length} ${issueList.length === 1 ? "entry on file" : "entries on file"}`}
+            </span>
+            {liveCount > 0 && (
+              <span className="block mt-1 text-foreground">
+                <span className="inline-block size-1.5 bg-[var(--boared-acid)] mr-1.5 align-middle" />
+                {liveCount} live
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="col-span-12 md:col-span-8 flex items-start justify-between gap-6">
+          <h1 className="boared-display text-[clamp(3rem,7vw,5.25rem)] leading-[0.92] text-foreground">
+            On the
+            <br />
+            <em className="not-italic font-normal">desk.</em>
+          </h1>
+          <button
+            type="button"
+            onClick={() => openNewIssue()}
+            className="shrink-0 inline-flex items-center gap-2 px-3 h-8 mt-2 border border-foreground text-foreground hover:bg-foreground hover:text-background transition-colors font-mono text-[0.66rem] uppercase tracking-[0.1em]"
+          >
+            <Plus className="size-3" strokeWidth={2} />
+            New issue
+          </button>
+        </div>
+      </header>
+
+      <IssuesList
+        issues={issueList}
+        isLoading={isLoading}
+        error={error as Error | null}
+        agents={agents}
+        liveIssueIds={liveIssueIds}
+        viewStateKey="paperclip:issues-view"
+        initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}
+        initialSearch={initialSearch}
+        onSearchChange={handleSearchChange}
+        onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+      />
+    </div>
   );
 }

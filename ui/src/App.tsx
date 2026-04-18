@@ -18,6 +18,7 @@ import { CompanySettings } from "./pages/CompanySettings";
 import { NewAgent } from "./pages/NewAgent";
 import { Workflows } from "./pages/Workflows";
 import { Skills } from "./pages/Skills";
+import { Secrets } from "./pages/Secrets";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { InviteLandingPage } from "./pages/InviteLanding";
@@ -118,6 +119,7 @@ function boardRoutes() {
       <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
       <Route path="files" element={<Files />} />
+      <Route path="secrets" element={<Secrets />} />
       <Route path="skills" element={<Skills />} />
       <Route path="workflows" element={<Workflows />} />
       <Route path="workflows/:workflowId" element={<WorkflowDetail />} />
@@ -237,6 +239,7 @@ export function App() {
           <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/issues/:filter" element={<UnprefixedBoardRedirect />} />
+          <Route path="secrets" element={<UnprefixedBoardRedirect />} />
           <Route path="skills" element={<UnprefixedBoardRedirect />} />
           <Route path="workflows" element={<UnprefixedBoardRedirect />} />
           <Route path="workflows/:workflowId" element={<UnprefixedBoardRedirect />} />

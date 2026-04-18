@@ -1,9 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "@/lib/router";
+import { cn } from "../lib/utils";
 
 interface MetricCardProps {
-  icon: LucideIcon;
+  icon?: LucideIcon;
   value: string | number;
   label: string;
   description?: ReactNode;
@@ -11,31 +12,36 @@ interface MetricCardProps {
   onClick?: () => void;
 }
 
-export function MetricCard({ icon: Icon, value, label, description, to, onClick }: MetricCardProps) {
+/*
+ * BOARED MetricCard — editorial number block. Big italic Fraunces value,
+ * mono caps label above. No icons, no rounded corners, hairline rule below.
+ * Reads as a stat in a magazine sidebar.
+ */
+export function MetricCard({ value, label, description, to, onClick }: MetricCardProps) {
   const isClickable = !!(to || onClick);
 
   const inner = (
-    <div className={`h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors${isClickable ? " hover:bg-accent/50 cursor-pointer" : ""}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-2xl sm:text-3xl font-semibold tracking-tight">
-            {value}
-          </p>
-          <p className="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
-            {label}
-          </p>
-          {description && (
-            <div className="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">{description}</div>
-          )}
+    <div
+      className={cn(
+        "h-full px-5 py-5 border-r border-[var(--boared-rule)] last:border-r-0 transition-colors",
+        isClickable && "cursor-pointer hover:bg-foreground/[0.025]"
+      )}
+    >
+      <p className="boared-label text-foreground mb-3">{label}</p>
+      <p className="boared-display text-[2.4rem] sm:text-[2.85rem] leading-[0.95] text-foreground">
+        {value}
+      </p>
+      {description && (
+        <div className="font-mono text-[0.68rem] tracking-tight text-muted-foreground mt-3 hidden sm:block">
+          {description}
         </div>
-        <Icon className="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
-      </div>
+      )}
     </div>
   );
 
   if (to) {
     return (
-      <Link to={to} className="no-underline text-inherit h-full" onClick={onClick}>
+      <Link to={to} className="no-underline text-inherit h-full block focus:outline-none focus-visible:[outline:2px_solid_var(--boared-acid)] focus-visible:outline-offset-[-2px]" onClick={onClick}>
         {inner}
       </Link>
     );
