@@ -40,6 +40,18 @@ const OrgChart = lazy(() => import("./pages/OrgChart").then(m => ({ default: m.O
 const DesignGuide = lazy(() => import("./pages/DesignGuide").then(m => ({ default: m.DesignGuide })));
 const WorkflowDetail = lazy(() => import("./pages/WorkflowDetail").then(m => ({ default: m.WorkflowDetail })));
 const Backlog = lazy(() => import("./pages/Backlog").then(m => ({ default: m.Backlog })));
+const GitHubPage = lazy(() =>
+  import("./pages/GitHub").then((m) => ({ default: m.GitHubPage })),
+);
+const GitHubRepoDashboard = lazy(() =>
+  import("./pages/GitHubRepoDashboard").then((m) => ({ default: m.GitHubRepoDashboard })),
+);
+const GitHubPullList = lazy(() =>
+  import("./pages/GitHubPullList").then((m) => ({ default: m.GitHubPullList })),
+);
+const GitHubPullDetail = lazy(() =>
+  import("./pages/GitHubPullDetail").then((m) => ({ default: m.GitHubPullDetail })),
+);
 
 function BootstrapPendingPage() {
   return (
@@ -148,6 +160,23 @@ function boardRoutes() {
       <Route path="design-guide" element={<DesignGuide />} />
       {isFeatureEnabled("backlog_tab_enabled") ? (
         <Route path="backlog" element={<Backlog />} />
+      ) : null}
+      {isFeatureEnabled("github_tab_enabled") ? (
+        <>
+          <Route path="github" element={<GitHubPage />} />
+          <Route
+            path="github/repos/:owner/:repo"
+            element={<GitHubRepoDashboard />}
+          />
+          <Route
+            path="github/repos/:owner/:repo/pulls"
+            element={<GitHubPullList />}
+          />
+          <Route
+            path="github/repos/:owner/:repo/pulls/:number"
+            element={<GitHubPullDetail />}
+          />
+        </>
       ) : null}
     </>
   );
@@ -263,6 +292,23 @@ export function App() {
           <Route path="dashboard" element={<UnprefixedBoardRedirect />} />
           {isFeatureEnabled("backlog_tab_enabled") ? (
             <Route path="backlog" element={<UnprefixedBoardRedirect />} />
+          ) : null}
+          {isFeatureEnabled("github_tab_enabled") ? (
+            <>
+              <Route path="github" element={<UnprefixedBoardRedirect />} />
+              <Route
+                path="github/repos/:owner/:repo"
+                element={<UnprefixedBoardRedirect />}
+              />
+              <Route
+                path="github/repos/:owner/:repo/pulls"
+                element={<UnprefixedBoardRedirect />}
+              />
+              <Route
+                path="github/repos/:owner/:repo/pulls/:number"
+                element={<UnprefixedBoardRedirect />}
+              />
+            </>
           ) : null}
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}

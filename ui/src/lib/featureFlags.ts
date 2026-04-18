@@ -15,6 +15,10 @@ export type FeatureFlagKey =
   | "backlog_tab_enabled" // 3.0 E3 — umbrella flag for the Backlog tab
   | "github_tab_enabled" // 4.0 F1 — umbrella flag for the GitHub tab
   | "github_pat_auth" // 4.0 F1 — allow PAT-based GitHub connections
+  | "github_webhooks" // 4.0 A3 — enable /api/webhooks/github ingress
+  | "pr_actions" // 4.0 B3 — PR mutations (comment/approve/merge)
+  | "papee_github_tools" // 4.0 D1 — Papee tools over cached GitHub data
+  | "release_insights" // 4.0 B5 — "what's in this release" insights
   // Boared / Files-evidence rebrand flags
   | "issue_relevance_panel"
   | "markdown_reader_core"
@@ -39,6 +43,13 @@ const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   github_tab_enabled: false,
   // PAT-based GitHub auth is default-off; GitHub App auth is preferred.
   github_pat_auth: false,
+  // Webhook ingress default-off until a webhook secret is configured.
+  github_webhooks: false,
+  // PR mutations (comment/approve/merge) off by default.
+  pr_actions: false,
+  // Papee-over-GitHub tools and release insights default off.
+  papee_github_tools: false,
+  release_insights: false,
   issue_relevance_panel: false,
   markdown_reader_core: false,
   perf_instrumentation: false,

@@ -131,4 +131,29 @@ export const queryKeys = {
     plan: (companyId: string, id: string) =>
       ["backlog", companyId, "plan", id] as const,
   },
+  github: {
+    connections: (companyId: string) =>
+      ["github", companyId, "connections"] as const,
+    repo: (companyId: string, owner: string, repo: string) =>
+      ["github", companyId, "repo", owner, repo] as const,
+    pulls: (
+      companyId: string,
+      owner: string,
+      repo: string,
+      state: string,
+    ) => ["github", companyId, "pulls", owner, repo, state] as const,
+    pullDetail: (
+      companyId: string,
+      owner: string,
+      repo: string,
+      number: number,
+    ) => ["github", companyId, "pull", owner, repo, number] as const,
+  },
 };
+
+/**
+ * Short-hand accessor for GitHub query keys. Equivalent to
+ * `queryKeys.github` but exported separately so GitHub Tab components
+ * can import a stable symbol without reaching into the big keys bag.
+ */
+export const githubQueryKeys = queryKeys.github;

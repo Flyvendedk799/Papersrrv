@@ -16,7 +16,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Github, Plus, Trash2, ExternalLink, AlertTriangle } from "lucide-react";
+import { useNavigate } from "@/lib/router";
+import {
+  Github,
+  Plus,
+  Trash2,
+  ExternalLink,
+  AlertTriangle,
+  LayoutDashboard,
+} from "lucide-react";
 import {
   parseRepoUrl,
   type GithubConnection,
@@ -92,6 +100,7 @@ export function GitHubPage() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const companyId = selectedCompanyId!;
 
@@ -288,17 +297,33 @@ export function GitHubPage() {
         )}
 
         {parsedRepo && selectedConnectionId && (
-          <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-            <RepoCard
-              owner={parsedRepo.owner}
-              repo={parsedRepo.repo}
-              query={repoQuery}
-            />
-            <PullRequestList
-              query={pullsQuery}
-              repoHtmlUrl={repoQuery.data?.data.htmlUrl ?? null}
-            />
-          </div>
+          <>
+            <div className="mb-3 flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  navigate(
+                    `/github/repos/${parsedRepo.owner}/${parsedRepo.repo}`,
+                  )
+                }
+              >
+                <LayoutDashboard className="mr-1.5 size-3.5" />
+                Open dashboard
+              </Button>
+            </div>
+            <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+              <RepoCard
+                owner={parsedRepo.owner}
+                repo={parsedRepo.repo}
+                query={repoQuery}
+              />
+              <PullRequestList
+                query={pullsQuery}
+                repoHtmlUrl={repoQuery.data?.data.htmlUrl ?? null}
+              />
+            </div>
+          </>
         )}
       </section>
 
