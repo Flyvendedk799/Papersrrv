@@ -13,11 +13,13 @@
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  backlogItemLabels,
   backlogItems,
   backlogPlans,
   type BacklogItemRow,
   type BacklogPlanRow,
 } from "@paperclipai/db";
+import { issueService } from "./issues.js";
 import type {
   BacklogBulkAction,
   BacklogBulkPatch,
@@ -34,8 +36,13 @@ import type {
   BulkBacklogItemInput,
   BulkBacklogItemResult,
   BulkBacklogItemResultEntry,
+  BulkPromoteBacklogItemInput,
+  BulkPromoteBacklogItemResult,
+  BulkPromoteBacklogItemResultEntry,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
+  PromoteBacklogItemInput,
+  PromoteBacklogItemResult,
   ReorderBacklogItemInput,
   UpdateBacklogItemInput,
   UpdateBacklogPlanInput,
@@ -527,6 +534,157 @@ export function backlogService(db: Db) {
     },
 
     /**
+     * Promote a backlog item to a real Issue (backlog3.0 C3).
+     *
+     * Creates the Issue through the existing `issueService.create`
+     * flow so all invariants (assignee validation, identifier
+     * allocation, status transitions, label sync) are enforced. On
+     * success, the backlog item is updated in-place to reference the
+     * new Issue via `promoted_issue_id` and its status is set to
+     * `promoted` — the row is intentionally preserved so reverse-flow
+     * (C4) and lineage stay intact.
+     *
+     * Defaults mirror the item: title, project, goal, priority,
+     * labels. Callers may override any field via `input`.
+     *
+     * Failure modes:
+     * - Item already promoted → throws 422.
+     * - Item archived / missing → throws 404.
+     * - Issue creation fails → throws through (no partial mutation on
+     *   the backlog item).
+     */
+    async promoteItem(
+      companyId: string,
+      id: string,
+      input: PromoteBacklogItemInput,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<PromoteBacklogItemResult> {
+      const existing = await db
+        .select()
+        .from(backlogItems)
+        .where(and(eq(backlogItems.companyId, companyId), eq(backlogItems.id, id)))
+        .then((rs) => rs[0]);
+      if (!existing) throw notFound("Backlog item not found");
+      if (existing.deletedAt) {
+        throw unprocessable("Cannot promote an archived backlog item");
+      }
+      if (existing.status === "promoted" && existing.promotedIssueId) {
+        throw unprocessable(
+          "Backlog item has already been promoted to an issue",
+        );
+      }
+
+      const itemLabelRows = await db
+        .select({ labelId: backlogItemLabels.labelId })
+        .from(backlogItemLabels)
+        .where(
+          and(
+            eq(backlogItemLabels.companyId, companyId),
+            eq(backlogItemLabels.backlogItemId, id),
+          ),
+        );
+      const inheritedLabelIds = itemLabelRows.map((r) => r.labelId);
+
+      const svc = issueService(db);
+      const created = await svc.create(companyId, {
+        title: (input.title ?? existing.title).trim() || existing.title,
+        description: input.description ?? existing.body ?? undefined,
+        status: "todo" as never,
+        priority:
+          (input.priority ?? (existing.priority as never) ?? "medium") as never,
+        projectId: input.projectId ?? existing.projectId ?? null,
+        goalId: input.goalId ?? existing.goalId ?? null,
+        parentId: input.parentId ?? null,
+        assigneeUserId: input.assigneeUserId ?? null,
+        assigneeAgentId: input.assigneeAgentId ?? null,
+        createdByUserId: actor.userId,
+        createdByAgentId: actor.agentId,
+        labelIds: input.labelIds ?? inheritedLabelIds,
+      } as never);
+
+      const updatedRow = await db
+        .update(backlogItems)
+        .set({
+          status: "promoted",
+          promotedIssueId: created.id,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(backlogItems.companyId, companyId),
+            eq(backlogItems.id, id),
+          ),
+        )
+        .returning()
+        .then((rs) => rs[0]);
+
+      return {
+        item: itemToApi(updatedRow),
+        issue: {
+          id: created.id,
+          identifier: created.identifier,
+          title: created.title,
+        },
+      };
+    },
+
+    /**
+     * Promote many backlog items at once (backlog3.0 C3).
+     *
+     * Each item is promoted independently so one failure doesn't
+     * abort the batch. The response mirrors `bulkApply` so UI glue
+     * can reuse the same success/failure rendering.
+     */
+    async bulkPromote(
+      companyId: string,
+      input: BulkPromoteBacklogItemInput,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<BulkPromoteBacklogItemResult> {
+      if (!input || !Array.isArray(input.ids)) {
+        throw unprocessable("ids must be an array");
+      }
+      const ids = Array.from(
+        new Set(
+          input.ids.filter((id) => typeof id === "string" && id.length),
+        ),
+      );
+      if (ids.length === 0) {
+        return { total: 0, succeeded: 0, failed: 0, results: [] };
+      }
+      if (ids.length > 50) {
+        throw unprocessable("Bulk promote supports at most 50 items per call");
+      }
+
+      const overrides = input.overrides ?? {};
+      const results: BulkPromoteBacklogItemResultEntry[] = [];
+      for (const id of ids) {
+        try {
+          const res = await this.promoteItem(companyId, id, overrides, actor);
+          results.push({
+            id,
+            status: "ok",
+            item: res.item,
+            issue: res.issue,
+          });
+        } catch (err) {
+          results.push({
+            id,
+            status: "error",
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      const succeeded = results.filter((r) => r.status === "ok").length;
+      return {
+        total: results.length,
+        succeeded,
+        failed: results.length - succeeded,
+        results,
+      };
+    },
+
+    /**
      * Aggregate counts for the Backlog Tab overview strip (backlog3.0 B5).
      *
      * Computed in a single pass over the active item set so the strip
@@ -622,6 +780,36 @@ export function backlogService(db: Db) {
      * Soft delete. Sets `deletedAt` and transitions status to `archived`
      * so the item stays queryable for lineage + reverse flows.
      */
+    /**
+     * Mark a backlog item as promoted and link it to the resulting Issue
+     * (backlog3.0 C3). Caller creates the Issue and passes the id here so the
+     * promotion stays a single deliberate action. The backlog item is *not*
+     * deleted — lineage is preserved.
+     */
+    async markPromoted(
+      companyId: string,
+      id: string,
+      promotedIssueId: string,
+    ): Promise<BacklogItem> {
+      const existing = await db
+        .select()
+        .from(backlogItems)
+        .where(and(eq(backlogItems.companyId, companyId), eq(backlogItems.id, id)))
+        .then((rs) => rs[0]);
+      if (!existing) throw notFound("Backlog item not found");
+      const updated = await db
+        .update(backlogItems)
+        .set({
+          status: "promoted",
+          promotedIssueId,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(backlogItems.companyId, companyId), eq(backlogItems.id, id)))
+        .returning()
+        .then((rs) => rs[0]);
+      return itemToApi(updated);
+    },
+
     async archiveItem(companyId: string, id: string): Promise<BacklogItem> {
       const existing = await db
         .select()

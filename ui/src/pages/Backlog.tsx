@@ -232,6 +232,59 @@ export function Backlog() {
     },
   });
 
+  const promoteItem = useMutation({
+    mutationFn: (id: string) => backlogApi.promoteItem(selectedCompanyId!, id, {}),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({
+        queryKey: ["backlog", selectedCompanyId],
+      });
+      pushToast({
+        title: "Promoted to Issue",
+        body: `${result.issue.identifier ?? result.issue.id.slice(0, 8)} · ${result.item.title.slice(0, 80)}`,
+        tone: "success",
+      });
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Promotion failed",
+        body: (err as Error).message,
+        tone: "error",
+      });
+    },
+  });
+
+  const bulkPromote = useMutation({
+    mutationFn: (ids: string[]) => backlogApi.bulkPromote(selectedCompanyId!, { ids }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({
+        queryKey: ["backlog", selectedCompanyId],
+      });
+      const tone = result.failed === 0 ? "success" : result.succeeded === 0 ? "error" : "warn";
+      const title =
+        result.failed === 0
+          ? `Promoted ${result.succeeded} item${result.succeeded === 1 ? "" : "s"} to Issues`
+          : `${result.succeeded}/${result.total} promoted (${result.failed} failed)`;
+      const failureMessage = result.results
+        .filter((r) => r.status === "error")
+        .slice(0, 3)
+        .map((r) => `${r.id.slice(0, 8)}: ${r.error ?? "error"}`)
+        .join("; ");
+      pushToast({ title, body: failureMessage || undefined, tone });
+      if (result.failed === 0) {
+        clearSelection();
+      } else {
+        setSelection(new Set(result.results.filter((r) => r.status === "error").map((r) => r.id)));
+      }
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Bulk promote failed",
+        body: (err as Error).message,
+        tone: "error",
+      });
+    },
+  });
+
   const { moveBetweenContainers } = useBacklogReorder(selectedCompanyId ?? undefined);
 
   const visibleItems = useMemo(() => items ?? [], [items]);
@@ -517,15 +570,19 @@ export function Backlog() {
         <BulkActionBar
           count={selection.size}
           totalVisible={visibleItems.length}
-          isApplying={bulkApply.isPending}
+          isApplying={bulkApply.isPending || bulkPromote.isPending}
           plans={plans}
-          onApply={({ action, patch }) =>
+          onApply={(args) => {
+            if (args.action === "promote") {
+              bulkPromote.mutate(Array.from(selection));
+              return;
+            }
             bulkApply.mutate({
               ids: Array.from(selection),
-              action,
-              patch,
-            })
-          }
+              action: args.action,
+              patch: args.patch,
+            });
+          }}
           onSelectAll={selectAllVisible}
           onClear={clearSelection}
         />
@@ -561,6 +618,8 @@ export function Backlog() {
             archivingId={
               archiveItem.isPending ? (archiveItem.variables as string) : null
             }
+            onPromote={(id) => promoteItem.mutate(id)}
+            promotingId={promoteItem.isPending ? (promoteItem.variables as string) : null}
             selection={selection}
             onToggleSelect={toggleSelect}
             emptyAction="New item"
@@ -580,6 +639,8 @@ export function Backlog() {
             archivingId={
               archiveItem.isPending ? (archiveItem.variables as string) : null
             }
+            onPromote={(id) => promoteItem.mutate(id)}
+            promotingId={promoteItem.isPending ? (promoteItem.variables as string) : null}
             selection={selection}
             onToggleSelect={toggleSelect}
             emptyAction="New item"

@@ -5,8 +5,12 @@ import type {
   BacklogPlan,
   BulkBacklogItemInput,
   BulkBacklogItemResult,
+  BulkPromoteBacklogItemInput,
+  BulkPromoteBacklogItemResult,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
+  PromoteBacklogItemInput,
+  PromoteBacklogItemResult,
   ReorderBacklogItemInput,
   UpdateBacklogItemInput,
   UpdateBacklogPlanInput,
@@ -60,6 +64,20 @@ export const backlogApi = {
   bulkApply: (companyId: string, input: BulkBacklogItemInput) =>
     api.post<BulkBacklogItemResult>(
       `/companies/${companyId}/backlog/items/bulk`,
+      input,
+    ),
+  promoteItem: (
+    companyId: string,
+    id: string,
+    input: PromoteBacklogItemInput = {},
+  ) =>
+    api.post<PromoteBacklogItemResult>(
+      `/companies/${companyId}/backlog/items/${id}/promote`,
+      input,
+    ),
+  bulkPromote: (companyId: string, input: BulkPromoteBacklogItemInput) =>
+    api.post<BulkPromoteBacklogItemResult>(
+      `/companies/${companyId}/backlog/items/bulk-promote`,
       input,
     ),
   overview: (companyId: string, opts?: { recentDays?: number; staleDays?: number }) => {

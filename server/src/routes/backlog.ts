@@ -17,7 +17,7 @@
 
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
-import { backlogService, logActivity } from "../services/index.js";
+import { backlogService, issueService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { badRequest, notFound } from "../errors.js";
 
@@ -201,6 +201,335 @@ export function backlogRoutes(db: Db) {
       });
     }
     res.json(result);
+  });
+
+  /**
+   * Promote a backlog item to a first-class Issue (backlog3.0 C3).
+   *
+   * Always a deliberate single server call so partial failures don't leave
+   * a promoted item pointing at a non-existent Issue. The backlog item is
+   * *not* deleted — lineage is preserved via `promotedIssueId`.
+   *
+   * Accepts overrides for the Issue title/description/project/goal/priority
+   * so the UI can show a pre-flight form and diverge from the backlog item
+   * when helpful. Defaults carry over from the backlog item.
+   */
+  router.post("/companies/:companyId/backlog/items/:id/promote", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const item = await svc.getItem(companyId, id);
+    if (!item) throw notFound("Backlog item not found");
+    if (item.status === "promoted" && item.promotedIssueId) {
+      const existing = await issueService(db);
+      const linked = await existing.getById(item.promotedIssueId);
+      if (linked) {
+        res.json({ item, issue: linked });
+        return;
+      }
+    }
+    const actor = getActorInfo(req);
+    const issues = issueService(db);
+    const title = typeof body.title === "string" && body.title.trim() ? body.title : item.title;
+    const description =
+      typeof body.description === "string" ? body.description : item.body ?? undefined;
+    const projectId =
+      typeof body.projectId === "string"
+        ? body.projectId
+        : (item.projectId ?? undefined);
+    const goalId =
+      typeof body.goalId === "string" ? body.goalId : (item.goalId ?? undefined);
+    const priority =
+      typeof body.priority === "string" && body.priority
+        ? (body.priority as string)
+        : (item.priority ?? undefined);
+    const assigneeAgentId =
+      typeof body.assigneeAgentId === "string" ? body.assigneeAgentId : undefined;
+    const assigneeUserId =
+      typeof body.assigneeUserId === "string" ? body.assigneeUserId : undefined;
+    const parentId = typeof body.parentId === "string" ? body.parentId : undefined;
+    const labelIds = Array.isArray(body.labelIds)
+      ? (body.labelIds as unknown[]).filter((v): v is string => typeof v === "string")
+      : undefined;
+
+    const issue = await issues.create(companyId, {
+      title,
+      description: description ?? null,
+      projectId: projectId ?? null,
+      goalId: goalId ?? null,
+      priority: (priority as never) ?? null,
+      assigneeAgentId: assigneeAgentId ?? null,
+      assigneeUserId: assigneeUserId ?? null,
+      parentId: parentId ?? null,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      createdByAgentId: actor.agentId,
+      labelIds,
+    } as never);
+
+    const promoted = await svc.markPromoted(companyId, id, issue.id);
+
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "backlog_item.promoted",
+      entityType: "backlog_item",
+      entityId: promoted.id,
+      details: { issueId: issue.id, issueIdentifier: issue.identifier ?? null },
+    });
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "issue.created",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        fromBacklogItemId: promoted.id,
+        title: issue.title,
+        via: "backlog_promotion",
+      },
+    });
+    res.json({ item: promoted, issue });
+  });
+
+  /**
+   * Promote a single backlog item to an Issue (backlog3.0 C3).
+   *
+   * Defaults carry title, body, project, goal, priority, and labels
+   * from the item; the body may override any of these. On success we
+   * log activity for both the backlog item (`promoted`) and the new
+   * Issue (`created`, via the default identifier) so audit trails line
+   * up on both sides.
+   */
+  router.post(
+    "/companies/:companyId/backlog/items/:id/promote",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      assertCompanyAccess(req, companyId);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const actor = getActorInfo(req);
+      const result = await svc.promoteItem(
+        companyId,
+        id,
+        body as never,
+        {
+          userId: actor.actorType === "user" ? actor.actorId : null,
+          agentId: actor.agentId,
+        },
+      );
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "backlog_item.promoted",
+        entityType: "backlog_item",
+        entityId: result.item.id,
+        details: {
+          issueId: result.issue.id,
+          identifier: result.issue.identifier,
+        },
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.created",
+        entityType: "issue",
+        entityId: result.issue.id,
+        details: {
+          identifier: result.issue.identifier,
+          fromBacklogItemId: result.item.id,
+        },
+      });
+      res.status(201).json(result);
+    },
+  );
+
+  /**
+   * Bulk-promote many items (backlog3.0 C3).
+   *
+   * Each id is promoted independently; per-item failures surface in
+   * `results` rather than aborting the batch. We emit activity only
+   * for successful mutations, matching `bulkApply`.
+   */
+  router.post(
+    "/companies/:companyId/backlog/items/bulk-promote",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      if (!Array.isArray(body.ids)) throw badRequest("ids must be an array");
+      const actor = getActorInfo(req);
+      const result = await svc.bulkPromote(
+        companyId,
+        body as never,
+        {
+          userId: actor.actorType === "user" ? actor.actorId : null,
+          agentId: actor.agentId,
+        },
+      );
+      for (const entry of result.results) {
+        if (entry.status !== "ok" || !entry.item || !entry.issue) continue;
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "backlog_item.promoted",
+          entityType: "backlog_item",
+          entityId: entry.item.id,
+          details: {
+            bulk: true,
+            issueId: entry.issue.id,
+            identifier: entry.issue.identifier,
+          },
+        });
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "issue.created",
+          entityType: "issue",
+          entityId: entry.issue.id,
+          details: {
+            bulk: true,
+            identifier: entry.issue.identifier,
+            fromBacklogItemId: entry.item.id,
+          },
+        });
+      }
+      res.json(result);
+    },
+  );
+
+  /**
+   * Bulk-promote many backlog items. Each item is promoted individually so
+   * one bad input doesn't tear down the whole batch; the response shape
+   * mirrors `/items/bulk` (per-entry `status`).
+   */
+  router.post("/companies/:companyId/backlog/items/bulk-promote", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const rawIds = Array.isArray(body.ids) ? body.ids : [];
+    const ids = rawIds.filter((v): v is string => typeof v === "string");
+    if (ids.length === 0) throw badRequest("ids is required");
+    const overrides = (body.overrides ?? {}) as Record<string, unknown>;
+    const actor = getActorInfo(req);
+    const issues = issueService(db);
+
+    const results: Array<{
+      id: string;
+      status: "ok" | "error";
+      item?: unknown;
+      issue?: unknown;
+      error?: string;
+    }> = [];
+    let succeeded = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        const item = await svc.getItem(companyId, id);
+        if (!item) {
+          failed += 1;
+          results.push({ id, status: "error", error: "not_found" });
+          continue;
+        }
+        if (item.status === "promoted" && item.promotedIssueId) {
+          const linked = await issues.getById(item.promotedIssueId);
+          if (linked) {
+            succeeded += 1;
+            results.push({ id, status: "ok", item, issue: linked });
+            continue;
+          }
+        }
+        const title =
+          typeof overrides.title === "string" && overrides.title.trim()
+            ? (overrides.title as string)
+            : item.title;
+        const issue = await issues.create(companyId, {
+          title,
+          description:
+            typeof overrides.description === "string"
+              ? (overrides.description as string)
+              : item.body ?? null,
+          projectId:
+            typeof overrides.projectId === "string"
+              ? (overrides.projectId as string)
+              : (item.projectId ?? null),
+          goalId:
+            typeof overrides.goalId === "string"
+              ? (overrides.goalId as string)
+              : (item.goalId ?? null),
+          priority:
+            typeof overrides.priority === "string"
+              ? ((overrides.priority as string) as never)
+              : ((item.priority ?? null) as never),
+          assigneeAgentId:
+            typeof overrides.assigneeAgentId === "string"
+              ? (overrides.assigneeAgentId as string)
+              : null,
+          assigneeUserId:
+            typeof overrides.assigneeUserId === "string"
+              ? (overrides.assigneeUserId as string)
+              : null,
+          parentId:
+            typeof overrides.parentId === "string"
+              ? (overrides.parentId as string)
+              : null,
+          createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+          createdByAgentId: actor.agentId,
+          labelIds: Array.isArray(overrides.labelIds)
+            ? (overrides.labelIds as unknown[]).filter(
+                (v): v is string => typeof v === "string",
+              )
+            : undefined,
+        } as never);
+        const promoted = await svc.markPromoted(companyId, id, issue.id);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "backlog_item.promoted",
+          entityType: "backlog_item",
+          entityId: promoted.id,
+          details: { issueId: issue.id, issueIdentifier: issue.identifier ?? null, bulk: true },
+        });
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "issue.created",
+          entityType: "issue",
+          entityId: issue.id,
+          details: { fromBacklogItemId: promoted.id, via: "backlog_promotion", bulk: true },
+        });
+        succeeded += 1;
+        results.push({ id, status: "ok", item: promoted, issue });
+      } catch (err) {
+        failed += 1;
+        results.push({ id, status: "error", error: (err as Error).message });
+      }
+    }
+    res.json({ total: ids.length, succeeded, failed, results });
   });
 
   router.post("/companies/:companyId/backlog/items/:id/archive", async (req, res) => {

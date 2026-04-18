@@ -7,7 +7,7 @@
  * props rather than forking the component (B3).
  */
 
-import { Archive, GripVertical } from "lucide-react";
+import { Archive, GripVertical, Rocket } from "lucide-react";
 import type { BacklogItem } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { cn } from "../../lib/utils";
@@ -16,6 +16,8 @@ export interface BacklogItemRowProps {
   item: BacklogItem;
   onArchive?: () => void;
   isArchiving?: boolean;
+  onPromote?: () => void;
+  isPromoting?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
   dragHandle?: React.ReactNode;
@@ -35,6 +37,8 @@ export function BacklogItemRow({
   item,
   onArchive,
   isArchiving,
+  onPromote,
+  isPromoting,
   selected,
   onToggleSelect,
   dragHandle,
@@ -49,6 +53,8 @@ export function BacklogItemRow({
   onFocus,
   onKeyDown,
 }: BacklogItemRowProps) {
+  const canPromote =
+    onPromote && item.status !== "promoted" && item.status !== "archived";
   return (
     <li
       ref={rowRef}
@@ -123,6 +129,18 @@ export function BacklogItemRow({
           {new Date(item.updatedAt).toLocaleDateString()}
         </time>
         {trailing}
+        {canPromote && (
+          <button
+            type="button"
+            onClick={onPromote}
+            disabled={isPromoting}
+            className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--boared-acid)] hover:underline disabled:opacity-50"
+            title="Create an Issue from this backlog item"
+          >
+            <Rocket className="size-3" />
+            {isPromoting ? "Promoting…" : "Promote"}
+          </button>
+        )}
         {onArchive && item.status !== "archived" && (
           <button
             type="button"

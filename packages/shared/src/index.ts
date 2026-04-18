@@ -336,6 +336,11 @@ export type {
   BulkBacklogItemResultEntry,
   BacklogOverview,
   BacklogPlanProgress,
+  PromoteBacklogItemInput,
+  PromoteBacklogItemResult,
+  BulkPromoteBacklogItemInput,
+  BulkPromoteBacklogItemResult,
+  BulkPromoteBacklogItemResultEntry,
 } from "./types/backlog.js";
 export { normalizeAgentUrlKey, deriveAgentUrlKey, isUuidLike } from "./agent-url-key.js";
 export { deriveProjectUrlKey, normalizeProjectUrlKey } from "./project-url-key.js";

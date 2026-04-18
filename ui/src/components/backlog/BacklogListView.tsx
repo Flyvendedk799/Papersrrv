@@ -39,6 +39,8 @@ interface Props {
   onToggleCollapse: (groupKey: string) => void;
   onArchive: (id: string) => void;
   archivingId?: string | null;
+  onPromote?: (id: string) => void;
+  promotingId?: string | null;
   selection?: Set<string>;
   onToggleSelect?: (id: string) => void;
   rowDragHandle?: (item: BacklogItem) => React.ReactNode;
@@ -58,6 +60,8 @@ export function BacklogListView({
   onToggleCollapse,
   onArchive,
   archivingId,
+  onPromote,
+  promotingId,
   selection,
   onToggleSelect,
   rowDragHandle,
@@ -218,6 +222,8 @@ export function BacklogListView({
       }}
       onArchive={() => onArchive(item.id)}
       isArchiving={archivingId === item.id}
+      onPromote={onPromote ? () => onPromote(item.id) : undefined}
+      isPromoting={promotingId === item.id}
       selected={selection?.has(item.id)}
       onToggleSelect={
         onToggleSelect ? () => onToggleSelect(item.id) : undefined

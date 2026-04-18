@@ -1,15 +1,15 @@
 /**
  * BulkActionBar — sticky toolbar that appears when one or more backlog
- * items are selected (backlog3.0 B4).
+ * items are selected (backlog3.0 B4 + C3).
  *
- * The bar exposes patch-style actions (status, priority, plan) plus
- * archive. Promotion to Issue is intentionally not surfaced here; that
- * lands as a deliberate, confirmed action in C3.
+ * Surfaces patch-style triage actions (status, priority, plan), a
+ * terminal archive action, and a deliberate "Promote to Issues" flow
+ * (C3). Promotion is confirmed in the bar itself to avoid silent
+ * side-effects — the parent owns the actual mutation and toast.
  *
- * The component is stateless about the selection itself: parent owns
- * the `Set<string>` and decides what to do with the result. Each
- * action calls the supplied `onApply` with a fully-typed payload, then
- * the parent dispatches to `backlogApi.bulkApply`.
+ * The component is stateless about the selection: the parent owns
+ * the `Set<string>`, each action calls `onApply` with a typed payload,
+ * and the parent dispatches to the correct API.
  */
 
 import { useCallback, useState } from "react";
@@ -17,6 +17,7 @@ import {
   Archive,
   ChevronDown,
   Loader2,
+  Rocket,
   X,
 } from "lucide-react";
 import {
@@ -43,10 +44,9 @@ const PRIORITY_OPTIONS: Array<{ value: IssuePriority | null; label: string }> = 
   { value: "low", label: "Low" },
 ];
 
-export interface BulkApplyArgs {
-  action: BacklogBulkAction;
-  patch?: BacklogBulkPatch;
-}
+export type BulkApplyArgs =
+  | { action: BacklogBulkAction; patch?: BacklogBulkPatch }
+  | { action: "promote" };
 
 interface Props {
   count: number;
@@ -56,6 +56,7 @@ interface Props {
   onApply: (args: BulkApplyArgs) => void;
   onSelectAll: () => void;
   onClear: () => void;
+  canPromote?: boolean;
 }
 
 export function BulkActionBar({
@@ -66,8 +67,10 @@ export function BulkActionBar({
   onApply,
   onSelectAll,
   onClear,
+  canPromote = true,
 }: Props) {
   const allSelected = count >= totalVisible && totalVisible > 0;
+  const [confirmPromote, setConfirmPromote] = useState(false);
 
   const apply = useCallback(
     (patch: BacklogBulkPatch) => {
@@ -144,6 +147,31 @@ export function BulkActionBar({
         <Archive className="size-3.5" />
         Archive
       </Button>
+
+      {canPromote && (
+        <Button
+          variant={confirmPromote ? "default" : "ghost"}
+          size="sm"
+          className="h-7 text-xs"
+          disabled={isApplying}
+          onClick={() => {
+            if (confirmPromote) {
+              setConfirmPromote(false);
+              onApply({ action: "promote" });
+            } else {
+              setConfirmPromote(true);
+            }
+          }}
+          title={
+            confirmPromote
+              ? `Click again to promote ${count} item${count === 1 ? "" : "s"} to Issues`
+              : "Promote selected items to Issues"
+          }
+        >
+          <Rocket className="size-3.5" />
+          {confirmPromote ? `Confirm promote (${count})` : "Promote"}
+        </Button>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
         {isApplying && (

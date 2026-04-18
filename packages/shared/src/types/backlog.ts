@@ -200,6 +200,59 @@ export interface BulkBacklogItemResult {
 }
 
 /**
+ * Input for promoting a backlog item to a first-class Issue (backlog3.0 C3).
+ *
+ * All fields are overrides; anything omitted carries from the backlog item.
+ * Promotion is a single deliberate server call: the Issue is created and the
+ * backlog item is linked back via `promotedIssueId` in one transaction-like
+ * sequence on the server. Failures never leave a partial state.
+ */
+export interface PromoteBacklogItemInput {
+  title?: string;
+  description?: string;
+  projectId?: string | null;
+  goalId?: string | null;
+  priority?: string | null;
+  assigneeAgentId?: string | null;
+  assigneeUserId?: string | null;
+  parentId?: string | null;
+  labelIds?: string[];
+}
+
+export interface PromoteBacklogItemResult {
+  item: BacklogItem;
+  issue: {
+    id: string;
+    identifier: string | null;
+    title: string;
+  } & Record<string, unknown>;
+}
+
+/**
+ * Bulk-promote N backlog items with a shared set of overrides (backlog3.0
+ * C3). Returns one entry per input id so partial failures are reported.
+ */
+export interface BulkPromoteBacklogItemInput {
+  ids: string[];
+  overrides?: PromoteBacklogItemInput;
+}
+
+export interface BulkPromoteBacklogItemResultEntry {
+  id: string;
+  status: "ok" | "error";
+  item?: BacklogItem;
+  issue?: PromoteBacklogItemResult["issue"];
+  error?: string;
+}
+
+export interface BulkPromoteBacklogItemResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BulkPromoteBacklogItemResultEntry[];
+}
+
+/**
  * Overview / insights snapshot for the Backlog Tab (backlog3.0 B5).
  *
  * All counts are company-scoped. `promotedRecent` is the number of items
@@ -229,3 +282,4 @@ export interface BacklogOverview {
   staleDays: number;
   perPlan: BacklogPlanProgress[];
 }
+
