@@ -36,6 +36,7 @@ import { jobRoutes } from "./routes/jobs.js";
 import { auditRoutes } from "./routes/audit.js";
 import { skillRoutes } from "./routes/skills.js";
 import { backlogRoutes } from "./routes/backlog.js";
+import { githubRoutes } from "./routes/github.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
 type UiMode = "none" | "static" | "vite-dev";
@@ -136,6 +137,7 @@ export async function createApp(
   api.use(auditRoutes(db));
   api.use(skillRoutes(db));
   api.use(backlogRoutes(db));
+  api.use(githubRoutes(db));
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,
