@@ -109,3 +109,35 @@ export type {
   UpdateBacklogPlanInput,
   BacklogItemFilters,
 } from "./backlog.js";
+
+// ─── Papee companion action plumbing ──────────────────────────────
+export { PAPEE_TOOL_TIER } from "./papee.js";
+export type {
+  PapeeTool,
+  PapeeToolKind,
+  PapeeToolResult,
+  PapeeRiskTier,
+} from "./papee.js";
+
+// ─── GitHub integration ───────────────────────────────────────────
+export type {
+  GithubConnection,
+  GithubRepoView,
+  GithubPullRequestListResult,
+} from "./github.js";
+
+// ─── Files + evidence ─────────────────────────────────────────────
+export type {
+  CommentFileEvidence,
+  IssueRelevantFile,
+  IssueEvidenceSet,
+  IssueEvidenceSetDetail,
+  IssueEvidenceSetItem,
+  HandoffChecklistItem,
+  HandoffChecklist,
+  HandoffEnforcement,
+  FileScope,
+  ReviewQueueItem,
+  ReviewQueueReason,
+  HotFile,
+} from "./files-evidence.js";

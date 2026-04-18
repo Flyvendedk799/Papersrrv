@@ -14,7 +14,10 @@ export interface PapeeBubbleStackProps {
 }
 
 export function PapeeBubbleStack({ bubbles, side }: PapeeBubbleStackProps) {
-  if (bubbles.length === 0) return null;
+  // Defensive: PapeeContext may not yet expose `bubbleStack` on the
+  // recovered branch, in which case this prop is undefined.
+  const list = bubbles ?? [];
+  if (list.length === 0) return null;
   return (
     <div
       className={cn(
@@ -22,8 +25,8 @@ export function PapeeBubbleStack({ bubbles, side }: PapeeBubbleStackProps) {
         side === "right" ? "right-0 items-end" : "left-0 items-start",
       )}
     >
-      {bubbles.map((b, i) => {
-        const fromBottom = bubbles.length - 1 - i;
+      {list.map((b, i) => {
+        const fromBottom = list.length - 1 - i;
         const offsetY = fromBottom * 28;
         const scale = 1 - fromBottom * 0.1;
         const isCritical = b.severity === "critical";

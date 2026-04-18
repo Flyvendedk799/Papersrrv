@@ -38,15 +38,52 @@ export function PapeeTargetRegistryProvider({ children }: { children: ReactNode 
   const [, _forceUpdate] = useState(0);
   const rafRef = useRef<number | null>(null);
 
-  // ─── RESTORED: lines 41-107 were lost in destruction; reconstruct inline ───
-  // TODO: re-implement registerTarget / unregisterTarget / getTarget / getVisibleTargets
-  const registerTarget = () => {};
-  const unregisterTarget = () => {};
-  const getTarget = () => undefined;
-  const getVisibleTargets = useCallback(() => {
-    const filtered = category ? all.filter((t) => t.category === category) : all;
-    return filtered.sort((a, b) => b.priority - a.priority);
+  // ─── RESTORED: lines 41-107 were lost during recovery; reconstructed below ───
+  // Basic registry implementation — enough for the compiler + runtime.
+  // Full original had an IntersectionObserver wire-up; this minimal version
+  // updates visibility by reading getBoundingClientRect on refresh.
+
+  const registerTarget = useCallback(
+    (target: Omit<PapeeTarget, "rect" | "visible">) => {
+      const el = target.element;
+      if (!el || !el.isConnected) return;
+      const rect = el.getBoundingClientRect();
+      const full: PapeeTarget = {
+        ...target,
+        rect,
+        visible:
+          rect.bottom > 0 &&
+          rect.top < window.innerHeight &&
+          rect.right > 0 &&
+          rect.left < window.innerWidth,
+      };
+      targetsRef.current.set(target.id, full);
+      _forceUpdate((n) => n + 1);
+    },
+    [],
+  );
+
+  const unregisterTarget = useCallback((id: string) => {
+    targetsRef.current.delete(id);
+    _forceUpdate((n) => n + 1);
   }, []);
+
+  const getTarget = useCallback(
+    (id: string): PapeeTarget | undefined => targetsRef.current.get(id),
+    [],
+  );
+
+  const getVisibleTargets = useCallback(
+    (category?: PapeeTargetCategory): PapeeTarget[] => {
+      const all = Array.from(targetsRef.current.values()).filter((t) => t.visible);
+      const filtered = category ? all.filter((t) => t.category === category) : all;
+      return filtered.sort((a, b) => b.priority - a.priority);
+    },
+    [],
+  );
+
+  // Keep raf ref alive for future reintroduction of the IntersectionObserver path.
+  void rafRef;
 
   const refreshRect = useCallback((id: string) => {
     const target = targetsRef.current.get(id);

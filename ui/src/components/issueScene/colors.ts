@@ -14,6 +14,15 @@ export function statusColor(status: string): { main: string; emissive: string } 
   return STATUS_COLORS[status] ?? STATUS_COLORS.todo;
 }
 
+/**
+ * Shell tint for a status — the softer outer glow color used by IssuePillar
+ * for the pillar's shell halo. Returns the emissive variant dimmed further.
+ */
+export function statusShellColor(status: string): string {
+  const s = STATUS_COLORS[status] ?? STATUS_COLORS.todo;
+  return s.emissive;
+}
+
 const AGENT_PALETTE = [
   "#B22B1A", "#C2185B", "#D97706", "#2E7D32",
   "#1B5E7A", "#00838F", "#6A1B9A", "#8D6E63",
@@ -35,3 +44,53 @@ export const ACID_RED = "#FF6B4A";
 export const APPROVAL_PENDING = "#FF4444";
 export const APPROVAL_APPROVED = "#34D399";
 export const APPROVAL_REJECTED = "#EF4444";
+
+/**
+ * Scene palette — collected named colors consumed across the issueScene.
+ * Individual scene files import `SCENE` and pull what they need.
+ */
+export const SCENE = {
+  bg: VOID_BG,
+  cream: WARM_CREAM,
+  creamDim: "#8A7D57",
+  gold: WARM_GOLD,
+  acid: ACID_RED,
+} as const;
+
+/**
+ * Derive a display color for a hover/selection target. Agent-owned kinds
+ * use the agent palette; everything else uses the status palette with
+ * a cream fallback for the focal issue itself.
+ */
+interface NodeLikeTarget {
+  kind: string;
+  data: {
+    status?: string;
+    agentId?: string | null;
+    author?: string | null;
+    color?: string;
+  };
+}
+export function colorForNode(target: NodeLikeTarget | null | undefined): string {
+  if (!target) return WARM_CREAM;
+  const d = target.data ?? ({} as NodeLikeTarget["data"]);
+  if (d.color) return d.color;
+  if (target.kind === "run") return agentColor(d.agentId ?? null);
+  if (target.kind === "comment") return agentColor(d.author ?? null);
+  if (d.status) return statusColor(d.status).main;
+  return WARM_CREAM;
+}
+
+/**
+ * Maps priority label to a 0..1 amplitude multiplier — used to scale the
+ * pillar's glow / breath amplitude proportional to issue importance.
+ */
+export function priorityAmplitude(priority: string | undefined | null): number {
+  switch (priority) {
+    case "critical": return 1.0;
+    case "high": return 0.75;
+    case "medium": return 0.5;
+    case "low": return 0.3;
+    default: return 0.5;
+  }
+}

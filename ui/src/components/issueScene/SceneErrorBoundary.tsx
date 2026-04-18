@@ -39,11 +39,19 @@ export class SceneErrorBoundary extends Component<
     return { hasError: true, message: error.message };
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, info: { componentStack?: string }) {
     // Log but don't re-throw — the whole point of this boundary is to
     // keep the page useful when the 3D layer dies.
     // eslint-disable-next-line no-console
-    console.warn("[IssueScene] caught:", error.message);
+    console.error("[IssueScene] caught:", error.message, "\nstack:", error.stack, "\ncomponents:", info.componentStack);
+    // Expose on window so an outside reporter can pick it up from preview eval.
+    if (typeof window !== "undefined") {
+      (window as unknown as { __sceneError?: unknown }).__sceneError = {
+        message: error.message,
+        stack: error.stack,
+        componentStack: info.componentStack,
+      };
+    }
   }
 
   render() {

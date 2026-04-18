@@ -31,6 +31,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { IssueScene } from "../components/issueScene/IssueScene";
+import { SceneErrorBoundary } from "../components/issueScene/SceneErrorBoundary";
 import {
   Activity as ActivityIcon,
   ChevronDown,
@@ -799,6 +801,31 @@ export function IssueDetail() {
           }}
         />
       </div>
+
+      {/* Thoughtscene — the 3D case-file visualization. Parents, runs,
+          comments, sub-matters, and approvals render as orbital/scene
+          elements. Wrapped in an error boundary so a WebGL failure
+          falls back gracefully instead of blanking the whole page. */}
+      <SceneErrorBoundary
+        label={issue.identifier ?? issue.id.slice(0, 8)}
+        height="clamp(420px, 60vh, 560px)"
+      >
+        <IssueScene
+          issue={issue}
+          comments={comments}
+          activity={activity}
+          childIssues={childIssues}
+          linkedRuns={linkedRuns}
+          agentMap={agentMap}
+          linkedApprovals={(linkedApprovals ?? []).map((a) => ({
+            id: a.id,
+            status: a.status,
+            requestedAt: a.requestedAt ?? a.createdAt ?? null,
+            decidedAt: a.decidedAt ?? null,
+          }))}
+          height="clamp(420px, 60vh, 560px)"
+        />
+      </SceneErrorBoundary>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">

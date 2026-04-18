@@ -21,7 +21,7 @@ function inferPage(pathname: string, params: Record<string, string | undefined>)
 
   const base: PapeePageInfo = { page: "other", agentId, issueId, projectId, workflowId, runId };
 
-  if (path.includes("/dashboard")) return { ...base, page: "dashboard" };
+  if (pathname.includes("/dashboard")) return { ...base, page: "dashboard" };
 
   if (runId && agentId) return { ...base, page: "agent-run" };
   if (agentId) return { ...base, page: "agent-detail" };
@@ -33,15 +33,15 @@ function inferPage(pathname: string, params: Record<string, string | undefined>)
 
   if (projectId) return { ...base, page: "project-detail" };
 
-  if (path.includes("/issues")) return { ...base, page: "issues" };
-  if (path.includes("/agents")) return { ...base, page: "agents" };
-  if (path.includes("/secrets")) return { ...base, page: "secrets" };
-  if (path.includes("/projects")) return { ...base, page: "projects" };
-  if (path.includes("/workflows")) return { ...base, page: "workflows" };
-  if (path.includes("/costs")) return { ...base, page: "costs" };
-  if (path.includes("/activity")) return { ...base, page: "activity" };
-  if (path.includes("/org")) return { ...base, page: "org" };
-  if (path.includes("/inbox")) return { ...base, page: "inbox" };
+  if (pathname.includes("/issues")) return { ...base, page: "issues" };
+  if (pathname.includes("/agents")) return { ...base, page: "agents" };
+  if (pathname.includes("/secrets")) return { ...base, page: "secrets" };
+  if (pathname.includes("/projects")) return { ...base, page: "projects" };
+  if (pathname.includes("/workflows")) return { ...base, page: "workflows" };
+  if (pathname.includes("/costs")) return { ...base, page: "costs" };
+  if (pathname.includes("/activity")) return { ...base, page: "activity" };
+  if (pathname.includes("/org")) return { ...base, page: "org" };
+  if (pathname.includes("/inbox")) return { ...base, page: "inbox" };
   return base;
 }
 

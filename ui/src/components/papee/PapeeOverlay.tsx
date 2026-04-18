@@ -8,8 +8,21 @@ import { PapeeCharacter } from "./PapeeCharacter";
 import type { PapeeAnimState } from "./PapeeSprites";
 import { PapeeMiniIndicator } from "./PapeeMiniIndicator";
 import { PapeeChat } from "./PapeeChat";
+import { PapeeBubbleStack } from "./PapeeBubbleStack";
+import { PapeeStreamingBubble } from "./PapeeStreamingBubble";
 import { cn } from "../../lib/utils";
 import { telemetry } from "../../lib/papee-telemetry";
+
+/** Ghost trail particle spawned behind Papee on fast motion (§Z.4). */
+interface PapeeGhost {
+  id: number;
+  x: number;
+  y: number;
+  state: PapeeAnimState;
+  spawnedAt: number;
+}
+/** Monotonic counter for ghost ids. */
+let nextGhostId = 1;
 
 /**
  * PapeeOverlay — the fixed overlay container that renders Papee on top of the UI.

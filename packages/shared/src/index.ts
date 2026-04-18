@@ -147,6 +147,30 @@ export type {
   SecretProviderDescriptor,
 } from "./types/index.js";
 
+// ─── Papee / GitHub / Evidence types (added as part of the Boared rebrand) ─
+export { PAPEE_TOOL_TIER } from "./types/index.js";
+export type {
+  PapeeTool,
+  PapeeToolKind,
+  PapeeToolResult,
+  PapeeRiskTier,
+  GithubConnection,
+  GithubRepoView,
+  GithubPullRequestListResult,
+  CommentFileEvidence,
+  IssueRelevantFile,
+  IssueEvidenceSet,
+  IssueEvidenceSetDetail,
+  IssueEvidenceSetItem,
+  HandoffChecklistItem,
+  HandoffChecklist,
+  HandoffEnforcement,
+  FileScope,
+  ReviewQueueItem,
+  ReviewQueueReason,
+  HotFile,
+} from "./types/index.js";
+
 export {
   createCompanySchema,
   updateCompanySchema,

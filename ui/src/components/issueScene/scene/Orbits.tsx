@@ -117,7 +117,7 @@ export function RunOrbit({
   if (runs.length === 0) return null;
 
   return (
-    <group ref={groupRef} rotation={[RUN_ORBIT_TILT, 0, 0]}>
+    <group ref={groupRef} rotation={[RUN_ORBIT_TILT_X, 0, RUN_ORBIT_TILT_Z]}>
       {/* Faint orbit guide ring */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
         <ringGeometry args={[RUN_ORBIT_RADIUS - 0.01, RUN_ORBIT_RADIUS + 0.01, 96]} />
@@ -219,7 +219,7 @@ export function CommentOrbit({
   return (
     <group
       ref={groupRef}
-      rotation={[COMMENT_ORBIT_TILT, 0, 0]}
+      rotation={[COMMENT_ORBIT_TILT_X, 0, COMMENT_ORBIT_TILT_Z]}
       position={[0, 0.8, 0]}
     >
       {/* Guide ring */}
@@ -356,7 +356,11 @@ export function AncestorChain({
        *  the whole ancestor column. Reinforces "this is the lineage
        *  above you" as one reading, even though each ancestor is
        *  helically offset. Thin bright core + softer halo. */}
-      <AncestorSpine topY={spineTop} />
+      {/* AncestorSpine: full implementation lost in the Apr 18 recovery.
+          Stubbed to null so the scene renders. Re-add the spine mesh in a
+          follow-up if desired. */}
+      {/* <AncestorSpine topY={spineTop} /> */}
+      {null as unknown as null}
 
       {ancestors.map((a, i) => {
         const y = (i + 1) * ANCESTOR_STEP;
@@ -561,4 +565,13 @@ export function ApprovalPortals({
       })}
     </group>
   );
+}
+
+/**
+ * SatelliteMoons — decorative orbiting spheres around the pillar core.
+ * Full original lost in the Apr 18 recovery; reconstructed as a no-op
+ * stub so IssueScene renders. Re-add the moon mesh/animation later.
+ */
+export function SatelliteMoons() {
+  return null;
 }

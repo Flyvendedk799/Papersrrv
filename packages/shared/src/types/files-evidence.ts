@@ -81,3 +81,50 @@ export interface IssueRelevantFile {
     mentions: number;
   };
 }
+
+/**
+ * Top-level file navigation scope for the Files panel left rail.
+ * Added as part of the post-recovery reconstruction; refine shapes as
+ * the files feature is re-exercised.
+ */
+export type FileScope =
+  | "hot"
+  | "recent"
+  | "mine"
+  | "unread"
+  | "all"
+  | "review"
+  | "locks";
+
+/**
+ * Reason a reviewer wants a file looked at; used as the key in a
+ * Record<ReviewQueueItem["reason"], string> label map.
+ */
+export type ReviewQueueReason =
+  | "evidence-missing"
+  | "checklist-block"
+  | "heat"
+  | "stale-approval"
+  | "other";
+
+export interface ReviewQueueItem {
+  id: string;
+  filePath: string;
+  reason: ReviewQueueReason;
+  queuedAt: string;
+  issueId?: string | null;
+  issueIdentifier?: string | null;
+  runId?: string | null;
+  note?: string | null;
+}
+
+export interface HotFile {
+  filePath: string;
+  score: number;
+  reasonLabel?: string;
+  lastEditedAt?: string | null;
+  lastEditorAgentId?: string | null;
+  lastEditorAgentName?: string | null;
+  editCount?: number;
+  contentHash?: string | null;
+}

@@ -1,5 +1,25 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { PapeeAnimState } from "../components/papee/PapeeSprites";
+import {
+  EMPTY_STACK,
+  applyShush,
+  makeBubble,
+  pruneExpired,
+  pushBubble as pushBubbleFn,
+  type BubbleSeverity,
+  type QueuedBubble,
+  type StackState,
+} from "../lib/papee-bubbles";
+import { telemetry } from "../lib/papee-telemetry";
 
 /* ---- Preferences ---- */
 
@@ -34,7 +54,11 @@ function readPref<K extends keyof PapeePreferences>(key: K): PapeePreferences[K]
 }
 
 function writePref<K extends keyof PapeePreferences>(key: K, value: PapeePreferences[K]) {
-  localStorage.setItem(`paperclip:papee-${key}`, JSON.stringify(value));
+  try {
+    localStorage.setItem(`paperclip:papee-${key}`, JSON.stringify(value));
+  } catch {
+    /* ignore quota errors */
+  }
 }
 
 /* ---- Reaction queue ---- */
@@ -61,27 +85,63 @@ const PRIORITY: Record<PapeeAnimState, number> = {
 
 /* ---- Context ---- */
 
+export interface PapeePosition {
+  x: number;
+  y: number;
+}
+
 interface PapeeContextValue {
+  // Preferences
   prefs: PapeePreferences;
   updatePrefs: (patch: Partial<PapeePreferences>) => void;
+
+  // Animation state
   animState: PapeeAnimState;
   setAnimState: (state: PapeeAnimState) => void;
   queueReaction: (state: PapeeAnimState, durationMs: number) => void;
+
+  // Chat
   chatOpen: boolean;
   setChatOpen: (open: boolean) => void;
   toggleChat: () => void;
-  speechBubble: string | null;
-  showSpeechBubble: (text: string, durationMs?: number) => void;
-  // Chat message persistence (survives navigation)
   chatMessages: ChatMessage[];
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
+
+  // Single-slot legacy speech bubble
+  speechBubble: string | null;
+  setSpeechBubble: React.Dispatch<React.SetStateAction<string | null>>;
+  showSpeechBubble: (text: string, durationMs?: number) => void;
+
+  // Stacked bubbles (§Z.7)
+  bubbleStack: QueuedBubble[];
+  pushBubble: (text: string, severity?: BubbleSeverity) => void;
+  shushBubbles: () => void;
+  clearBubbles: () => void;
+
+  // Position + movement (spring-driven)
+  position: PapeePosition;
+  setPosition: React.Dispatch<React.SetStateAction<PapeePosition>>;
+  targetPosition: PapeePosition;
+  setTargetPosition: React.Dispatch<React.SetStateAction<PapeePosition>>;
+  isMoving: boolean;
+  setIsMoving: React.Dispatch<React.SetStateAction<boolean>>;
+
+  // Streaming chat (§Z.8)
+  streamingActive: boolean;
+  setStreamingActive: React.Dispatch<React.SetStateAction<boolean>>;
+  streamingText: string;
+  setStreamingText: React.Dispatch<React.SetStateAction<string>>;
 }
 
 export interface ChatMessage {
   id: string;
   role: "user" | "papee";
   content: string;
-  actions?: { type: "navigate" | "wake_agent" | "show_issue" | "grant_secret"; label: string; payload: Record<string, string> }[];
+  actions?: {
+    type: "navigate" | "wake_agent" | "show_issue" | "grant_secret";
+    label: string;
+    payload: Record<string, string>;
+  }[];
   /** PAPEE_TOOLS_PLAN.md §M.8 — clickable suggestion chips. */
   followUps?: string[];
   timestamp: number;
@@ -101,6 +161,13 @@ export function usePapeeOptional() {
 
 /* ---- Provider ---- */
 
+function initialCornerPosition(prefCorner: PapeePreferences["position"]): PapeePosition {
+  if (typeof window === "undefined") return { x: 800, y: 600 };
+  const x = prefCorner === "bottom-right" ? window.innerWidth - 120 : 40;
+  const y = window.innerHeight - 160;
+  return { x, y };
+}
+
 export function PapeeProvider({ children }: { children: ReactNode }) {
   const [prefs, setPrefs] = useState<PapeePreferences>(() => ({
     visible: readPref("visible"),
@@ -116,6 +183,73 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
+  // ─── Position (spring-driven in-provider) ───
+  const [position, setPosition] = useState<PapeePosition>(() =>
+    initialCornerPosition(prefs.position),
+  );
+  const [targetPosition, setTargetPosition] = useState<PapeePosition>(() =>
+    initialCornerPosition(prefs.position),
+  );
+  const [isMoving, setIsMoving] = useState(false);
+
+  // When the corner preference changes, re-anchor Papee there.
+  useEffect(() => {
+    const anchor = initialCornerPosition(prefs.position);
+    setTargetPosition(anchor);
+  }, [prefs.position]);
+
+  // Simple spring integrator — reads target, nudges position, sets isMoving.
+  useEffect(() => {
+    let raf = 0;
+    const vel = { x: 0, y: 0 };
+    const STIFFNESS = 0.015;
+    const DAMPING = 0.9;
+    const SETTLE_DIST = 0.5;
+    const SETTLE_VEL = 0.1;
+
+    const tick = () => {
+      setPosition((pos) => {
+        const dx = targetPosition.x - pos.x;
+        const dy = targetPosition.y - pos.y;
+        vel.x = vel.x * DAMPING + dx * STIFFNESS;
+        vel.y = vel.y * DAMPING + dy * STIFFNESS;
+        const next = { x: pos.x + vel.x, y: pos.y + vel.y };
+        const dist = Math.hypot(dx, dy);
+        const speed = Math.hypot(vel.x, vel.y);
+        if (dist < SETTLE_DIST && speed < SETTLE_VEL) {
+          setIsMoving(false);
+          return targetPosition;
+        }
+        setIsMoving(true);
+        return next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [targetPosition]);
+
+  // ─── Bubble stack (§Z.7) ───
+  const [bubbleStackState, setBubbleStackState] = useState<StackState>(EMPTY_STACK);
+  useEffect(() => {
+    if (bubbleStackState.bubbles.length === 0) return;
+    const t = setInterval(() => {
+      setBubbleStackState((prev) => pruneExpired(prev));
+    }, 250);
+    return () => clearInterval(t);
+  }, [bubbleStackState.bubbles.length]);
+  const pushBubble = useCallback((text: string, severity: BubbleSeverity = "normal") => {
+    setBubbleStackState((prev) => pushBubbleFn(prev, makeBubble(text, severity)));
+  }, []);
+  const shushBubbles = useCallback(() => {
+    setBubbleStackState((prev) => applyShush(prev));
+  }, []);
+  const clearBubbles = useCallback(() => setBubbleStackState(EMPTY_STACK), []);
+
+  // ─── Streaming chat (§Z.8) ───
+  const [streamingActive, setStreamingActive] = useState(false);
+  const [streamingText, setStreamingText] = useState<string>("");
+
   const reactionQueue = useRef<QueuedReaction[]>([]);
   const reactionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,12 +264,10 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const animStateRef = useRef(animState);
+  animStateRef.current = animState;
+
   const setAnimState = useCallback((state: PapeeAnimState) => {
-    // PAPEE_TOOLS_PLAN.md — authoritative setter.
-    // Cancel any outstanding reactionQueue auto-revert timer so the
-    // caller's pose isn't clobbered 1-3s later by a leftover
-    // queueReaction cleanup. Direct setAnimState === "this is the
-    // current truth, forget whatever was pending".
     if (reactionTimer.current) {
       clearTimeout(reactionTimer.current);
       reactionTimer.current = null;
@@ -151,11 +283,9 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
       setAnimStateRaw("idle");
       return;
     }
-    // Sort by priority descending
     reactionQueue.current.sort((a, b) => b.priority - a.priority);
     const next = reactionQueue.current.shift()!;
     setAnimStateRaw(next.state);
-
     if (next.durationMs > 0) {
       reactionTimer.current = setTimeout(() => {
         processQueue();
@@ -163,19 +293,20 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const animStateRef = useRef(animState);
-  animStateRef.current = animState;
-
   const queueReaction = useCallback(
     (state: PapeeAnimState, durationMs: number) => {
       const priority = PRIORITY[state] ?? 0;
       const currentPriority = PRIORITY[animStateRef.current] ?? 0;
-
-      // If higher priority than current, interrupt
       if (priority > currentPriority) {
         if (reactionTimer.current) clearTimeout(reactionTimer.current);
         setAnimStateRaw(state);
-        telemetry.log("reaction.interrupt", { state, priority, durationMs, prev: animStateRef.current, prevPriority: currentPriority });
+        telemetry.log("reaction.interrupt", {
+          state,
+          priority,
+          durationMs,
+          prev: animStateRef.current,
+          prevPriority: currentPriority,
+        });
         if (durationMs > 0) {
           reactionTimer.current = setTimeout(() => {
             processQueue();
@@ -183,8 +314,6 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-
-      // Otherwise queue (avoid duplicates)
       if (!reactionQueue.current.some((r) => r.state === state)) {
         reactionQueue.current.push({ state, durationMs, priority });
         telemetry.log("reaction.queue", { state, priority, durationMs });
@@ -195,8 +324,8 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
 
   const toggleChat = useCallback(() => {
     setChatOpen((prev) => !prev);
-    if (animState === "sleeping") setAnimStateRaw("idle");
-  }, [animState]);
+    if (animStateRef.current === "sleeping") setAnimStateRaw("idle");
+  }, []);
 
   const showSpeechBubble = useCallback((text: string, durationMs = 4000) => {
     if (speechTimer.current) clearTimeout(speechTimer.current);
@@ -205,7 +334,7 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
     speechTimer.current = setTimeout(() => setSpeechBubble(null), durationMs);
   }, []);
 
-  // Cleanup timers and queue
+  // Cleanup timers
   useEffect(() => {
     return () => {
       if (reactionTimer.current) clearTimeout(reactionTimer.current);
@@ -214,43 +343,75 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Idle sub-animations (blink every 3-5s, look around every 10-15s)
+  // Idle micro-animations
   useEffect(() => {
     if (animState !== "idle") return;
     const blinkInterval = setInterval(() => {
       setAnimStateRaw("idle-blink");
       setTimeout(() => setAnimStateRaw("idle"), 200);
     }, 3000 + Math.random() * 2000);
-
     const lookInterval = setInterval(() => {
       setAnimStateRaw("idle-look-around");
       setTimeout(() => setAnimStateRaw("idle"), 1500);
     }, 10000 + Math.random() * 5000);
-
     return () => {
       clearInterval(blinkInterval);
       clearInterval(lookInterval);
     };
   }, [animState]);
 
-  return (
-    <PapeeCtx.Provider
-      value={{
-        prefs,
-        updatePrefs,
-        animState,
-        setAnimState,
-        queueReaction,
-        chatOpen,
-        setChatOpen,
-        toggleChat,
-        speechBubble,
-        showSpeechBubble,
-        chatMessages,
-        setChatMessages,
-      }}
-    >
-      {children}
-    </PapeeCtx.Provider>
+  const value = useMemo<PapeeContextValue>(
+    () => ({
+      prefs,
+      updatePrefs,
+      animState,
+      setAnimState,
+      queueReaction,
+      chatOpen,
+      setChatOpen,
+      toggleChat,
+      chatMessages,
+      setChatMessages,
+      speechBubble,
+      setSpeechBubble,
+      showSpeechBubble,
+      bubbleStack: bubbleStackState.bubbles,
+      pushBubble,
+      shushBubbles,
+      clearBubbles,
+      position,
+      setPosition,
+      targetPosition,
+      setTargetPosition,
+      isMoving,
+      setIsMoving,
+      streamingActive,
+      setStreamingActive,
+      streamingText,
+      setStreamingText,
+    }),
+    [
+      prefs,
+      updatePrefs,
+      animState,
+      setAnimState,
+      queueReaction,
+      chatOpen,
+      toggleChat,
+      chatMessages,
+      speechBubble,
+      showSpeechBubble,
+      bubbleStackState.bubbles,
+      pushBubble,
+      shushBubbles,
+      clearBubbles,
+      position,
+      targetPosition,
+      isMoving,
+      streamingActive,
+      streamingText,
+    ],
   );
+
+  return <PapeeCtx.Provider value={value}>{children}</PapeeCtx.Provider>;
 }

@@ -4,6 +4,21 @@
  * Colors use CSS vars for theme adaptation.
  */
 
+/* ---- Shoe ---- */
+
+/** Small oval shoe used by several foot-down poses. */
+function Shoe({ cx, cy }: { cx: number; cy: number }) {
+  return (
+    <ellipse
+      cx={cx}
+      cy={cy}
+      rx={4.5}
+      ry={2.2}
+      fill="currentColor"
+    />
+  );
+}
+
 /* ---- Body ---- */
 
 /** The paperclip body — the signature shape. Rounded, friendly, slightly chunky. */

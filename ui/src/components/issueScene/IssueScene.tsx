@@ -11,13 +11,10 @@
  * ───────────────────────────────────────────────────────────────────── */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-/* EffectComposer + Bloom + Vignette retired — postprocessing crashed
- * the canvas on every HMR race. Emissive materials + additive
- * blending on the neuron field handle the glow effect instead. */
-// import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
+import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type {
   Issue,
@@ -52,12 +49,30 @@ import { Substrate } from "./scene/Substrate";
 // import { StarFlecks } from "./scene/StarFlecks";
 
 import { SelectionFocus } from "./scene/SelectionFocus";
+import { HoverFocus } from "./scene/HoverFocus";
+import { PillarSpindle } from "./scene/PillarSpindle";
+import { ReflectionPool } from "./scene/ReflectionPool";
+import { AmbientDebris } from "./scene/AmbientDebris";
+import { CaseTimeline } from "./scene/CaseTimeline";
+import { Synapses } from "./scene/Synapses";
+import { AxisLabels } from "./scene/AxisLabels";
+import { NowArrow } from "./scene/NowArrow";
+import { ClusterLabels } from "./scene/ClusterLabels";
+import { TimeRings } from "./scene/TimeRings";
+import { HoverLabel3D } from "./scene/HoverLabel3D";
+import { NeuronField } from "./scene/NeuronField";
+import { NetworkFiring } from "./scene/NetworkFiring";
+import { ThoughtEcho } from "./scene/ThoughtEcho";
+import { CognitiveCloud } from "./scene/CognitiveCloud";
+import { FirstClickHint } from "./scene/FirstClickHint";
 import { atmosphereFor } from "./scene/atmosphere";
 import { narrativeFor } from "./scene/narrative";
+import { ParticleField } from "./particles/ParticleField";
 
 import { CameraChoreographer } from "./scene/CameraChoreographer";
 import type { CameraPoseKey } from "./scene/cinematography";
 
+import { CompassInScene, CompassOverlay } from "./overlays/Compass";
 import { SelectedPanel } from "./overlays/SelectedPanel";
 import { TitleCard } from "./overlays/TitleCard";
 import { Ledger } from "./overlays/Ledger";
@@ -65,6 +80,15 @@ import { ReadingKey } from "./overlays/ReadingKey";
 import { QuestionPills } from "./overlays/QuestionPills";
 import { FocusPanel } from "./overlays/FocusPanel";
 import { useLens } from "./state/useLens";
+import {
+  SceneStateProvider,
+  useSceneActionsOptional,
+  useSceneStateOptional,
+  useHoverStoreHandleOptional,
+  targetToRef,
+  resolveSelectionRef,
+} from "./state/SceneStateContext";
+import { chaptersFor } from "./data/chapters";
 import { TimeSpine } from "./overlays/TimeSpine";
 import {
   StatsStrip,
@@ -107,7 +131,41 @@ interface IssueSceneProps {
   targetPose?: CameraPoseKey | null;
 }
 
+/**
+ * Public entry point — wraps the inner scene in a `SceneStateProvider`
+ * so strict hooks (`useSceneActions`, `useSceneState`) in subcomponents
+ * like CaseTimeline/AgentLane can resolve. The provider wants the graph
+ * pre-built, so we build it here and pass it down to avoid computing
+ * twice.
+ */
 export function IssueScene(props: IssueSceneProps) {
+  const graph = useIssueGraph(props);
+  const narrative = useMemo(() => narrativeFor(graph, graph.root), [graph]);
+  const chapters = useMemo(() => chaptersFor(graph, narrative), [graph, narrative]);
+  return (
+    <SceneStateProvider
+      graph={graph}
+      narrative={narrative}
+      chapters={chapters}
+      tourRunning={false}
+    >
+      <IssueSceneInner {...props} graph={graph} narrative={narrative} />
+    </SceneStateProvider>
+  );
+}
+
+interface IssueSceneInnerProps extends IssueSceneProps {
+  graph: ReturnType<typeof useIssueGraph>;
+  narrative: ReturnType<typeof narrativeFor>;
+}
+
+function IssueSceneInner(props: IssueSceneInnerProps) {
+  // The outer IssueScene already computed graph + narrative for the
+  // SceneStateProvider; the inner body re-memoises them (cheap) and
+  // proceeds unchanged. `graphProp`/`narrativeProp` are available here
+  // if any future hook wants to skip the duplicate work.
+  void props.graph;
+  void props.narrative;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const graph = useIssueGraph(props);
   const isMini = props.mode === "mini";
