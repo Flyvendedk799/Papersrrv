@@ -1,6 +1,7 @@
 import type {
   BacklogItem,
   BacklogItemFilters,
+  BacklogOverview,
   BacklogPlan,
   BulkBacklogItemInput,
   BulkBacklogItemResult,
@@ -48,6 +49,15 @@ export const backlogApi = {
       `/companies/${companyId}/backlog/items/bulk`,
       input,
     ),
+  overview: (companyId: string, opts?: { recentDays?: number; staleDays?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.recentDays) params.set("recentDays", String(opts.recentDays));
+    if (opts?.staleDays) params.set("staleDays", String(opts.staleDays));
+    const qs = params.toString();
+    return api.get<BacklogOverview>(
+      `/companies/${companyId}/backlog/overview${qs ? `?${qs}` : ""}`,
+    );
+  },
 
   listPlans: (companyId: string, includeArchived = false) => {
     const qs = includeArchived ? "?includeArchived=1" : "";

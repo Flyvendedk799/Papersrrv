@@ -198,14 +198,13 @@ export function Backlog() {
     enabled: !!selectedCompanyId,
   });
 
-  // Unfiltered, archive-inclusive snapshot for the insights strip (B5).
-  // Stats need to reflect the whole backlog, not the currently filtered
-  // slice — otherwise clicking a tile to filter would erase the totals
-  // it was just based on.
-  const { data: insightItems } = useQuery({
-    queryKey: queryKeys.backlog.items(selectedCompanyId ?? "", "__insights"),
-    queryFn: () =>
-      backlogApi.listItems(selectedCompanyId!, { includeArchived: true }),
+  // Insights strip (B5) reads from a server aggregate so totals stay
+  // correct when the user filters the list view (filters apply to
+  // /items only). Cheaper than client-side aggregation for large
+  // backlogs and keeps the rendering work off the main thread.
+  const { data: overview, isLoading: overviewLoading } = useQuery({
+    queryKey: queryKeys.backlog.overview(selectedCompanyId ?? ""),
+    queryFn: () => backlogApi.overview(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -366,8 +365,8 @@ export function Backlog() {
       </header>
 
       <BacklogInsightsStrip
-        items={insightItems ?? []}
-        plans={plans}
+        overview={overview}
+        isLoading={overviewLoading}
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
       />
