@@ -11,6 +11,10 @@ import { useCompany } from "../../context/CompanyContext";
 import { cn } from "../../lib/utils";
 import { WorkflowRunDag } from "./WorkflowRunDag";
 import { WorkflowOutputs } from "./WorkflowOutputs";
+import { usePapeeEnact } from "../../hooks/usePapeeEnact";
+import { isFeatureEnabled } from "../../lib/featureFlags";
+import { SentToBacklogIndicator } from "../backlog/SentToBacklogIndicator";
+import { Inbox } from "lucide-react";
 import type { WorkflowStepRun, WorkflowStep } from "@paperclipai/shared";
 
 const statusConfig: Record<string, { icon: typeof CheckCircle2; color: string; label: string; bg: string; border: string }> = {
@@ -55,6 +59,8 @@ export function WorkflowRunView({ runId, onApprove, onReject }: Props) {
   const companyId = selectedCompanyId!;
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"pipeline" | "dag">("pipeline");
+  const backlogEnabled = isFeatureEnabled("backlog_tab_enabled");
+  const { enact: enactPapeeTool } = usePapeeEnact();
 
   const { data: run, isLoading } = useQuery({
     queryKey: queryKeys.workflows.run(companyId, runId),
@@ -115,6 +121,38 @@ export function WorkflowRunView({ runId, onApprove, onReject }: Props) {
               <span>{formatDuration(elapsed)}</span>
             )}
             <span>{completed}/{total} steps</span>
+            {/* backlog3.0 C2: capture a follow-up idea from this run */}
+            {backlogEnabled && (
+              <>
+                <SentToBacklogIndicator
+                  source="run"
+                  sourceRefId={runId}
+                  sourceRefType="workflow_run"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const title = `Follow-up from run ${runId.slice(0, 8)}`;
+                    void enactPapeeTool({
+                      kind: "createBacklogItem",
+                      title,
+                      source: "run",
+                      sourceRef: {
+                        type: "workflow_run",
+                        id: runId,
+                        workflowId: run.workflowId ?? undefined,
+                        status: run.status ?? undefined,
+                      },
+                    });
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 hover:bg-accent/50"
+                  title="Capture a follow-up idea from this run to the backlog"
+                >
+                  <Inbox className="size-3" aria-hidden />
+                  Send to Backlog
+                </button>
+              </>
+            )}
           </div>
         </div>
 

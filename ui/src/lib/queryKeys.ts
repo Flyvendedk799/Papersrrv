@@ -132,5 +132,14 @@ export const queryKeys = {
       ["backlog", companyId, "plan", id] as const,
     overview: (companyId: string) =>
       ["backlog", companyId, "overview"] as const,
+    bySource: (companyId: string, params: { source?: string; sourceRefId?: string; sourceRefType?: string }) =>
+      [
+        "backlog",
+        companyId,
+        "by-source",
+        params.source ?? null,
+        params.sourceRefId ?? null,
+        params.sourceRefType ?? null,
+      ] as const,
   },
 };

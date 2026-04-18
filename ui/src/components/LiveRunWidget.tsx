@@ -7,9 +7,11 @@ import { getUIAdapter } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, relativeTime, formatDateTime } from "../lib/utils";
-import { ExternalLink, Square } from "lucide-react";
+import { ExternalLink, Inbox, Square } from "lucide-react";
 import { Identity } from "./Identity";
 import { StatusBadge } from "./StatusBadge";
+import { usePapeeEnact } from "../hooks/usePapeeEnact";
+import { isFeatureEnabled } from "../lib/featureFlags";
 
 interface LiveRunWidgetProps {
   issueId: string;
@@ -239,6 +241,8 @@ function parsePersistedLogContent(
 }
 
 export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
+  const { enact: enactPapeeTool } = usePapeeEnact();
+  const backlogEnabled = isFeatureEnabled("backlog_tab_enabled");
   const queryClient = useQueryClient();
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [cancellingRunIds, setCancellingRunIds] = useState(new Set<string>());
@@ -581,6 +585,25 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
                   <Square className="h-2 w-2" fill="currentColor" />
                   {cancellingRunIds.has(run.id) ? "Stopping…" : "Stop"}
                 </button>
+                {backlogEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const title = `Follow-up from ${run.agentName} run ${run.id.slice(0, 8)}`;
+                      void enactPapeeTool({
+                        kind: "createBacklogItem",
+                        title,
+                        source: "run",
+                        sourceRef: { type: "run", runId: run.id, agentId: run.agentId, issueId },
+                      });
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                    title="Capture follow-up in backlog"
+                  >
+                    <Inbox className="h-2.5 w-2.5" />
+                    Send to Backlog
+                  </button>
+                )}
                 <Link
                   to={`/agents/${run.agentId}/runs/${run.id}`}
                   className="inline-flex items-center gap-1 text-[10px] text-cyan-600 hover:text-cyan-500 dark:text-cyan-300 dark:hover:text-cyan-200"

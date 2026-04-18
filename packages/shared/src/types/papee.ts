@@ -47,8 +47,11 @@ export type PapeeTool =
       kind: "createBacklogItem";
       title: string;
       body?: string;
-      source?: string;
+      source?: "chat" | "issue" | "run" | "workflow" | "manual" | "agent";
       sourceRef?: Record<string, unknown> | null;
+      projectId?: string;
+      goalId?: string;
+      planId?: string;
     }
   | { kind: "linkIssues"; sourceId: string; targetId: string; relation: "blocks" | "blocked-by" | "relates-to" }
   | { kind: "navigate"; path: string }

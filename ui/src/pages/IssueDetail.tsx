@@ -9,6 +9,7 @@ import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { filesApi } from "../api/files";
 import { workflowsApi } from "../api/workflows";
+import { backlogApi } from "../api/backlog";
 import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -40,6 +41,7 @@ import {
   EyeOff,
   FileText,
   Hexagon,
+  Inbox,
   ListTree,
   MessageSquare,
   MoreHorizontal,
@@ -49,6 +51,9 @@ import {
   Workflow,
   X,
 } from "lucide-react";
+import { usePapeeEnact } from "../hooks/usePapeeEnact";
+import { isFeatureEnabled } from "../lib/featureFlags";
+import { SentToBacklogIndicator } from "../components/backlog/SentToBacklogIndicator";
 import { MarkdownBody } from "../components/MarkdownBody";
 import type { ActivityEvent } from "@paperclipai/shared";
 import type { Agent, IssueAttachment, FileSnapshot } from "@paperclipai/shared";
@@ -235,6 +240,8 @@ export function IssueDetail() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
+  const { enact: enactPapeeTool } = usePapeeEnact();
+  const backlogEnabled = isFeatureEnabled("backlog_tab_enabled");
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("comments");
   const [secondaryOpen, setSecondaryOpen] = useState({
@@ -275,6 +282,19 @@ export function IssueDetail() {
     queryKey: queryKeys.issues.approvals(issueId!),
     queryFn: () => issuesApi.listApprovals(issueId!),
     enabled: !!issueId,
+  });
+
+  const { data: linkedBacklog } = useQuery({
+    queryKey: queryKeys.backlog.bySource(selectedCompanyId ?? "", {
+      source: "issue",
+      sourceRefId: issueId ?? undefined,
+    }),
+    queryFn: () =>
+      backlogApi.findBySource(selectedCompanyId!, {
+        source: "issue",
+        sourceRefId: issueId!,
+      }),
+    enabled: !!selectedCompanyId && !!issueId && backlogEnabled,
   });
 
   const runIds = useMemo(() => (linkedRuns ?? []).map((r) => r.runId), [linkedRuns]);
@@ -755,13 +775,44 @@ export function IssueDetail() {
               {convertToWorkflow.isPending ? "Converting..." : "Convert to Workflow"}
             </Button>
 
+            {/* backlog3.0 C2: surface when this issue has been captured to the backlog */}
+            {backlogEnabled && (
+              <SentToBacklogIndicator
+                source="issue"
+                sourceRefId={issue.id}
+                sourceRefType="issue"
+              />
+            )}
+
             <Popover open={moreOpen} onOpenChange={setMoreOpen}>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="icon-xs" className="shrink-0">
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </PopoverTrigger>
-            <PopoverContent className="w-44 p-1" align="end">
+            <PopoverContent className="w-48 p-1" align="end">
+              {backlogEnabled && (
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                  onClick={() => {
+                    const title = issue.title?.slice(0, 120) || "Captured from issue";
+                    const origin = issue.identifier ?? issue.id.slice(0, 8);
+                    void enactPapeeTool({
+                      kind: "createBacklogItem",
+                      title,
+                      body: issue.description ?? undefined,
+                      source: "issue",
+                      sourceRef: { type: "issue", id: issue.id, identifier: issue.identifier ?? null, origin },
+                      projectId: issue.projectId ?? undefined,
+                      goalId: issue.goalId ?? undefined,
+                    });
+                    setMoreOpen(false);
+                  }}
+                >
+                  <Inbox className="h-3 w-3" />
+                  Send to Backlog
+                </button>
+              )}
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
                 onClick={() => {
@@ -786,6 +837,30 @@ export function IssueDetail() {
           as="h2"
           className="text-xl font-bold"
         />
+
+        {backlogEnabled && linkedBacklog && linkedBacklog.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Inbox className="h-3 w-3" />
+            <span>Sent to Backlog:</span>
+            {linkedBacklog.slice(0, 3).map((b, i) => (
+              <span key={b.id} className="inline-flex items-center">
+                <Link
+                  to={`/backlog?item=${b.id}`}
+                  className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+                  title={b.title}
+                >
+                  {b.title.length > 40 ? `${b.title.slice(0, 40)}…` : b.title}
+                </Link>
+                {i < Math.min(linkedBacklog.length, 3) - 1 && <span className="mx-1">·</span>}
+              </span>
+            ))}
+            {linkedBacklog.length > 3 && (
+              <Link to="/backlog" className="underline decoration-dotted underline-offset-2 hover:text-foreground">
+                +{linkedBacklog.length - 3} more
+              </Link>
+            )}
+          </div>
+        )}
 
         <InlineEditor
           value={issue.description ?? ""}

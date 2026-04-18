@@ -46,6 +46,30 @@ export function backlogRoutes(db: Db) {
     res.json(items);
   });
 
+  /**
+   * Lookup items captured from a specific origin (backlog3.0 C2).
+   *
+   * Origin surfaces — Issue detail, run detail, workflow output panel,
+   * chat threads — use this to render a "Sent to Backlog" indicator
+   * that links back to the captured items. Registered before
+   * `/items/:id` so `by-source` isn't swallowed by the param route.
+   */
+  router.get("/companies/:companyId/backlog/items/by-source", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const source = (req.query.source as string | undefined) || undefined;
+    const sourceRefId = (req.query.sourceRefId as string | undefined) || undefined;
+    const sourceRefType = (req.query.sourceRefType as string | undefined) || undefined;
+    const items = await svc.findBySourceRef(companyId, {
+      source: source as never,
+      sourceRefId,
+      sourceRefType,
+      includeArchived:
+        req.query.includeArchived === "true" || req.query.includeArchived === "1",
+    });
+    res.json(items);
+  });
+
   router.get("/companies/:companyId/backlog/items/:id", async (req, res) => {
     const companyId = req.params.companyId as string;
     const id = req.params.id as string;

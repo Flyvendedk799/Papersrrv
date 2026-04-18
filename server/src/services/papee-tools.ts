@@ -1,6 +1,10 @@
 import type { Db } from "@paperclipai/db";
 import { issueLinks } from "@paperclipai/db";
-import type { PapeeTool, PapeeToolResult } from "@paperclipai/shared";
+import type {
+  BacklogItemSourceRef,
+  PapeeTool,
+  PapeeToolResult,
+} from "@paperclipai/shared";
 import { issueService } from "./issues.js";
 import { heartbeatService } from "./heartbeat.js";
 import { activityService } from "./activity.js";
@@ -269,8 +273,11 @@ export function papeeToolsService(db: Db) {
               title: tool.title,
               body: tool.body ?? null,
               status: "idea",
-              source: "chat",
-              sourceRef: (tool.sourceRef ?? null) as import("@paperclipai/shared").BacklogItemSourceRef | null,
+              source: tool.source ?? "chat",
+              sourceRef: (tool.sourceRef ?? null) as BacklogItemSourceRef | null,
+              projectId: tool.projectId ?? null,
+              goalId: tool.goalId ?? null,
+              planId: tool.planId ?? null,
             },
             {
               userId: actor.type === "user" ? (actor.userId ?? actor.id) : null,
@@ -279,11 +286,13 @@ export function papeeToolsService(db: Db) {
           );
           await audit(companyId, actor, "createBacklogItem", { type: "backlog_item", id: created.id }, {
             title: tool.title,
+            source: created.source,
           });
           return {
             ok: true,
-            summary: "Saved to your backlog",
+            summary: `Saved to your backlog: ${created.title.slice(0, 60)}`,
             entity: { type: "backlog_item", id: created.id },
+            data: { backlogItemId: created.id, status: created.status },
           };
         }
 

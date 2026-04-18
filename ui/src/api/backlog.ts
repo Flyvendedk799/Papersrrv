@@ -31,6 +31,19 @@ function buildItemQuery(filters?: BacklogItemFilters): string {
 export const backlogApi = {
   listItems: (companyId: string, filters?: BacklogItemFilters) =>
     api.get<BacklogItem[]>(`/companies/${companyId}/backlog/items${buildItemQuery(filters)}`),
+  findBySource: (
+    companyId: string,
+    params: { source?: string; sourceRefId?: string; sourceRefType?: string; includeArchived?: boolean },
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.source) qs.set("source", params.source);
+    if (params.sourceRefId) qs.set("sourceRefId", params.sourceRefId);
+    if (params.sourceRefType) qs.set("sourceRefType", params.sourceRefType);
+    if (params.includeArchived) qs.set("includeArchived", "1");
+    return api.get<BacklogItem[]>(
+      `/companies/${companyId}/backlog/items/by-source?${qs.toString()}`,
+    );
+  },
   getItem: (companyId: string, id: string) =>
     api.get<BacklogItem>(`/companies/${companyId}/backlog/items/${id}`),
   createItem: (companyId: string, input: CreateBacklogItemInput) =>

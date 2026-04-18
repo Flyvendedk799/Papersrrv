@@ -281,6 +281,50 @@ export function backlogService(db: Db) {
       return row ? itemToApi(row) : null;
     },
 
+    /**
+     * Look up backlog items that were captured from a given origin
+     * (backlog3.0 C2). Used by origin surfaces — Issue detail, run
+     * detail, workflow output, chat message — to render a "Sent to
+     * Backlog" indicator that back-links to the captured ideas.
+     *
+     * Matches are done on `source` + a JSONB `sourceRef.id` lookup so
+     * callers don't need to mirror the full provenance shape.
+     * Archived items are excluded by default; callers can opt in.
+     */
+    async findBySourceRef(
+      companyId: string,
+      params: {
+        source?: BacklogItemSource;
+        sourceRefId?: string;
+        sourceRefType?: string;
+        includeArchived?: boolean;
+      },
+    ): Promise<BacklogItem[]> {
+      const { source, sourceRefId, sourceRefType, includeArchived } = params;
+      if (!sourceRefId && !sourceRefType) return [];
+      const conds = [eq(backlogItems.companyId, companyId)];
+      if (!includeArchived) {
+        conds.push(sql`${backlogItems.deletedAt} is null`);
+      }
+      if (source) {
+        assertSource(source);
+        conds.push(eq(backlogItems.source, source));
+      }
+      if (sourceRefId) {
+        conds.push(sql`${backlogItems.sourceRef}->>'id' = ${sourceRefId}`);
+      }
+      if (sourceRefType) {
+        conds.push(sql`${backlogItems.sourceRef}->>'type' = ${sourceRefType}`);
+      }
+      const rows = await db
+        .select()
+        .from(backlogItems)
+        .where(and(...conds))
+        .orderBy(desc(backlogItems.createdAt))
+        .limit(50);
+      return rows.map(itemToApi);
+    },
+
     async createItem(
       companyId: string,
       input: CreateBacklogItemInput,
