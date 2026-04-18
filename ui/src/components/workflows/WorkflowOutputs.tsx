@@ -1,11 +1,33 @@
-import { FileText, Image, Download, ExternalLink } from "lucide-react";
+import { FileText, Image, Download, ExternalLink, Inbox } from "lucide-react";
 import type { WorkflowStepRun } from "@paperclipai/shared";
+
+interface WorkflowOutputFile {
+  name: string;
+  content?: string;
+  mimeType?: string;
+  size?: number;
+  url?: string;
+}
+
+/**
+ * Payload emitted when a user clicks "Send to Backlog" on a workflow
+ * artifact or JSON output (backlog3.0 C5). The caller is responsible
+ * for dispatching the actual backlog creation; this component stays
+ * agnostic to routing/feature flags.
+ */
+export interface WorkflowOutputCapturePayload {
+  stepRunId: string;
+  stepName: string;
+  artifact?: WorkflowOutputFile;
+  outputJson?: unknown;
+}
 
 interface Props {
   stepRuns: (WorkflowStepRun & { step?: { name: string; stepType: string; stepOrder: number } | null })[];
+  onCapture?: (payload: WorkflowOutputCapturePayload) => void;
 }
 
-export function WorkflowOutputs({ stepRuns }: Props) {
+export function WorkflowOutputs({ stepRuns, onCapture }: Props) {
   // Find the last succeeded step run (highest step_order)
   const succeededRuns = stepRuns
     .filter(sr => sr.status === "succeeded" && sr.output && Object.keys(sr.output).length > 0)
@@ -17,7 +39,8 @@ export function WorkflowOutputs({ stepRuns }: Props) {
   }
 
   const output = lastRun.output as Record<string, unknown>;
-  const files = output.files as Array<{ name: string; content?: string; mimeType?: string; size?: number; url?: string }> | undefined;
+  const files = output.files as WorkflowOutputFile[] | undefined;
+  const lastStepName = lastRun.step?.name ?? "Final step";
 
   if (Array.isArray(files) && files.length > 0) {
     return (
@@ -106,6 +129,31 @@ export function WorkflowOutputs({ stepRuns }: Props) {
                   Download
                 </button>
               )}
+
+              {/*
+                backlog3.0 C5: capture the artifact as a backlog idea.
+                The sourceRef carries a descriptor, not the content
+                itself — links remain resolvable via existing
+                artifact retrieval paths and gracefully no-op if the
+                artifact is later unavailable.
+              */}
+              {onCapture && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onCapture({
+                      stepRunId: lastRun.id,
+                      stepName: lastStepName,
+                      artifact: file,
+                    })
+                  }
+                  className="flex items-center gap-1 text-[10px] text-indigo-600 hover:underline"
+                  title="Capture this artifact as a backlog item"
+                >
+                  <Inbox className="h-3 w-3" />
+                  Send to Backlog
+                </button>
+              )}
             </div>
           );
         })}
@@ -116,9 +164,28 @@ export function WorkflowOutputs({ stepRuns }: Props) {
   // Fallback: JSON view
   return (
     <div>
-      <p className="text-[10px] text-muted-foreground mb-1">
-        Output from: {lastRun.step?.name ?? "Final step"}
-      </p>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <p className="text-[10px] text-muted-foreground">
+          Output from: {lastStepName}
+        </p>
+        {onCapture && (
+          <button
+            type="button"
+            onClick={() =>
+              onCapture({
+                stepRunId: lastRun.id,
+                stepName: lastStepName,
+                outputJson: output,
+              })
+            }
+            className="flex items-center gap-1 text-[10px] text-indigo-600 hover:underline"
+            title="Capture this output as a backlog item"
+          >
+            <Inbox className="h-3 w-3" />
+            Send to Backlog
+          </button>
+        )}
+      </div>
       <pre className="text-[11px] font-mono bg-muted/50 rounded-md p-3 overflow-x-auto whitespace-pre-wrap max-h-60">
         {JSON.stringify(output, null, 2)}
       </pre>

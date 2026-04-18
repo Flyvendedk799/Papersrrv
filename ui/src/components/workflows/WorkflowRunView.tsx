@@ -289,7 +289,37 @@ export function WorkflowRunView({ runId, onApprove, onReject }: Props) {
                     )}
                     {hasOutput && (
                       <div>
-                        <div className="text-[10px] text-muted-foreground font-medium mb-1">Output</div>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <div className="text-[10px] text-muted-foreground font-medium">Output</div>
+                          {/* backlog3.0 C5: capture a specific step output */}
+                          {backlogEnabled && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const stepName = sr.step?.name ?? "Step";
+                                void enactPapeeTool({
+                                  kind: "createBacklogItem",
+                                  title: `Follow-up: ${stepName}`,
+                                  body: `From step: ${stepName}`,
+                                  source: "run",
+                                  sourceRef: {
+                                    type: "workflow_run",
+                                    id: runId,
+                                    workflowId: run.workflowId ?? undefined,
+                                    stepRunId: sr.id,
+                                    stepName,
+                                  },
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline"
+                              title="Capture this step's output as a backlog item"
+                            >
+                              <Inbox className="h-3 w-3" />
+                              Send to Backlog
+                            </button>
+                          )}
+                        </div>
                         <pre className="text-[11px] font-mono bg-muted/50 rounded-md p-2 overflow-x-auto whitespace-pre-wrap max-h-40">
                           {JSON.stringify(sr.output, null, 2)}
                         </pre>
@@ -324,7 +354,56 @@ export function WorkflowRunView({ runId, onApprove, onReject }: Props) {
       {run.status === "succeeded" && stepRuns.length > 0 && (
         <div className="border-t border-border mt-4 pt-4">
           <h3 className="text-sm font-medium mb-3">Workflow Outputs</h3>
-          <WorkflowOutputs stepRuns={stepRuns} />
+          <WorkflowOutputs
+            stepRuns={stepRuns}
+            onCapture={
+              backlogEnabled
+                ? (payload) => {
+                    /*
+                      backlog3.0 C5: promote a workflow output or
+                      artifact into a backlog idea. The sourceRef
+                      captures the step run + optional artifact
+                      descriptor so the backlog item can navigate
+                      back to the output via existing retrieval
+                      paths. Artifact content is NOT copied — if the
+                      underlying artifact is GCed later, the link
+                      gracefully dangles (see backlog2.0 Immutability
+                      Invariant).
+                    */
+                    const artifact = payload.artifact;
+                    const title = artifact
+                      ? `Artifact: ${artifact.name}`
+                      : `Follow-up: ${payload.stepName}`;
+                    const bodyParts: string[] = [];
+                    bodyParts.push(`From step: ${payload.stepName}`);
+                    if (artifact?.mimeType) bodyParts.push(`Type: ${artifact.mimeType}`);
+                    if (artifact?.size != null) bodyParts.push(`Size: ${artifact.size} B`);
+                    if (artifact?.url) bodyParts.push(`URL: ${artifact.url}`);
+                    void enactPapeeTool({
+                      kind: "createBacklogItem",
+                      title,
+                      body: bodyParts.join("\n") || undefined,
+                      source: "run",
+                      sourceRef: {
+                        type: "workflow_run",
+                        id: runId,
+                        workflowId: run.workflowId ?? undefined,
+                        stepRunId: payload.stepRunId,
+                        stepName: payload.stepName,
+                        artifact: artifact
+                          ? {
+                              name: artifact.name,
+                              mimeType: artifact.mimeType ?? null,
+                              size: artifact.size ?? null,
+                              url: artifact.url ?? null,
+                            }
+                          : undefined,
+                      },
+                    });
+                  }
+                : undefined
+            }
+          />
         </div>
       )}
     </div>
