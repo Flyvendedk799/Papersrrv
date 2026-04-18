@@ -157,3 +157,44 @@ export interface ReorderBacklogItemInput {
   planId?: string | null;
   status?: BacklogItemStatus;
 }
+
+/**
+ * Bulk operations on backlog items (backlog3.0 B4).
+ *
+ * Single endpoint surface so triage actions stay atomic per-item but
+ * are dispatched in one round-trip. The server returns a per-item
+ * result so partial failures are reported clearly (no silent drops).
+ */
+export const BACKLOG_BULK_ACTIONS = ["patch", "archive"] as const;
+export type BacklogBulkAction = (typeof BACKLOG_BULK_ACTIONS)[number];
+
+export interface BacklogBulkPatch {
+  status?: BacklogItemStatus;
+  priority?: string | null;
+  planId?: string | null;
+  projectId?: string | null;
+  goalId?: string | null;
+  ownerUserId?: string | null;
+  ownerAgentId?: string | null;
+}
+
+export interface BulkBacklogItemInput {
+  ids: string[];
+  action: BacklogBulkAction;
+  patch?: BacklogBulkPatch;
+}
+
+export interface BulkBacklogItemResultEntry {
+  id: string;
+  status: "ok" | "error";
+  item?: BacklogItem;
+  error?: string;
+}
+
+export interface BulkBacklogItemResult {
+  action: BacklogBulkAction;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BulkBacklogItemResultEntry[];
+}

@@ -144,6 +144,13 @@ export function BacklogListView({
         if (prev) focusRow(prev);
         return;
       }
+      // Selection shortcut for bulk-action triage (B4): `x` toggles
+      // selection of the focused row, mirroring Linear/Issues conventions.
+      if ((e.key === "x" || e.key === " ") && !e.shiftKey && onToggleSelect) {
+        e.preventDefault();
+        onToggleSelect(item.id);
+        return;
+      }
 
       if (!onReorder) return;
       const siblings = groups.find((g) => g.key === groupKey)?.items ?? [];
@@ -170,7 +177,7 @@ export function BacklogListView({
         });
       }
     },
-    [onReorder, groups, visibleIds, focusRow, groupContext],
+    [onReorder, groups, visibleIds, focusRow, groupContext, onToggleSelect],
   );
 
   const handleDropOnRow = useCallback(
@@ -222,7 +229,7 @@ export function BacklogListView({
         e.dataTransfer.effectAllowed = "move";
       }}
       onDropOnRow={(e) => handleDropOnRow(e, item, groupKey)}
-      tabIndex={onReorder ? 0 : undefined}
+      tabIndex={onReorder || onToggleSelect ? 0 : undefined}
       focused={focusedId === item.id}
       onFocus={() => setFocusedId(item.id)}
       onKeyDown={(e) => handleKeyDown(e, item, groupKey)}

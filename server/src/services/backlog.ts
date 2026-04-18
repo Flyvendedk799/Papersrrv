@@ -19,6 +19,8 @@ import {
   type BacklogPlanRow,
 } from "@paperclipai/db";
 import type {
+  BacklogBulkAction,
+  BacklogBulkPatch,
   BacklogItem,
   BacklogItemFilters,
   BacklogItemSource,
@@ -27,6 +29,9 @@ import type {
   BacklogPlan,
   BacklogPlanKind,
   BacklogPlanStatus,
+  BulkBacklogItemInput,
+  BulkBacklogItemResult,
+  BulkBacklogItemResultEntry,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
   ReorderBacklogItemInput,
@@ -34,6 +39,7 @@ import type {
   UpdateBacklogPlanInput,
 } from "@paperclipai/shared";
 import {
+  BACKLOG_BULK_ACTIONS,
   BACKLOG_ITEM_SOURCES,
   BACKLOG_ITEM_STATUSES,
   BACKLOG_PLAN_KINDS,
@@ -393,6 +399,85 @@ export function backlogService(db: Db) {
         .returning()
         .then((rs) => rs[0]);
       return itemToApi(updated);
+    },
+
+    /**
+     * Apply an action to many items in one round-trip (backlog3.0 B4).
+     *
+     * Each item is processed independently so a partial failure (e.g.
+     * one item already archived, or one not found) does not abort the
+     * batch. The caller receives a per-id result and must surface
+     * failures to the user — never a silent drop.
+     */
+    async bulkApply(
+      companyId: string,
+      input: BulkBacklogItemInput,
+    ): Promise<BulkBacklogItemResult> {
+      if (!input || !Array.isArray(input.ids)) {
+        throw unprocessable("ids must be an array");
+      }
+      if (!BACKLOG_BULK_ACTIONS.includes(input.action as BacklogBulkAction)) {
+        throw unprocessable(`Unknown bulk action: ${String(input.action)}`);
+      }
+      const ids = Array.from(new Set(input.ids.filter((id) => typeof id === "string" && id.length)));
+      if (ids.length === 0) {
+        return { action: input.action, total: 0, succeeded: 0, failed: 0, results: [] };
+      }
+      if (ids.length > 200) {
+        throw unprocessable("Bulk operation supports at most 200 items per call");
+      }
+
+      const patch: BacklogBulkPatch = input.patch ?? {};
+      if (input.action === "patch") {
+        if (patch.status !== undefined) assertStatus(patch.status);
+        if (
+          patch.status === undefined &&
+          patch.priority === undefined &&
+          patch.planId === undefined &&
+          patch.projectId === undefined &&
+          patch.goalId === undefined &&
+          patch.ownerUserId === undefined &&
+          patch.ownerAgentId === undefined
+        ) {
+          throw unprocessable("patch must include at least one field for action 'patch'");
+        }
+      }
+
+      const results: BulkBacklogItemResultEntry[] = [];
+      for (const id of ids) {
+        try {
+          if (input.action === "archive") {
+            const archived = await this.archiveItem(companyId, id);
+            results.push({ id, status: "ok", item: archived });
+          } else {
+            const updateInput: UpdateBacklogItemInput = {};
+            if (patch.status !== undefined) updateInput.status = patch.status;
+            if (patch.priority !== undefined) updateInput.priority = patch.priority;
+            if (patch.planId !== undefined) updateInput.planId = patch.planId;
+            if (patch.projectId !== undefined) updateInput.projectId = patch.projectId;
+            if (patch.goalId !== undefined) updateInput.goalId = patch.goalId;
+            if (patch.ownerUserId !== undefined) updateInput.ownerUserId = patch.ownerUserId;
+            if (patch.ownerAgentId !== undefined) updateInput.ownerAgentId = patch.ownerAgentId;
+            const updated = await this.updateItem(companyId, id, updateInput);
+            results.push({ id, status: "ok", item: updated });
+          }
+        } catch (err) {
+          results.push({
+            id,
+            status: "error",
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      const succeeded = results.filter((r) => r.status === "ok").length;
+      return {
+        action: input.action,
+        total: results.length,
+        succeeded,
+        failed: results.length - succeeded,
+        results,
+      };
     },
 
     /**

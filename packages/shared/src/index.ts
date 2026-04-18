@@ -313,6 +313,7 @@ export {
   BACKLOG_ITEM_SOURCES,
   BACKLOG_PLAN_KINDS,
   BACKLOG_PLAN_STATUSES,
+  BACKLOG_BULK_ACTIONS,
 } from "./types/backlog.js";
 export type {
   BacklogItem,
@@ -328,6 +329,11 @@ export type {
   UpdateBacklogPlanInput,
   BacklogItemFilters,
   ReorderBacklogItemInput,
+  BacklogBulkAction,
+  BacklogBulkPatch,
+  BulkBacklogItemInput,
+  BulkBacklogItemResult,
+  BulkBacklogItemResultEntry,
 } from "./types/backlog.js";
 export { normalizeAgentUrlKey, deriveAgentUrlKey, isUuidLike } from "./agent-url-key.js";
 export { deriveProjectUrlKey, normalizeProjectUrlKey } from "./project-url-key.js";

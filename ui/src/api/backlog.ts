@@ -2,6 +2,8 @@ import type {
   BacklogItem,
   BacklogItemFilters,
   BacklogPlan,
+  BulkBacklogItemInput,
+  BulkBacklogItemResult,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
   ReorderBacklogItemInput,
@@ -39,6 +41,11 @@ export const backlogApi = {
   reorderItem: (companyId: string, id: string, input: ReorderBacklogItemInput) =>
     api.post<BacklogItem>(
       `/companies/${companyId}/backlog/items/${id}/reorder`,
+      input,
+    ),
+  bulkApply: (companyId: string, input: BulkBacklogItemInput) =>
+    api.post<BulkBacklogItemResult>(
+      `/companies/${companyId}/backlog/items/bulk`,
       input,
     ),
 

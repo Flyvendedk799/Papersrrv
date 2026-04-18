@@ -138,6 +138,47 @@ export function backlogRoutes(db: Db) {
     res.json(updated);
   });
 
+  /**
+   * Bulk apply (backlog3.0 B4).
+   *
+   * Atomic per-item: each id is processed independently; partial failures
+   * are surfaced via per-id results. We emit one activity row per
+   * successfully-mutated item so the per-entity audit trail stays
+   * intact (matching single-item endpoints), with a `bulk` flag in
+   * `details` so reviewers can correlate the batch.
+   */
+  router.post("/companies/:companyId/backlog/items/bulk", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (!Array.isArray(body.ids)) throw badRequest("ids must be an array");
+    if (typeof body.action !== "string") throw badRequest("action is required");
+    const result = await svc.bulkApply(companyId, body as never);
+    const actor = getActorInfo(req);
+    const action =
+      result.action === "archive" ? "backlog_item.archived" : "backlog_item.updated";
+    const patch = (body.patch as Record<string, unknown> | undefined) ?? null;
+    for (const entry of result.results) {
+      if (entry.status !== "ok") continue;
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action,
+        entityType: "backlog_item",
+        entityId: entry.id,
+        details: {
+          bulk: true,
+          bulkAction: result.action,
+          patch,
+        },
+      });
+    }
+    res.json(result);
+  });
+
   router.post("/companies/:companyId/backlog/items/:id/archive", async (req, res) => {
     const companyId = req.params.companyId as string;
     const id = req.params.id as string;

@@ -29,6 +29,8 @@ import {
   BACKLOG_ITEM_STATUSES,
   type BacklogItemSource,
   type BacklogItemStatus,
+  type BulkBacklogItemInput,
+  type BulkBacklogItemResult,
 } from "@paperclipai/shared";
 import { backlogApi } from "../api/backlog";
 import { useCompany } from "../context/CompanyContext";
@@ -56,6 +58,8 @@ import {
 } from "../components/backlog/BacklogListView";
 import { BacklogBoardView } from "../components/backlog/BacklogBoardView";
 import { useBacklogReorder } from "../components/backlog/useBacklogReorder";
+import { BulkActionBar } from "../components/backlog/BulkActionBar";
+import { useToast } from "../context/ToastContext";
 
 type StatusFilter = BacklogItemStatus | "all";
 type SourceFilter = BacklogItemSource | "all";
@@ -123,6 +127,7 @@ export function Backlog() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const { pushToast } = useToast();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
@@ -130,6 +135,7 @@ export function Backlog() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selection, setSelection] = useState<Set<string>>(() => new Set());
 
   const scopedKey = selectedCompanyId
     ? `paperclip:backlog-view:${selectedCompanyId}`
@@ -218,6 +224,100 @@ export function Backlog() {
   const { moveBetweenContainers } = useBacklogReorder(selectedCompanyId ?? undefined);
 
   const visibleItems = useMemo(() => items ?? [], [items]);
+
+  // ─── Selection + bulk operations (B4) ───────────────────────────────
+  const toggleSelect = useCallback((id: string) => {
+    setSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelection(new Set()), []);
+
+  const selectAllVisible = useCallback(() => {
+    setSelection(new Set(visibleItems.map((i) => i.id)));
+  }, [visibleItems]);
+
+  // Drop selection IDs that are no longer in the visible list (e.g. after
+  // archive/promotion). Keeps the toolbar truthful.
+  useEffect(() => {
+    if (selection.size === 0) return;
+    const visibleIds = new Set(visibleItems.map((i) => i.id));
+    let changed = false;
+    const next = new Set<string>();
+    for (const id of selection) {
+      if (visibleIds.has(id)) next.add(id);
+      else changed = true;
+    }
+    if (changed) setSelection(next);
+  }, [visibleItems, selection]);
+
+  // Global keyboard shortcuts for selection-mode triage.
+  useEffect(() => {
+    function isTypingTarget(t: EventTarget | null): boolean {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (t.isContentEditable) return true;
+      return false;
+    }
+    function onKey(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Escape" && selection.size > 0) {
+        e.preventDefault();
+        clearSelection();
+      } else if (e.key === "a" && e.shiftKey) {
+        // Shift+A — select all visible. Plain "a" is reserved for
+        // future "add" shortcut so we don't fire it accidentally.
+        e.preventDefault();
+        selectAllVisible();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection.size, clearSelection, selectAllVisible]);
+
+  const bulkApply = useMutation<BulkBacklogItemResult, Error, BulkBacklogItemInput>({
+    mutationFn: (input) => backlogApi.bulkApply(selectedCompanyId!, input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({
+        queryKey: ["backlog", selectedCompanyId],
+      });
+      const tone = result.failed === 0 ? "success" : result.succeeded === 0 ? "error" : "warn";
+      const verb = result.action === "archive" ? "archived" : "updated";
+      const title =
+        result.failed === 0
+          ? `${result.succeeded} item${result.succeeded === 1 ? "" : "s"} ${verb}`
+          : `${result.succeeded}/${result.total} ${verb} (${result.failed} failed)`;
+      const failureMessage = result.results
+        .filter((r) => r.status === "error")
+        .slice(0, 3)
+        .map((r) => `${r.id.slice(0, 8)}: ${r.error ?? "error"}`)
+        .join("; ");
+      pushToast({
+        title,
+        body: failureMessage || undefined,
+        tone,
+      });
+      if (result.failed === 0) {
+        clearSelection();
+      } else {
+        // Keep failed IDs selected so the user can retry.
+        setSelection(new Set(result.results.filter((r) => r.status === "error").map((r) => r.id)));
+      }
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Bulk action failed",
+        body: err.message,
+        tone: "error",
+      });
+    },
+  });
 
   const toggleCollapse = useCallback(
     (groupKey: string) => {
@@ -395,6 +495,24 @@ export function Backlog() {
         )}
       </section>
 
+      {selection.size > 0 && (
+        <BulkActionBar
+          count={selection.size}
+          totalVisible={visibleItems.length}
+          isApplying={bulkApply.isPending}
+          plans={plans}
+          onApply={({ action, patch }) =>
+            bulkApply.mutate({
+              ids: Array.from(selection),
+              action,
+              patch,
+            })
+          }
+          onSelectAll={selectAllVisible}
+          onClear={clearSelection}
+        />
+      )}
+
       <section>
         {isLoading ? (
           <div className="py-12 text-center text-sm text-muted-foreground">
@@ -408,6 +526,8 @@ export function Backlog() {
         ) : viewState.viewMode === "board" ? (
           <BacklogBoardView
             items={visibleItems}
+            selection={selection}
+            onToggleSelect={toggleSelect}
             onReorder={(id, { status, destOrdered, insertIndex }) =>
               moveBetweenContainers(id, destOrdered, insertIndex, { status })
             }
@@ -423,6 +543,8 @@ export function Backlog() {
             archivingId={
               archiveItem.isPending ? (archiveItem.variables as string) : null
             }
+            selection={selection}
+            onToggleSelect={toggleSelect}
             emptyAction="New item"
             onEmptyAction={() => setDialogOpen(true)}
             onReorder={({ id, destOrdered, insertIndex, planId, status }) =>
@@ -440,6 +562,8 @@ export function Backlog() {
             archivingId={
               archiveItem.isPending ? (archiveItem.variables as string) : null
             }
+            selection={selection}
+            onToggleSelect={toggleSelect}
             emptyAction="New item"
             onEmptyAction={() => setDialogOpen(true)}
             onReorder={({ id, destOrdered, insertIndex, planId, status }) =>
