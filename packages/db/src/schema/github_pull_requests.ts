@@ -65,6 +65,10 @@ export const githubPullRequests = pgTable(
       table.number,
     ),
     stateIdx: index("github_prs_state_idx").on(table.companyId, table.state),
+    repoUpdatedIdx: index("github_prs_repo_updated_idx").on(
+      table.repoId,
+      table.updatedAt,
+    ),
   }),
 );
 

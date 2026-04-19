@@ -48,6 +48,10 @@ export const githubRepos = pgTable(
       table.owner,
       table.repo,
     ),
+    companyUpdatedIdx: index("github_repos_company_updated_idx").on(
+      table.companyId,
+      table.updatedAt,
+    ),
   }),
 );
 

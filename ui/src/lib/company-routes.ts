@@ -13,6 +13,11 @@ const BOARD_ROUTE_ROOTS = new Set([
   "inbox",
   "files",
   "design-guide",
+  // backlog 4.0 (E1): treat /github as a board root so company-prefix
+  // extraction and the unprefixed-board redirect stop mistaking the
+  // `github` segment for a company slug. Must stay aligned with the
+  // routes registered in ui/src/App.tsx under `github_tab_enabled`.
+  "github",
 ]);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "docs"]);

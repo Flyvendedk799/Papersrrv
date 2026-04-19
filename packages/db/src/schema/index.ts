@@ -86,6 +86,31 @@ export {
   type GithubPullRequestRow,
   type NewGithubPullRequestRow,
 } from "./github_pull_requests.js";
+export {
+  githubCommits,
+  type GithubCommitRow,
+  type NewGithubCommitRow,
+} from "./github_commits.js";
+export {
+  githubBranches,
+  type GithubBranchRow,
+  type NewGithubBranchRow,
+} from "./github_branches.js";
+export {
+  githubReleases,
+  type GithubReleaseRow,
+  type NewGithubReleaseRow,
+} from "./github_releases.js";
+export {
+  githubChecks,
+  type GithubCheckRow,
+  type NewGithubCheckRow,
+} from "./github_checks.js";
+export {
+  githubReviews,
+  type GithubReviewRow,
+  type NewGithubReviewRow,
+} from "./github_reviews.js";
 export { commentFileEvidence } from "./comment_file_evidence.js";
 export {
   issueEvidenceSets,

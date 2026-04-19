@@ -29,3 +29,28 @@ export const listGithubPullsQuerySchema = z.object({
 });
 
 export type ListGithubPullsQuery = z.infer<typeof listGithubPullsQuerySchema>;
+
+/**
+ * PR mutation payloads (backlog 4.0 B3).
+ * All endpoints using these are gated behind the `pr_actions` server feature flag.
+ */
+export const pullCommentSchema = z.object({
+  body: z.string().min(1).max(65536),
+  connectionId: z.string().uuid().optional(),
+});
+export type PullCommentInput = z.infer<typeof pullCommentSchema>;
+
+export const pullReviewSchema = z.object({
+  event: z.enum(["APPROVE", "REQUEST_CHANGES", "COMMENT"]),
+  body: z.string().max(65536).optional(),
+  connectionId: z.string().uuid().optional(),
+});
+export type PullReviewInput = z.infer<typeof pullReviewSchema>;
+
+export const pullMergeSchema = z.object({
+  method: z.enum(["merge", "squash", "rebase"]).optional(),
+  commitTitle: z.string().max(256).optional(),
+  commitMessage: z.string().max(65536).optional(),
+  connectionId: z.string().uuid().optional(),
+});
+export type PullMergeInput = z.infer<typeof pullMergeSchema>;

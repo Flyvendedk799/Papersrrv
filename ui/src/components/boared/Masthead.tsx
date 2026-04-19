@@ -10,6 +10,7 @@ import { sidebarBadgesApi } from "../../api/sidebarBadges";
 import { heartbeatsApi } from "../../api/heartbeats";
 import { queryKeys } from "../../lib/queryKeys";
 import { cn } from "../../lib/utils";
+import { isFeatureEnabled } from "../../lib/featureFlags";
 import { Wordmark } from "./Wordmark";
 import {
   Popover,
@@ -39,7 +40,7 @@ interface PrimaryNavItem {
   alert?: boolean;
 }
 
-const PRIMARY_NAV: Array<{ to: string; label: string; key: string }> = [
+const PRIMARY_NAV_STATIC: Array<{ to: string; label: string; key: string }> = [
   { to: "/dashboard", label: "Today", key: "dashboard" },
   { to: "/issues", label: "Issues", key: "issues" },
   { to: "/projects", label: "Projects", key: "projects" },
@@ -47,6 +48,18 @@ const PRIMARY_NAV: Array<{ to: string; label: string; key: string }> = [
   { to: "/workflows", label: "Workflows", key: "workflows" },
   { to: "/inbox", label: "Inbox", key: "inbox" },
 ];
+
+// GitHub tab is appended behind the `github_tab_enabled` flag (4.0 B1).
+// Projects stays in place; both live alongside until the umbrella flag
+// flips on for a deployment (per backlog 4.0 B1 / E1 continuity rule).
+const PRIMARY_NAV: Array<{ to: string; label: string; key: string }> =
+  isFeatureEnabled("github_tab_enabled")
+    ? [
+        ...PRIMARY_NAV_STATIC.slice(0, 3),
+        { to: "/github", label: "GitHub", key: "github" },
+        ...PRIMARY_NAV_STATIC.slice(3),
+      ]
+    : PRIMARY_NAV_STATIC;
 
 const ARCHIVE_NAV: Array<{ to: string; label: string }> = [
   { to: "/goals", label: "Goals" },

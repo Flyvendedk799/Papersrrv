@@ -17,6 +17,9 @@ import type { Db } from "@paperclipai/db";
 import {
   createGithubConnectionSchema,
   listGithubPullsQuerySchema,
+  pullCommentSchema,
+  pullReviewSchema,
+  pullMergeSchema,
   parseRepoUrl,
   type GithubConnectionAuthType,
 } from "@paperclipai/shared";
@@ -37,6 +40,14 @@ function assertGithubTabEnabled() {
 function assertPatAuthEnabled() {
   if (!isServerFeatureEnabled("github_pat_auth")) {
     throw forbidden("GitHub PAT auth is not enabled on this instance");
+  }
+}
+
+function assertPrActionsEnabled() {
+  if (!isServerFeatureEnabled("pr_actions")) {
+    throw forbidden(
+      "GitHub PR actions are not enabled on this instance (pr_actions flag)",
+    );
   }
 }
 
@@ -220,6 +231,221 @@ export function githubRoutes(db: Db) {
           state: query.state ?? "open",
         });
         res.json({ ...result, connectionId: conn.id });
+      } catch (err) {
+        handleGithubError(res, err);
+      }
+    },
+  );
+
+  // --- Pull request detail (live, ETag-cached) --------------------------
+
+  router.get(
+    "/companies/:companyId/github/repos/:owner/:repo/pulls/:number",
+    async (req, res) => {
+      assertGithubTabEnabled();
+      const companyId = req.params.companyId as string;
+      const { owner, repo } = req.params as { owner: string; repo: string };
+      const number = Number(req.params.number);
+      if (!Number.isFinite(number) || number <= 0) {
+        throw unprocessable("Invalid pull request number");
+      }
+      assertCompanyAccess(req, companyId);
+
+      const parsed = parseRepoUrl(`${owner}/${repo}`);
+      if (!parsed) throw unprocessable("Invalid owner/repo");
+
+      const conn = await resolveConnection(db, companyId, req);
+      const { client } = await clientForConnection(db, companyId, conn.id);
+
+      try {
+        const [detail, files, reviews] = await Promise.all([
+          client.getPullRequest(parsed.owner, parsed.repo, number),
+          client.listPullRequestFiles(parsed.owner, parsed.repo, number),
+          client.listReviews(parsed.owner, parsed.repo, number),
+        ]);
+        let checks: Awaited<ReturnType<typeof client.listCheckRuns>> = { items: [] };
+        const headSha = (detail.data as unknown as { headSha?: string; headRef?: string })
+          .headSha;
+        if (headSha) {
+          try {
+            checks = await client.listCheckRuns(parsed.owner, parsed.repo, headSha);
+          } catch {
+            checks = { items: [] };
+          }
+        }
+        res.json({
+          data: detail.data,
+          files: files.items,
+          reviews: reviews.items,
+          checks: checks.items,
+          rateLimit: detail.rateLimit,
+          connectionId: conn.id,
+        });
+      } catch (err) {
+        handleGithubError(res, err);
+      }
+    },
+  );
+
+  // --- Pull request mutations (pr_actions gated) ------------------------
+
+  router.post(
+    "/companies/:companyId/github/repos/:owner/:repo/pulls/:number/comments",
+    validate(pullCommentSchema),
+    async (req, res) => {
+      assertGithubTabEnabled();
+      assertPrActionsEnabled();
+      const companyId = req.params.companyId as string;
+      const { owner, repo } = req.params as { owner: string; repo: string };
+      const number = Number(req.params.number);
+      if (!Number.isFinite(number) || number <= 0) {
+        throw unprocessable("Invalid pull request number");
+      }
+      assertCompanyAccess(req, companyId);
+      const parsed = parseRepoUrl(`${owner}/${repo}`);
+      if (!parsed) throw unprocessable("Invalid owner/repo");
+
+      const conn = await resolveConnection(db, companyId, req, req.body.connectionId);
+      const { client } = await clientForConnection(db, companyId, conn.id);
+      try {
+        const out = await client.createPullComment(
+          parsed.owner,
+          parsed.repo,
+          number,
+          req.body.body,
+        );
+        const actor = getActorForLog(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "github.pull.comment_created",
+          entityType: "github_pull_request",
+          entityId: `${parsed.owner}/${parsed.repo}#${number}`,
+          details: { commentId: out.id, htmlUrl: out.htmlUrl },
+        });
+        res.status(201).json(out);
+      } catch (err) {
+        handleGithubError(res, err);
+      }
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/github/repos/:owner/:repo/pulls/:number/reviews",
+    validate(pullReviewSchema),
+    async (req, res) => {
+      assertGithubTabEnabled();
+      assertPrActionsEnabled();
+      const companyId = req.params.companyId as string;
+      const { owner, repo } = req.params as { owner: string; repo: string };
+      const number = Number(req.params.number);
+      if (!Number.isFinite(number) || number <= 0) {
+        throw unprocessable("Invalid pull request number");
+      }
+      assertCompanyAccess(req, companyId);
+      const parsed = parseRepoUrl(`${owner}/${repo}`);
+      if (!parsed) throw unprocessable("Invalid owner/repo");
+
+      const conn = await resolveConnection(db, companyId, req, req.body.connectionId);
+      const { client } = await clientForConnection(db, companyId, conn.id);
+      try {
+        const out = await client.createPullReview(parsed.owner, parsed.repo, number, {
+          event: req.body.event,
+          body: req.body.body,
+        });
+        const actor = getActorForLog(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "github.pull.reviewed",
+          entityType: "github_pull_request",
+          entityId: `${parsed.owner}/${parsed.repo}#${number}`,
+          details: { event: req.body.event, reviewId: out.id, state: out.state },
+        });
+        res.status(201).json(out);
+      } catch (err) {
+        handleGithubError(res, err);
+      }
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/github/repos/:owner/:repo/pulls/:number/merge",
+    validate(pullMergeSchema),
+    async (req, res) => {
+      assertGithubTabEnabled();
+      assertPrActionsEnabled();
+      const companyId = req.params.companyId as string;
+      const { owner, repo } = req.params as { owner: string; repo: string };
+      const number = Number(req.params.number);
+      if (!Number.isFinite(number) || number <= 0) {
+        throw unprocessable("Invalid pull request number");
+      }
+      assertCompanyAccess(req, companyId);
+      const parsed = parseRepoUrl(`${owner}/${repo}`);
+      if (!parsed) throw unprocessable("Invalid owner/repo");
+
+      const conn = await resolveConnection(db, companyId, req, req.body.connectionId);
+      const { client } = await clientForConnection(db, companyId, conn.id);
+      try {
+        const out = await client.mergePullRequest(parsed.owner, parsed.repo, number, {
+          method: req.body.method,
+          commitTitle: req.body.commitTitle,
+          commitMessage: req.body.commitMessage,
+        });
+        const actor = getActorForLog(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "github.pull.merged",
+          entityType: "github_pull_request",
+          entityId: `${parsed.owner}/${parsed.repo}#${number}`,
+          details: {
+            method: req.body.method ?? "merge",
+            sha: out.sha,
+            merged: out.merged,
+          },
+        });
+        res.json(out);
+      } catch (err) {
+        handleGithubError(res, err);
+      }
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/github/repos/:owner/:repo/pulls/:number/ready",
+    async (req, res) => {
+      assertGithubTabEnabled();
+      assertPrActionsEnabled();
+      const companyId = req.params.companyId as string;
+      const { owner, repo } = req.params as { owner: string; repo: string };
+      const number = Number(req.params.number);
+      if (!Number.isFinite(number) || number <= 0) {
+        throw unprocessable("Invalid pull request number");
+      }
+      assertCompanyAccess(req, companyId);
+      const parsed = parseRepoUrl(`${owner}/${repo}`);
+      if (!parsed) throw unprocessable("Invalid owner/repo");
+
+      const conn = await resolveConnection(db, companyId, req);
+      const { client } = await clientForConnection(db, companyId, conn.id);
+      try {
+        const out = await client.markPullReady(parsed.owner, parsed.repo, number);
+        const actor = getActorForLog(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "github.pull.ready_for_review",
+          entityType: "github_pull_request",
+          entityId: `${parsed.owner}/${parsed.repo}#${number}`,
+          details: { draft: out.draft },
+        });
+        res.json(out);
       } catch (err) {
         handleGithubError(res, err);
       }

@@ -11,11 +11,15 @@
 
 export type ServerFeatureFlag =
   | "github_tab_enabled" // backlog 4.0 umbrella flag
-  | "github_pat_auth"; // backlog 4.0 sub-flag — enable PAT-based connections
+  | "github_pat_auth" // backlog 4.0 sub-flag — enable PAT-based connections
+  | "github_webhooks" // backlog 4.0 A3 — enable /api/webhooks/github ingress
+  | "pr_actions"; // backlog 4.0 B3 — enable PR mutations (comment/approve/merge)
 
 const DEFAULTS: Record<ServerFeatureFlag, boolean> = {
   github_tab_enabled: false,
   github_pat_auth: false,
+  github_webhooks: false,
+  pr_actions: false,
 };
 
 function readEnv(key: ServerFeatureFlag): boolean | null {

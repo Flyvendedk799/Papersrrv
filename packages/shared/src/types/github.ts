@@ -127,3 +127,117 @@ export interface GithubPullRequestListResult {
   items: GithubPullRequestView[];
   rateLimit?: GithubRateLimitMeta;
 }
+
+// ── Extended views for dashboard / detail (backlog 4.0 A4 + B2/B3) ──
+
+export interface GithubCommitView {
+  sha: string;
+  message: string;
+  authorLogin: string | null;
+  authorName: string | null;
+  authoredAt: string | null;
+  htmlUrl: string;
+}
+
+export interface GithubBranchView {
+  name: string;
+  sha: string;
+  protected: boolean;
+}
+
+export interface GithubReleaseView {
+  id: number;
+  tagName: string;
+  name: string | null;
+  draft: boolean;
+  prerelease: boolean;
+  publishedAt: string | null;
+  createdAt: string | null;
+  htmlUrl: string;
+  body: string | null;
+}
+
+export type GithubCheckConclusion =
+  | "success"
+  | "failure"
+  | "neutral"
+  | "cancelled"
+  | "skipped"
+  | "timed_out"
+  | "action_required"
+  | "stale"
+  | null;
+
+export type GithubCheckStatus =
+  | "queued"
+  | "in_progress"
+  | "completed"
+  | "pending"
+  | null;
+
+export interface GithubCheckRunView {
+  id: number;
+  name: string;
+  status: GithubCheckStatus;
+  conclusion: GithubCheckConclusion;
+  htmlUrl: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  headSha: string;
+}
+
+export interface GithubReviewView {
+  id: number;
+  reviewerLogin: string | null;
+  state:
+    | "APPROVED"
+    | "CHANGES_REQUESTED"
+    | "COMMENTED"
+    | "DISMISSED"
+    | "PENDING"
+    | string;
+  submittedAt: string | null;
+  htmlUrl: string;
+  body: string | null;
+}
+
+export interface GithubPullRequestFileView {
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  blobUrl: string | null;
+}
+
+export interface GithubPullRequestDetailView extends GithubPullRequestView {
+  body: string | null;
+  commits: number;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  labels: string[];
+  assignees: string[];
+  requestedReviewers: string[];
+  closedAt: string | null;
+  mergedAt: string | null;
+}
+
+// ── Webhook event envelope (A3) ────────────────────────────────────
+export type GithubWebhookEventType =
+  | "pull_request"
+  | "push"
+  | "check_run"
+  | "release"
+  | "issues"
+  | "issue_comment"
+  | "workflow_run"
+  | "ping";
+
+export interface GithubWebhookIngestResult {
+  ok: true;
+  event: GithubWebhookEventType | string;
+  deliveryId: string | null;
+  handled: boolean;
+  reason?: string;
+}

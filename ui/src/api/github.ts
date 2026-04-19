@@ -1,7 +1,12 @@
 import type {
+  GithubCheckRunView,
   GithubConnection,
+  GithubPullRequestDetailView,
+  GithubPullRequestFileView,
   GithubPullRequestListResult,
+  GithubRateLimitMeta,
   GithubRepoView,
+  GithubReviewView,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -11,6 +16,15 @@ export interface GithubRepoResponse {
 }
 
 export interface GithubPullRequestListResponse extends GithubPullRequestListResult {
+  connectionId: string;
+}
+
+export interface GithubPullRequestDetailResponse {
+  data: GithubPullRequestDetailView;
+  files: GithubPullRequestFileView[];
+  reviews: GithubReviewView[];
+  checks: GithubCheckRunView[];
+  rateLimit?: GithubRateLimitMeta;
   connectionId: string;
 }
 
@@ -47,4 +61,71 @@ export const githubApi = {
       `/companies/${companyId}/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls${qs ? `?${qs}` : ""}`,
     );
   },
+
+  getPullRequest: (
+    companyId: string,
+    owner: string,
+    repo: string,
+    number: number,
+    connectionId?: string,
+  ) =>
+    api.get<GithubPullRequestDetailResponse>(
+      `/companies/${companyId}/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}${connectionId ? `?connectionId=${connectionId}` : ""}`,
+    ),
+
+  createPullComment: (
+    companyId: string,
+    owner: string,
+    repo: string,
+    number: number,
+    body: { body: string; connectionId?: string },
+  ) =>
+    api.post<{ id: number; htmlUrl: string }>(
+      `/companies/${companyId}/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/comments`,
+      body,
+    ),
+
+  createPullReview: (
+    companyId: string,
+    owner: string,
+    repo: string,
+    number: number,
+    body: {
+      event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+      body?: string;
+      connectionId?: string;
+    },
+  ) =>
+    api.post<{ id: number; state: string }>(
+      `/companies/${companyId}/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`,
+      body,
+    ),
+
+  mergePullRequest: (
+    companyId: string,
+    owner: string,
+    repo: string,
+    number: number,
+    body: {
+      method?: "merge" | "squash" | "rebase";
+      commitTitle?: string;
+      commitMessage?: string;
+      connectionId?: string;
+    },
+  ) =>
+    api.post<{ merged: boolean; sha: string | null; message: string }>(
+      `/companies/${companyId}/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/merge`,
+      body,
+    ),
+
+  markPullReady: (
+    companyId: string,
+    owner: string,
+    repo: string,
+    number: number,
+  ) =>
+    api.post<{ draft: boolean }>(
+      `/companies/${companyId}/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/ready`,
+      {},
+    ),
 };

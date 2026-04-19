@@ -144,6 +144,12 @@ export {
 export {
   createGithubConnectionSchema,
   listGithubPullsQuerySchema,
+  pullCommentSchema,
+  pullReviewSchema,
+  pullMergeSchema,
   type CreateGithubConnection,
   type ListGithubPullsQuery,
+  type PullCommentInput,
+  type PullReviewInput,
+  type PullMergeInput,
 } from "./github.js";
