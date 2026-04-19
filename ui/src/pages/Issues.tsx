@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useCallback, useRef } from "react";
-import { useSearchParams } from "@/lib/router";
+import { useSearchParams, useNavigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -10,16 +10,29 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
-import { CircleDot, Plus } from "lucide-react";
+import { IssuesMasthead } from "../components/issues/IssuesMasthead";
+import { LeadStory } from "../components/issues/LeadStory";
+import { DailyDispatches } from "../components/issues/DailyDispatches";
+import { StatusLedger } from "../components/issues/StatusLedger";
+import { IssueCloud } from "../components/boared/IssueCloud";
+import { CircleDot, Plus, List, Scan } from "lucide-react";
+import { cn } from "../lib/utils";
+
+type IssuesView = "list" | "cloud";
 
 export function Issues() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewIssue } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const initialSearch = searchParams.get("q") ?? "";
+  const viewParam = searchParams.get("view");
+  const view: IssuesView = viewParam === "cloud" ? "cloud" : "list";
+  const statusFilter = searchParams.get("status");
+
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const handleSearchChange = useCallback((search: string) => {
     clearTimeout(debounceRef.current);
@@ -43,6 +56,16 @@ export function Issues() {
   useEffect(() => {
     return () => clearTimeout(debounceRef.current);
   }, []);
+
+  const updateParam = useCallback(
+    (key: string, value: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (value === null || value === "") next.delete(key);
+      else next.set(key, value);
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -90,55 +113,107 @@ export function Issues() {
   const issueList = issues ?? [];
   const liveCount = liveIssueIds.size;
 
+  const cloudIssues = useMemo(() => {
+    if (!statusFilter) return issueList;
+    return issueList.filter((i) => i.status === statusFilter);
+  }, [issueList, statusFilter]);
+
   return (
     <div className="boared-reveal max-w-[1400px] mx-auto pb-32">
-      {/* Editorial masthead — asymmetric two-column header. */}
-      <header className="grid grid-cols-12 gap-6 pb-8 mb-8 border-b-2 border-foreground">
-        <div className="col-span-12 md:col-span-4 flex flex-col justify-end gap-3">
-          <div className="boared-label text-foreground">§04 · The Docket</div>
-          <div className="font-mono text-[0.7rem] leading-relaxed text-muted-foreground">
-            <span className="block">
-              {isLoading
-                ? "Fetching the wire"
-                : `${issueList.length} ${issueList.length === 1 ? "entry on file" : "entries on file"}`}
-            </span>
-            {liveCount > 0 && (
-              <span className="block mt-1 text-foreground">
-                <span className="inline-block size-1.5 bg-[var(--boared-acid)] mr-1.5 align-middle" />
-                {liveCount} live
-              </span>
-            )}
+      <IssuesMasthead
+        totalEntries={issueList.length}
+        liveCount={liveCount}
+        rightSlot={
+          <div className="flex items-center gap-2">
+            {/* View toggle: list / cloud */}
+            <div className="flex items-center border border-foreground">
+              <button
+                className={cn(
+                  "p-1.5 transition-colors",
+                  view === "list"
+                    ? "bg-foreground text-background"
+                    : "text-foreground hover:bg-foreground/[0.06]",
+                )}
+                onClick={() => updateParam("view", null)}
+                aria-label="List view"
+                title="List view"
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+              <button
+                className={cn(
+                  "p-1.5 transition-colors border-l border-foreground",
+                  view === "cloud"
+                    ? "bg-foreground text-background"
+                    : "text-foreground hover:bg-foreground/[0.06]",
+                )}
+                onClick={() => updateParam("view", "cloud")}
+                aria-label="Cloud view"
+                title="Point-cloud view"
+              >
+                <Scan className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => openNewIssue()}
+              className="shrink-0 inline-flex items-center gap-2 px-3 h-8 border border-foreground text-foreground hover:bg-foreground hover:text-background transition-colors font-mono text-[0.66rem] uppercase tracking-[0.1em]"
+            >
+              <Plus className="size-3" strokeWidth={2} />
+              New issue
+            </button>
           </div>
-        </div>
-        <div className="col-span-12 md:col-span-8 flex items-start justify-between gap-6">
-          <h1 className="boared-display text-[clamp(3rem,7vw,5.25rem)] leading-[0.92] text-foreground">
-            On the
-            <br />
-            <em className="not-italic font-normal">desk.</em>
-          </h1>
-          <button
-            type="button"
-            onClick={() => openNewIssue()}
-            className="shrink-0 inline-flex items-center gap-2 px-3 h-8 mt-2 border border-foreground text-foreground hover:bg-foreground hover:text-background transition-colors font-mono text-[0.66rem] uppercase tracking-[0.1em]"
-          >
-            <Plus className="size-3" strokeWidth={2} />
-            New issue
-          </button>
-        </div>
-      </header>
-
-      <IssuesList
-        issues={issueList}
-        isLoading={isLoading}
-        error={error as Error | null}
-        agents={agents}
-        liveIssueIds={liveIssueIds}
-        viewStateKey="paperclip:issues-view"
-        initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}
-        initialSearch={initialSearch}
-        onSearchChange={handleSearchChange}
-        onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+        }
       />
+
+      {issueList.length > 0 && (
+        <>
+          <LeadStory issues={issueList} liveIssueIds={liveIssueIds} />
+          <DailyDispatches issues={issueList} liveIssueIds={liveIssueIds} />
+          <StatusLedger
+            issues={issueList}
+            activeStatus={statusFilter}
+            onFilterStatus={(status) =>
+              updateParam("status", statusFilter === status ? null : status)
+            }
+          />
+        </>
+      )}
+
+      {view === "list" && (
+        <IssuesList
+          issues={
+            statusFilter
+              ? issueList.filter((i) => i.status === statusFilter)
+              : issueList
+          }
+          isLoading={isLoading}
+          error={error as Error | null}
+          agents={agents}
+          liveIssueIds={liveIssueIds}
+          viewStateKey="paperclip:issues-view"
+          initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}
+          initialSearch={initialSearch}
+          onSearchChange={handleSearchChange}
+          onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+        />
+      )}
+
+      {view === "cloud" && (
+        <IssueCloud
+          issues={cloudIssues}
+          agents={agents}
+          liveIssueIds={liveIssueIds}
+          search={initialSearch}
+          className="min-h-[640px] border border-[var(--boared-rule)]"
+          onSelectIssue={(issue) => {
+            if (!selectedCompany) return;
+            navigate(
+              `/${selectedCompany.issuePrefix}/issues/${issue.identifier ?? issue.id}`,
+            );
+          }}
+        />
+      )}
     </div>
   );
 }
