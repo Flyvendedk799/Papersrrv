@@ -14,9 +14,10 @@ import type { RunForIssue } from "../../api/activity";
 import {
   buildGraph, layoutMind, buildEdges, makeCamera, project, updateCamera,
   focusOn, panCamera, clamp, Field, SpriteCache, statusColor, kindColor,
-  DAG_DEPTH_STEP,
+  CHRONICLE_WORLD_WIDTH,
   type Camera, type MindNode, type Projected, type Edge, type Vec3,
 } from "./thoughtSpace/mind";
+import type { TimeMap } from "./thoughtSpace/timeMap";
 import { authorColor } from "./thoughtSpace/authors";
 import { ParticleGL } from "./thoughtSpace/particleGL";
 
@@ -66,11 +67,19 @@ interface Props {
    */
   onNodeFeature?: (thoughtId: string | null) => void;
   /**
-   * One-line headline rendered as a big title card for the first
-   * ~3 s of each auto-tour cycle ("the chapter opening"). Falls
-   * back to the issue title when null/empty.
+   * The scene's "clock" — Unix ms. When defined, only thoughts with
+   * `ts <= currentTime` are rendered, and the camera follows the
+   * time-front along the chronicle X axis. When null/undefined, all
+   * thoughts render (the scene is in "full" mode).
    */
-  leadHeadline?: string | null;
+  currentTime?: number | null;
+  /**
+   * Piecewise-linear mapping from real timestamps to normalised
+   * X [0, 1] — compresses quiet periods. Required for the
+   * chronicle layout; when omitted the layout falls back to
+   * origin-clustered and the camera sits at 0.
+   */
+  timeMap?: TimeMap | null;
 }
 
 export interface IssueThoughtSpaceHandle {
@@ -81,7 +90,7 @@ export interface IssueThoughtSpaceHandle {
 }
 
 export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>(
-  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById, onNodeActivate, onNodeFeature, leadHeadline }, ref) {
+  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById, onNodeActivate, onNodeFeature, currentTime, timeMap }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -130,32 +139,15 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   /** Has the user interacted yet? After first click, the hint fades;
    * on 10s idle, it returns. */
   const lastInteractionRef = useRef(performance.now());
-  /** Auto-tour: when the user is idle, the camera slow-pans through
-   * the workflow so the scene self-narrates. Recomputed per frame
-   * inside the render loop; surfaced to React via tourCaption state
-   * so the chyron can describe what's in view. */
-  const autoTourActiveRef = useRef(false);
-  /** When did the current tour cycle start (used for title card
-   * visibility). Reset on each idle→tour transition. */
-  const tourCycleStartMsRef = useRef<number>(0);
-  /** Current ping-pong phase (0..1 always forward for display).
-   * Surfaced to React at 2 Hz so the progress bar can animate. */
-  const tourPhaseRef = useRef<number>(0);
-  /** Which node the tour is currently "featuring". Separate from the
-   * pointer selection so the tour doesn't fire focusOn() (camera is
-   * already under tour control). */
+  /** During chronicle replay (currentTime driven by Dossier), which
+   * thought is currently "featured" — the most recent one that just
+   * arrived. Chain trace + Dossier context card follow this. */
   const tourFeaturedIdxRef = useRef<number>(-1);
   const tourLastFeatureMsRef = useRef(0);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<{ label: string; kind: ThoughtKind; authorName: string } | null>(null);
   const [hintVisible, setHintVisible] = useState(true);
-  /** What the auto-tour is currently showing. Null when not touring. */
-  const [tourCaption, setTourCaption] = useState<string | null>(null);
-  /** Null when not touring. 0..1 while touring (ping-pong phase). */
-  const [tourProgress, setTourProgress] = useState<number | null>(null);
-  /** True for the opening ~3 s of each tour cycle (title card). */
-  const [titleCardVisible, setTitleCardVisible] = useState(false);
 
   /* ── Thoughts memo ── */
   const thoughts = useMemo(() => {
@@ -195,10 +187,14 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   const rebuild = useCallback(() => {
     let sig = `${thoughts.length}|`;
     for (const t of thoughts) sig += `${t.id}:${t.ts}/`;
+    // Bust the cache when the time map identity changes — otherwise
+    // a new chronicle width / different gap compression wouldn't
+    // trigger re-layout.
+    sig += `tm:${timeMap ? `${timeMap.minTs}-${timeMap.maxTs}-${timeMap.breakpoints.length}` : "none"}`;
     if (sig === lastSigRef.current) return;
     lastSigRef.current = sig;
     const graph = buildGraph(thoughts);
-    const laid = layoutMind(thoughts, graph);
+    const laid = layoutMind(thoughts, graph, timeMap ?? undefined);
     const edges = buildEdges(laid, graph);
     graphRef.current = graph;
     nodesRef.current = laid;
@@ -228,7 +224,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       .filter(([d]) => d !== 0)
       .sort((a, b) => a[0] - b[0])
       .map(([depth, count]) => ({ depth, count }));
-  }, [thoughts]);
+  }, [thoughts, timeMap]);
 
   /* ── IntersectionObserver pause ── */
   useEffect(() => {
@@ -327,112 +323,6 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     return () => window.clearInterval(id);
   }, [selectedId, hintVisible]);
 
-  /* ── Auto-tour caption ── maps the auto-tour camera's current
-   * target.x to a human-readable one-liner describing which slice
-   * of the story the viewer is looking at. Updates at 2 Hz — the
-   * chyron text shouldn't flicker per-frame. Actual camera panning
-   * happens inside the render loop so it stays in sync with the
-   * visible frame rate. */
-  useEffect(() => {
-    const TITLE_CARD_MS = 3000;
-    const id = window.setInterval(() => {
-      if (selectedId) {
-        if (tourCaption !== null) setTourCaption(null);
-        if (tourProgress !== null) setTourProgress(null);
-        if (titleCardVisible) setTitleCardVisible(false);
-        return;
-      }
-      const idleMs = performance.now() - lastInteractionRef.current;
-      const TOUR_IDLE_MS = 15_000;
-      if (idleMs < TOUR_IDLE_MS) {
-        if (tourCaption !== null) setTourCaption(null);
-        if (tourProgress !== null) setTourProgress(null);
-        if (titleCardVisible) setTitleCardVisible(false);
-        return;
-      }
-      // Read the already-projected-in-render auto-tour state.
-      if (!autoTourActiveRef.current) return;
-
-      // Title card — on for the first ~3 s of this cycle.
-      const cycleAgeMs = performance.now() - tourCycleStartMsRef.current;
-      const shouldShowTitle = cycleAgeMs < TITLE_CARD_MS;
-      if (shouldShowTitle !== titleCardVisible) setTitleCardVisible(shouldShowTitle);
-
-      // Progress bar — follows the ping-pong phase.
-      const nextProgress = tourPhaseRef.current;
-      if (tourProgress === null || Math.abs(nextProgress - tourProgress) > 0.01) {
-        setTourProgress(nextProgress);
-      }
-
-      // Prefer a thought-specific caption when a node is featured —
-      // that's the richest narration ("Ada wrote: …" over a generic
-      // chapter label). Fall back to zone-based text only when the
-      // tour is between chapters or on an empty part of the plane.
-      const featIdx = tourFeaturedIdxRef.current;
-      let next: string | null = null;
-      if (featIdx >= 0 && nodesRef.current[featIdx]) {
-        const t = nodesRef.current[featIdx].thought;
-        switch (t.kind) {
-          case "ancestor": {
-            const anc = t.payload as { identifier?: string | null; title: string };
-            next = `Upstream · ${anc.identifier ?? ""} ${shortLabel(anc.title, 40)}`.trim();
-            break;
-          }
-          case "issue": {
-            next = `The matter — ${shortLabel(issue.title ?? "", 52)}`;
-            break;
-          }
-          case "subissue": {
-            const sub = t.payload as Issue;
-            next = `Sub-matter · ${sub.identifier ?? ""} ${shortLabel(sub.title, 40)}`.trim();
-            break;
-          }
-          case "run": {
-            const r = t.payload as RunForIssue;
-            next = r.status === "running" || r.status === "queued" || r.status === "in_progress"
-              ? `${t.authorName} · live run`
-              : `${t.authorName} · run ${r.status}`;
-            break;
-          }
-          case "comment": {
-            const body = (t.payload as { body?: string }).body ?? "";
-            next = `${t.authorName}: ${shortLabel(body, 56)}`;
-            break;
-          }
-        }
-      }
-
-      if (!next) {
-        // Zone-based fallback (empty stretch between chapters).
-        const maxD = maxDepthRef.current;
-        const ancN = (issue.ancestors ?? []).length;
-        const targetX = cameraRef.current.target.x;
-        const xLeft = -ancN * DAG_DEPTH_STEP;
-        const xRight = (maxD + 1) * DAG_DEPTH_STEP;
-        const norm = xRight > xLeft ? (targetX - xLeft) / (xRight - xLeft) : 0.5;
-        if (targetX < -DAG_DEPTH_STEP * 0.5) {
-          next = "Upstream — what led here";
-        } else if (targetX < DAG_DEPTH_STEP * 0.5) {
-          next = "The matter";
-        } else if (norm < 0.55) {
-          next = "Early thoughts";
-        } else if (norm < 0.85) {
-          next = "Recent motion";
-        } else {
-          next =
-            issue.status === "done" || issue.status === "cancelled"
-              ? "Resolution — where the journey ends"
-              : issue.status === "blocked"
-                ? "Held — blocked at the desk"
-                : "Heading — where this is going";
-        }
-      }
-
-      if (next !== tourCaption) setTourCaption(next);
-    }, 500);
-    return () => window.clearInterval(id);
-  }, [selectedId, tourCaption, tourProgress, titleCardVisible, issue.ancestors, issue.status]);
-
   /* ── Pointer handlers ── */
   const hitTest = useCallback((px: number, py: number) => {
     const sx = projSx.current, sy = projSy.current, sc = projSc.current, vis = projVis.current;
@@ -519,76 +409,54 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       const cam = cameraRef.current; cam.centerX = w / 2; cam.centerY = h / 2;
       const intro = easeOut(clamp((now - introStartRef.current) / INTRO_MS, 0, 1));
 
-      // ── Auto-tour ── after 15 s of idle and no selection, the
-      // camera slow-pans through the workflow in a ping-pong cycle
-      // (20 s forward, 20 s back, …). Drives the tour chyron. Any
-      // interaction resets lastInteractionRef and snaps us out.
-      const idleMs = now - lastInteractionRef.current;
-      const TOUR_IDLE_MS = 15_000;
-      const TOUR_SPAN_MS = 20_000;
-      const maxD = maxDepthRef.current;
-      const ancN = (issue.ancestors ?? []).length;
-      if (!selectedId && idleMs > TOUR_IDLE_MS && maxD >= 0 && nodesRef.current.length > 1) {
-        if (!autoTourActiveRef.current) {
-          // Transition idle → tour. Start a new cycle clock so the
-          // title card fires its opening at *this* moment.
-          tourCycleStartMsRef.current = now;
-        }
-        autoTourActiveRef.current = true;
-        const elapsed = idleMs - TOUR_IDLE_MS;
-        const cycle = elapsed % (TOUR_SPAN_MS * 2);
-        const phase = cycle < TOUR_SPAN_MS ? cycle / TOUR_SPAN_MS : 2 - cycle / TOUR_SPAN_MS;
-        tourPhaseRef.current = phase;
-        // Smoothstep for gentler arrivals at each end.
-        const eased = phase * phase * (3 - 2 * phase);
-        const xLeft = -ancN * DAG_DEPTH_STEP - 60;
-        const xRight = (maxD + 1) * DAG_DEPTH_STEP + 60;
-        cam.tTarget.x = xLeft + (xRight - xLeft) * eased;
+      // ── Chronicle replay camera ── when `currentTime` is set
+      // (Dossier owns the clock), the camera tracks the time front
+      // so the viewer always sees "where we are in the story".
+      // Featured-thought tracking picks the most recent arrival
+      // so the context card + chain trace follow the narration.
+      if (
+        currentTime !== null && currentTime !== undefined &&
+        timeMap && !selectedId && nodesRef.current.length > 1
+      ) {
+        const frontX01 = timeMap.toX(currentTime);
+        cam.tTarget.x = (frontX01 - 0.5) * CHRONICLE_WORLD_WIDTH;
         cam.tTarget.y = 0;
         cam.tTarget.z = 0;
-        cam.tZoom = 0.82;
+        // A mid zoom that frames ~50–60 % of the chronicle width —
+        // wide enough to read context, tight enough to feel the
+        // movement.
+        cam.tZoom = 0.75;
 
-        // Featured-thought tracking. Every ~400 ms while touring,
-        // find the closest non-activity thought to the camera's
-        // current X and light it up — chain trace + Dossier
-        // context card. Activity nodes are skipped (noise); a
-        // hysteresis threshold (< 0.75 × DEPTH_STEP world units)
-        // prevents flicker between columns.
+        // Feature the most-recent arrival (≤ 1.5 s old relative
+        // to the clock) so the context card + chain trace track
+        // the narration. Refresh at 400 ms so it announces at a
+        // reading pace rather than chasing every frame.
         if (now - tourLastFeatureMsRef.current > 400) {
           tourLastFeatureMsRef.current = now;
-          const tx = cam.target.x;
-          let bestIdx = -1;
-          let bestDist = Infinity;
-          const hysteresis = DAG_DEPTH_STEP * 0.75;
           const nodesArr = nodesRef.current;
+          let bestIdx = -1;
+          let bestAge = Infinity;
           for (let i = 0; i < nodesArr.length; i++) {
-            const k = nodesArr[i].thought.kind;
-            if (k === "activity") continue;
-            const d = Math.abs(nodesArr[i].pos.x - tx);
-            if (d < bestDist && d < hysteresis) { bestDist = d; bestIdx = i; }
+            const th = nodesArr[i].thought;
+            if (th.kind === "activity" || th.kind === "ancestor" || th.kind === "issue") continue;
+            const age = currentTime - th.ts;
+            if (age < 0 || age > 1500) continue;
+            if (age < bestAge) { bestAge = age; bestIdx = i; }
           }
           if (bestIdx !== tourFeaturedIdxRef.current) {
             tourFeaturedIdxRef.current = bestIdx;
-            // Drive the chain trace via selectedIdxRef — but skip
-            // the `selectedId` React state so the selection effect
-            // doesn't fire focusOn() and fight the tour camera.
             selectedIdxRef.current = bestIdx;
             const id = bestIdx >= 0 ? nodesArr[bestIdx].thought.id : null;
             onNodeFeature?.(id);
           }
         }
       } else {
-        if (autoTourActiveRef.current) {
-          // Tour just ended — clear featured so chain-trace resets
-          // and the Dossier's context card returns to idle.
-          autoTourActiveRef.current = false;
-          if (tourFeaturedIdxRef.current !== -1) {
-            tourFeaturedIdxRef.current = -1;
-            if (selectedIdxRef.current !== -1 && !selectedId) {
-              selectedIdxRef.current = -1;
-            }
-            onNodeFeature?.(null);
+        if (tourFeaturedIdxRef.current !== -1) {
+          tourFeaturedIdxRef.current = -1;
+          if (selectedIdxRef.current !== -1 && !selectedId) {
+            selectedIdxRef.current = -1;
           }
+          onNodeFeature?.(null);
         }
       }
 
@@ -748,7 +616,8 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
           ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
         };
 
-        // Causal edges (skip activity↔activity)
+        // Causal edges (skip activity↔activity, and skip edges
+        // whose child hasn't been born yet in chronicle time).
         for (const [pid, kids] of graph.children) {
           const pi = byIdRef.current.get(pid);
           if (pi === undefined || !vis[pi]) continue;
@@ -756,6 +625,14 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
           for (const cid of kids) {
             const ci = byIdRef.current.get(cid);
             if (ci === undefined || !vis[ci]) continue;
+            // Time gate — the edge doesn't exist until the child
+            // arrives. Ancestors have synthetic negative ts and are
+            // always present.
+            if (
+              currentTime !== null && currentTime !== undefined &&
+              mind[ci].thought.kind !== "ancestor" &&
+              mind[ci].thought.ts > currentTime + 1
+            ) continue;
             const gc = gate[ci] ?? 1;
             const gEdge = Math.min(gp, gc);
             const inChain = chainActive && chain.has(pi) && chain.has(ci);
@@ -818,40 +695,6 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.lineCap = "butt";
       }
 
-      // ── Chapter depth markers ──
-      // Thin vertical guides behind the nodes, one per depth bucket.
-      // Gives scale without clutter: a big workflow reads as many
-      // columns; a small one reads as two.
-      if (intro > 0.4 && graph) {
-        const markers = depthMarkersRef.current;
-        for (const m of markers) {
-          const worldX = m.depth * DAG_DEPTH_STEP;
-          // Project two y-anchors (top 240, bottom -260) at this X
-          // and Z=0, draw a 2D line between. Using project() from
-          // mind.ts keeps us in sync with the camera transform.
-          const top = project(cam, worldX, 240, 0);
-          const bot = project(cam, worldX, -260, 0);
-          if (top.behind || bot.behind) continue;
-          ctx.strokeStyle = WARM;
-          ctx.lineWidth = 1;
-          ctx.globalAlpha = 0.045 * intro;
-          ctx.setLineDash([2, 4]);
-          ctx.beginPath(); ctx.moveTo(top.sx, top.sy); ctx.lineTo(bot.sx, bot.sy); ctx.stroke();
-          ctx.setLineDash([]);
-          if (intro > 0.7 && cam.zoom >= 0.7) {
-            ctx.font = "8px ui-monospace, monospace";
-            ctx.fillStyle = WARM_DIM;
-            ctx.globalAlpha = 0.55 * intro;
-            ctx.fillText(
-              m.depth < 0 ? `U${-m.depth} · ${m.count}` : `D${m.depth} · ${m.count}`,
-              top.sx + 4,
-              top.sy + 6,
-            );
-          }
-        }
-        ctx.globalAlpha = 1;
-      }
-
       // ── Node markers: hard crystal core + soft halo ──
       // The STARS of the show. Each structural node gets a bright hard
       // center circle with a soft radial glow behind it.  Activities are
@@ -860,6 +703,23 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         if (!vis[i]) continue;
         const t = mind[i].thought;
         const isAnchor = t.kind === "issue";
+        const isAncestor = t.kind === "ancestor";
+        // Chronicle time-gating: skip thoughts after currentTime
+        // (ancestors are always visible — they have synthetic
+        // negative timestamps; the anchor is always visible once
+        // currentTime ≥ issue creation). Events that are about to
+        // arrive (within 400 ms of currentTime) get a "just born"
+        // flash multiplier.
+        let arrivalBoost = 1;
+        if (currentTime !== null && currentTime !== undefined && !isAncestor) {
+          if (t.ts > currentTime + 1) continue; // hasn't happened yet
+          const age = currentTime - t.ts;
+          if (age >= 0 && age < 800) {
+            // 0 → 1 fade as age goes 0→800ms, plus a flash overlay
+            const f = age / 800;
+            arrivalBoost = 1 + (1 - f) * 1.4;
+          }
+        }
         // Anchor boost: the issue node is the "one thing that must
         // always be legible". 1.6× radius, full alpha regardless of
         // chain trace or scrubber gate, and it pulses at half the
@@ -877,6 +737,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
           const nd = graph.depth.get(t.id) ?? 0;
           g *= waveBoostFor(nd);
         }
+        g *= arrivalBoost;
         if (g <= 0.001) continue;
         let color: string; let alpha: number; let coreR: number; let haloR: number;
         switch (t.kind as ThoughtKind) {
@@ -1059,7 +920,17 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       // celebration, blocked = red choke, in-progress = forward
       // arrow, todo/backlog = quiet outline.
       if (intro > 0.4) {
-        const beaconX = (maxDepth + 1) * DAG_DEPTH_STEP;
+        // Beacon sits at the far-right of the chronicle time axis —
+        // at the issue's resolution time if set, else at maxTs
+        // (usually "now") + a small margin so the beacon isn't
+        // visually on top of the most-recent thought.
+        const resolvedAtStr = issue.completedAt ?? issue.cancelledAt ?? null;
+        const beaconTs = resolvedAtStr
+          ? new Date(resolvedAtStr as unknown as string | Date).getTime()
+          : timeMap?.maxTs ?? Date.now();
+        const beaconX = timeMap
+          ? (timeMap.toX(beaconTs) - 0.5) * CHRONICLE_WORLD_WIDTH + 60
+          : 0;
         const p = project(cam, beaconX, 0, 0);
         if (!p.behind) {
           const status = issue.status;
@@ -1141,79 +1012,8 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         </div>
       </div>
 
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none" style={{ color: WARM_DIM, opacity: hintVisible && !selectedId && !tourCaption ? 0.55 : 0, transition: "opacity 900ms ease-out" }}>
-        <div className="font-mono text-[0.52rem] uppercase tracking-[0.24em] text-center">drag · scroll · click</div>
-      </div>
-
-      {/* Title card — the "chapter opening" that fires at the start
-          of each auto-tour cycle. Big serif italic, holds ~3 s, then
-          fades out into the chyron below. */}
-      <div
-        className="absolute top-[18%] left-1/2 -translate-x-1/2 z-10 pointer-events-none max-w-[80%] text-center"
-        style={{
-          color: WARM,
-          opacity: titleCardVisible && !selectedId ? 1 : 0,
-          transition: "opacity 900ms ease-out",
-        }}
-      >
-        <div className="font-mono text-[0.55rem] uppercase tracking-[0.22em] mb-2" style={{ color: WARM_DIM }}>
-          {issue.identifier ?? "the matter"} · dossier
-        </div>
-        <div
-          className="font-serif italic leading-[1.1]"
-          style={{ fontSize: "clamp(1.4rem, 3.6vw, 2.4rem)" }}
-        >
-          {leadHeadline && leadHeadline.trim().length > 0
-            ? leadHeadline
-            : shortLabel(issue.title ?? "", 80)}
-        </div>
-      </div>
-
-      {/* Auto-tour chyron — surfaces when the scene is self-narrating.
-          Pulsing acid dot signals "camera is moving automatically,
-          you can still interrupt by dragging or clicking". */}
-      <div
-        className="absolute bottom-9 left-1/2 -translate-x-1/2 z-10 pointer-events-none"
-        style={{
-          color: WARM,
-          opacity: tourCaption && !titleCardVisible && !selectedId ? 0.9 : 0,
-          transition: "opacity 700ms ease-out",
-        }}
-      >
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--boared-acid)] opacity-75 animate-ping" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--boared-acid)]" />
-          </span>
-          <span className="font-serif italic text-[0.88rem]">
-            {tourCaption ?? ""}
-          </span>
-          <span className="font-mono text-[0.52rem] uppercase tracking-[0.2em]" style={{ color: WARM_DIM }}>
-            tap to stop
-          </span>
-        </div>
-      </div>
-
-      {/* Tour progress bar — thin line along the bottom so the
-          viewer knows the journey has a length and where they are.
-          Fills forward through the ping-pong phase; direction dot
-          on the right signals which way the camera is sweeping. */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-[3px] z-10 pointer-events-none"
-        style={{
-          opacity: tourProgress !== null && !selectedId ? 1 : 0,
-          transition: "opacity 700ms ease-out",
-          background: `linear-gradient(90deg, transparent 0%, rgba(242,230,196,0.08) 50%, transparent 100%)`,
-        }}
-      >
-        <div
-          className="h-full"
-          style={{
-            width: `${Math.max(0, Math.min(1, tourProgress ?? 0)) * 100}%`,
-            background: "linear-gradient(90deg, rgba(242,230,196,0) 0%, var(--boared-acid) 100%)",
-            transition: "width 400ms linear",
-          }}
-        />
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none" style={{ color: WARM_DIM, opacity: hintVisible && !selectedId ? 0.55 : 0, transition: "opacity 900ms ease-out" }}>
+        <div className="font-mono text-[0.52rem] uppercase tracking-[0.24em] text-center">drag · scroll · click · timeline below</div>
       </div>
 
       {!selectedId && hoverInfo && (
@@ -1260,6 +1060,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     prev.gateById === next.gateById &&
     prev.onNodeActivate === next.onNodeActivate &&
     prev.onNodeFeature === next.onNodeFeature &&
-    prev.leadHeadline === next.leadHeadline
+    prev.timeMap === next.timeMap &&
+    prev.currentTime === next.currentTime
   );
 });

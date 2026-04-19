@@ -1,5 +1,7 @@
 /* mind.ts — 3D neural model: types, graph, layout, camera, particles */
 
+import type { TimeMap } from "./timeMap";
+
 export type ThoughtKind = "issue" | "comment" | "activity" | "subissue" | "run" | "ancestor";
 
 export interface Thought {
@@ -148,10 +150,13 @@ export function buildGraph(thoughts: Thought[]): CausalGraph {
 
 /* ── Layout ─────────────────────────────────────────────────────── */
 
-/** World units per causal-depth step. Exported so consumers can
- * place world-space decorations (beacon, chapter guides) at the
- * same scale the layout uses. */
+/** World units per causal-depth step. Retained for the rare
+ * depth-only fallback; the primary layout is now time-based. */
 export const DAG_DEPTH_STEP = 110;
+
+/** Full world-space width of the chronicle X axis. Time normalised
+ * to [0, 1] via timeMap maps into [-HALF, +HALF] of this. */
+export const CHRONICLE_WORLD_WIDTH = 1400;
 
 const RADII: Record<ThoughtKind, number> = {
   issue: 24, run: 14, subissue: 14, comment: 11, activity: 7, ancestor: 16,
@@ -181,114 +186,133 @@ function hash(s: string) {
   return Math.abs(h);
 }
 
-export function layoutMind(thoughts: Thought[], graph: CausalGraph): MindNode[] {
-  /* ── Causal DAG flow layout ──────────────────────────────────────
+export function layoutMind(
+  thoughts: Thought[],
+  _graph: CausalGraph,
+  timeMap?: TimeMap,
+): MindNode[] {
+  /* ── Chronicle layout (time-axis) ────────────────────────────────
    *
-   *   ancestors  ·  issue  ·  depth 1  ·  depth 2  ·  …  ·  leaf thoughts
-   *   ◀── upstream                                     downstream ──▶
+   *   ancestors                    issue                    now
+   *     ◀── upstream           · creation          resolution ──▶
    *
-   *   X = causal depth (the story's time-agnostic flow axis).
-   *       Ancestors sit at negative X — they're "before" the issue in
-   *       causality. Issue is the origin. Derived thoughts push right
-   *       by the BFS depth computed in buildGraph: depth 1 is the
-   *       first generation spawned from the issue, depth 2 is the
-   *       next, etc.
-   *   Y = kind band. Visual type separates "what kind of thought is
-   *       this?" so two thoughts at the same depth are still readable
-   *       (comments above, runs centred, sub-matters below, activity
-   *       drifting near the issue plane, ancestors stacked up-left).
-   *   Z = spread within (depth, kind) bucket so co-depth siblings
-   *       don't collapse onto a single line. Timestamp order drives
-   *       the sign of the spread — earlier → closer to Z=0, later →
-   *       further out.
+   *   X = NORMALISED TIME via timeMap.toX(thought.ts) mapped into
+   *       [-HALF, +HALF] of the world width. This is the single most
+   *       important change from the old depth-based layout — X now
+   *       reads as *calendar chronology*, so the viewer can see at a
+   *       glance "this happened Tuesday, that on Thursday". Quiet
+   *       periods are compressed by timeMap so a 3-month-old case
+   *       doesn't render as empty space.
    *
-   * The particle field then flows along the causal edges (built in
-   * buildEdges from graph.children), which — given this layout —
-   * means particles flow left-to-right along the depth axis, exactly
-   * the n8n / workflow brainwave read: upstream thoughts send pulses
-   * to their downstream consequences.
+   *   Y = kind band. Comments above, runs below-centre, sub-matters
+   *       below, ancestors upper-left, activity drifting near the
+   *       anchor line. Same as before.
+   *
+   *   Z = centred zig-zag within a single-ts cluster so two comments
+   *       posted seconds apart don't overlap on screen.
+   *
+   * Ancestors are placed before the issue's time (negative X offset
+   * relative to min) since they're "upstream" events that predate
+   * the case itself.
    * ─────────────────────────────────────────────────────────────── */
 
   const nodes: MindNode[] = [];
   const issue = thoughts.find(t => t.kind === "issue");
   if (!issue) return nodes;
 
-  const DEPTH_STEP = DAG_DEPTH_STEP;
   /** Vertical band per kind. Activity sits near the flow plane
    * rather than scattered — it's narrative texture, not structure. */
   const Y_BAND: Record<ThoughtKind, number> = {
     ancestor: 180, comment: 75, issue: 0, activity: -15, run: -80, subissue: -200,
   };
 
-  // Anchor
+  const HALF = CHRONICLE_WORLD_WIDTH / 2;
+
+  /** Maps a real timestamp to a world X coordinate. When no time
+   * map is provided we degrade gracefully to placing everything at
+   * the origin — layoutMind callers should always pass one in the
+   * chronicle era. */
+  const tsToX = (ts: number): number => {
+    if (!timeMap) return 0;
+    return (timeMap.toX(ts) - 0.5) * CHRONICLE_WORLD_WIDTH;
+  };
+
+  // Anchor — the issue at the real creation ts on the time axis.
+  const issueTs = issue.ts;
   nodes.push({
-    thought: issue, pos: { x: 0, y: 0, z: 0 },
+    thought: issue,
+    pos: { x: tsToX(issueTs), y: 0, z: 0 },
     radius: RADII.issue, phase: 0, introDelay: 0,
   });
 
-  // Ancestors — sort far → near (great-grandparent first). We want
-  // the nearest ancestor adjacent to the issue (X = -1 step) and the
-  // great-great grandparent pushed further left.
+  // Ancestors — sort far → near; place at negative X relative to
+  // the issue so they read as "before time zero" of this case.
   const ancestors = thoughts.filter(t => t.kind === "ancestor");
-  // `ts` on ancestors is a negative index (see IssueThoughtSpace:
-  // ts = -(ai+1)). Smaller ts → further-back ancestor → further-left.
   ancestors.sort((a, b) => a.ts - b.ts);
   const ancCount = ancestors.length;
+  const ancStep = Math.min(140, Math.max(80, CHRONICLE_WORLD_WIDTH / 12));
   ancestors.forEach((t, i) => {
-    // i=0 is the oldest ancestor. We want it at the leftmost X, so
-    // depth = -(ancCount - i). The nearest (i=ancCount-1) lands at -1.
+    // i=0 is the oldest; place far-left so the chain reads oldest→newest
+    // approaching the issue's X.
     const depth = -(ancCount - i);
     const zJ = (hash(t.id + "z") % 60) - 30;
     const yJ = (hash(t.id + "y") % 40) - 20;
     nodes.push({
       thought: t,
-      pos: { x: depth * DEPTH_STEP, y: Y_BAND.ancestor + yJ, z: zJ },
+      pos: { x: tsToX(issueTs) + depth * ancStep, y: Y_BAND.ancestor + yJ, z: zJ },
       radius: RADII.ancestor, phase: 0, introDelay: 60 + (ancCount - i - 1) * 25,
     });
   });
 
-  // Group derived thoughts by (depth, kind) so we can spread them
-  // along Z within each bucket.
+  // Group derived thoughts by (ts-bucket, kind). A "bucket" here is
+  // a rounded-to-minute timestamp so two thoughts at the same minute
+  // share a Z-spread and don't overlap visually.
   type K = Exclude<ThoughtKind, "issue" | "ancestor">;
-  const buckets = new Map<string, { kind: K; depth: number; list: Thought[] }>();
+  type Bucket = { kind: K; key: string; ts: number; list: Thought[] };
+  const buckets = new Map<string, Bucket>();
   for (const t of thoughts) {
     if (t.kind === "issue" || t.kind === "ancestor") continue;
     const kind = t.kind as K;
-    const depth = Math.max(1, graph.depth.get(t.id) ?? 1);
-    const key = `${depth}:${kind}`;
+    const bucketTs = Math.floor(t.ts / 60000) * 60000; // 1-min bucket
+    const key = `${bucketTs}:${kind}`;
     const existing = buckets.get(key);
     if (existing) existing.list.push(t);
-    else buckets.set(key, { kind, depth, list: [t] });
+    else buckets.set(key, { kind, key, ts: bucketTs, list: [t] });
   }
 
-  // Scale-down for single-thought issues so the plane doesn't feel empty
   const spreadScale = Math.min(1, Math.max(0.55, (thoughts.length - 1) / 40));
 
-  buckets.forEach(({ kind, depth, list }) => {
-    // Sort by timestamp so the earliest thought at this depth is
-    // closest to Z=0 and later siblings push out symmetrically.
+  buckets.forEach(({ kind, ts, list }) => {
     list.sort((a, b) => a.ts - b.ts);
-    const n = list.length;
     const stride = 60 * spreadScale;
+    const baseX = tsToX(ts);
     list.forEach((t, i) => {
-      // Centred zig-zag: i=0 at z=0, i=1 at -stride, i=2 at +stride,
-      // i=3 at -2·stride, etc. Keeps the centre busy and spreads out.
+      // Centred zig-zag within bucket for Z-spread; tiny X jitter so
+      // co-bucket items also separate horizontally.
       const sign = i % 2 === 0 ? 1 : -1;
       const mag = Math.ceil(i / 2);
       const z = sign * mag * stride;
-      // Tiny Y jitter so two co-depth siblings of the same kind don't
-      // render at identical screen Y.
+      const xJitter = sign * mag * 6;
       const yJitter = ((hash(t.id) % 30) - 15) * 0.6;
       const delay = 60 + i * (kind === "activity" ? 4 : kind === "comment" ? 8 : 12);
       nodes.push({
         thought: t,
-        pos: { x: depth * DEPTH_STEP, y: Y_BAND[kind] + yJitter, z },
+        pos: { x: baseX + xJitter, y: Y_BAND[kind] + yJitter, z },
         radius: RADII[kind],
         phase: (hash(t.id) % 628) / 100,
-        introDelay: delay + Math.min(n - 1, 6) * 10,
+        introDelay: delay + Math.min(list.length - 1, 6) * 10,
       });
     });
   });
+
+  // Clamp X to [-HALF-margin, +HALF+margin] defensively (ancestors
+  // can push past -HALF; that's fine, but keep their runaway in
+  // check so the camera init framing still reads).
+  const CLAMP = HALF + 300;
+  for (const n of nodes) {
+    if (n.pos.x < -CLAMP) n.pos.x = -CLAMP;
+    else if (n.pos.x > CLAMP) n.pos.x = CLAMP;
+  }
 
   return nodes;
 }

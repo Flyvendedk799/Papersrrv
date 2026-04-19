@@ -1544,7 +1544,6 @@ function DossierMount(props: {
   agentMap: IssueDetailData["agentMap"];
 }) {
   const data = useIssueDetailData();
-  const tour = data.tour;
   const onNextAction = React.useCallback(() => {
     const kind = data.narrative.nextAction?.kind;
     if (!kind) return;
@@ -1580,12 +1579,6 @@ function DossierMount(props: {
               label: data.narrative.nextAction.label,
             }
           : null,
-      }}
-      tour={{
-        status: tour.status,
-        caption: tour.caption ?? null,
-        start: () => tour.start(),
-        cancel: () => tour.cancel(),
       }}
       onNextAction={onNextAction}
     />
