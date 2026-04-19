@@ -116,10 +116,17 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   /** Has the user interacted yet? After first click, the hint fades;
    * on 10s idle, it returns. */
   const lastInteractionRef = useRef(performance.now());
+  /** Auto-tour: when the user is idle, the camera slow-pans through
+   * the workflow so the scene self-narrates. Recomputed per frame
+   * inside the render loop; surfaced to React via tourCaption state
+   * so the chyron can describe what's in view. */
+  const autoTourActiveRef = useRef(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<{ label: string; kind: ThoughtKind; authorName: string } | null>(null);
   const [hintVisible, setHintVisible] = useState(true);
+  /** What the auto-tour is currently showing. Null when not touring. */
+  const [tourCaption, setTourCaption] = useState<string | null>(null);
 
   /* ── Thoughts memo ── */
   const thoughts = useMemo(() => {
@@ -291,6 +298,54 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     return () => window.clearInterval(id);
   }, [selectedId, hintVisible]);
 
+  /* ── Auto-tour caption ── maps the auto-tour camera's current
+   * target.x to a human-readable one-liner describing which slice
+   * of the story the viewer is looking at. Updates at 2 Hz — the
+   * chyron text shouldn't flicker per-frame. Actual camera panning
+   * happens inside the render loop so it stays in sync with the
+   * visible frame rate. */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (selectedId) {
+        if (tourCaption !== null) setTourCaption(null);
+        return;
+      }
+      const idleMs = performance.now() - lastInteractionRef.current;
+      const TOUR_IDLE_MS = 15_000;
+      if (idleMs < TOUR_IDLE_MS) {
+        if (tourCaption !== null) setTourCaption(null);
+        return;
+      }
+      // Read the already-projected-in-render auto-tour state.
+      if (!autoTourActiveRef.current) return;
+      const maxD = maxDepthRef.current;
+      const ancN = (issue.ancestors ?? []).length;
+      const targetX = cameraRef.current.target.x;
+      const xLeft = -ancN * DAG_DEPTH_STEP;
+      const xRight = (maxD + 1) * DAG_DEPTH_STEP;
+      const norm = xRight > xLeft ? (targetX - xLeft) / (xRight - xLeft) : 0.5;
+      let next: string;
+      if (targetX < -DAG_DEPTH_STEP * 0.5) {
+        next = "Upstream — what led here";
+      } else if (targetX < DAG_DEPTH_STEP * 0.5) {
+        next = "The matter — the anchor of this case";
+      } else if (norm < 0.55) {
+        next = "Early thoughts — first responses";
+      } else if (norm < 0.85) {
+        next = "Recent motion — where the work is";
+      } else {
+        next =
+          issue.status === "done" || issue.status === "cancelled"
+            ? "Resolution — where the journey ends"
+            : issue.status === "blocked"
+              ? "Held — blocked at the desk"
+              : "Heading — where this is going";
+      }
+      if (next !== tourCaption) setTourCaption(next);
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [selectedId, tourCaption, issue.ancestors, issue.status]);
+
   /* ── Pointer handlers ── */
   const hitTest = useCallback((px: number, py: number) => {
     const sx = projSx.current, sy = projSy.current, sc = projSc.current, vis = projVis.current;
@@ -376,6 +431,35 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
 
       const cam = cameraRef.current; cam.centerX = w / 2; cam.centerY = h / 2;
       const intro = easeOut(clamp((now - introStartRef.current) / INTRO_MS, 0, 1));
+
+      // ── Auto-tour ── after 15 s of idle and no selection, the
+      // camera slow-pans through the workflow in a ping-pong cycle
+      // (20 s forward, 20 s back, …). Drives the tour chyron. Any
+      // interaction resets lastInteractionRef and snaps us out.
+      const idleMs = now - lastInteractionRef.current;
+      const TOUR_IDLE_MS = 15_000;
+      const TOUR_SPAN_MS = 20_000;
+      const maxD = maxDepthRef.current;
+      const ancN = (issue.ancestors ?? []).length;
+      if (!selectedId && idleMs > TOUR_IDLE_MS && maxD >= 0 && nodesRef.current.length > 1) {
+        autoTourActiveRef.current = true;
+        const elapsed = idleMs - TOUR_IDLE_MS;
+        const cycle = elapsed % (TOUR_SPAN_MS * 2);
+        const phase = cycle < TOUR_SPAN_MS ? cycle / TOUR_SPAN_MS : 2 - cycle / TOUR_SPAN_MS;
+        // Smoothstep for gentler arrivals at each end.
+        const eased = phase * phase * (3 - 2 * phase);
+        const xLeft = -ancN * DAG_DEPTH_STEP - 60;
+        const xRight = (maxD + 1) * DAG_DEPTH_STEP + 60;
+        cam.tTarget.x = xLeft + (xRight - xLeft) * eased;
+        cam.tTarget.y = 0;
+        cam.tTarget.z = 0;
+        cam.tZoom = 0.82;
+      } else {
+        autoTourActiveRef.current = false;
+        // Non-tour idle — let the selection path / default keep
+        // driving tTarget. Nothing to do here.
+      }
+
       updateCamera(cam, dt);
 
       const hIdx = hoverIdxRef.current, sIdx = selectedIdxRef.current;
@@ -481,6 +565,40 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         const diff = Math.min(Math.abs(wavePhase - normD), 1 - Math.abs(wavePhase - normD));
         return diff < 0.12 ? 1 + (0.12 - diff) * 2.6 : 1;
       };
+      // Pulse beads: stateless traveling dots on every causal edge,
+      // 3 per edge staggered in phase. The most visible "signal
+      // flowing" affordance — reads as literal brainwaves moving
+      // parent → child. Phase offset per edge so beads don't all
+      // travel in sync.
+      const BEAD_COUNT = 3;
+      const BEAD_PERIOD_MS = 2800;
+      const drawBeads = (
+        x1: number, y1: number, x2: number, y2: number,
+        color: string, baseAlpha: number,
+        phaseOffset: number, inChain: boolean,
+      ) => {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len = Math.hypot(dx, dy);
+        if (len < 18) return; // too short for beads to read
+        const radius = inChain ? 2.5 : 1.8;
+        for (let b = 0; b < BEAD_COUNT; b++) {
+          const raw = ((now + phaseOffset + (b * BEAD_PERIOD_MS) / BEAD_COUNT) % BEAD_PERIOD_MS) / BEAD_PERIOD_MS;
+          // sin-shaped alpha so beads fade in at the parent and out
+          // at the child — avoids pop-in/pop-out.
+          const beadAlpha = Math.sin(raw * Math.PI) * baseAlpha;
+          if (beadAlpha < 0.04) continue;
+          const bx = x1 + dx * raw;
+          const by = y1 + dy * raw;
+          ctx.fillStyle = color;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = inChain ? 8 : 5;
+          ctx.globalAlpha = beadAlpha * intro;
+          ctx.beginPath();
+          ctx.arc(bx, by, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
+      };
       if (graph && intro > 0.1) {
         ctx.lineCap = "round";
 
@@ -527,11 +645,18 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
               ctx.beginPath(); ctx.moveTo(sx[pi], sy[pi]); ctx.lineTo(sx[ci], sy[ci]); ctx.stroke();
             } else {
               glowLine(sx[pi], sy[pi], sx[ci], sy[ci], WARM, 0.18 * wb * convergenceLift, 1.0, gEdge, inChain);
+              // Pulse beads — dominant visual cue for "signal
+              // flowing". Base alpha lifts with wave + chain gate.
+              const beadBase = 0.55 * gEdge * (chainActive ? (inChain ? 1 : offChainDim * 0.9) : 1) * wb;
+              if (beadBase > 0.05) {
+                drawBeads(sx[pi], sy[pi], sx[ci], sy[ci], WARM, beadBase, pi * 131 + ci * 17, inChain);
+              }
             }
           }
         }
 
-        // Ancestor chain — golden luminous thread
+        // Ancestor chain — golden luminous thread (beads flow
+        // ancestor → issue, the "upstream cause" direction).
         const ancNodes: number[] = [];
         for (let i = 0; i < mind.length; i++) if (mind[i].thought.kind === "ancestor" && vis[i]) ancNodes.push(i);
         const gIssue = gate[0] ?? 1;
@@ -539,19 +664,23 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
           const g0 = Math.min(gIssue, gate[ancNodes[0]] ?? 1);
           const inC0 = chainActive && chain.has(0) && chain.has(ancNodes[0]);
           glowLine(sx[0], sy[0], sx[ancNodes[0]], sy[ancNodes[0]], "#C8A96E", 0.45, 1.8, g0, inC0);
+          drawBeads(sx[ancNodes[0]], sy[ancNodes[0]], sx[0], sy[0], "#C8A96E", 0.75 * g0, ancNodes[0] * 53, inC0);
           for (let ai = 1; ai < ancNodes.length; ai++) {
             const gch = Math.min(gate[ancNodes[ai - 1]] ?? 1, gate[ancNodes[ai]] ?? 1);
             const inC = chainActive && chain.has(ancNodes[ai - 1]) && chain.has(ancNodes[ai]);
             glowLine(sx[ancNodes[ai - 1]], sy[ancNodes[ai - 1]], sx[ancNodes[ai]], sy[ancNodes[ai]], "#C8A96E", 0.4, 1.5, gch, inC);
+            drawBeads(sx[ancNodes[ai]], sy[ancNodes[ai]], sx[ancNodes[ai - 1]], sy[ancNodes[ai - 1]], "#C8A96E", 0.7 * gch, ancNodes[ai] * 53, inC);
           }
         }
 
-        // Subissue connections — emerald luminous threads
+        // Subissue connections — emerald luminous threads (beads
+        // flow issue → sub-matter, the "spawned work" direction).
         for (let i = 0; i < mind.length; i++) {
           if (mind[i].thought.kind === "subissue" && vis[i] && vis[0]) {
             const gch = Math.min(gIssue, gate[i] ?? 1);
             const inC = chainActive && chain.has(0) && chain.has(i);
             glowLine(sx[0], sy[0], sx[i], sy[i], "#3FCF8E", 0.35, 1.4, gch, inC);
+            drawBeads(sx[0], sy[0], sx[i], sy[i], "#3FCF8E", 0.65 * gch, i * 83, inC);
           }
         }
         ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.lineCap = "butt";
@@ -609,6 +738,13 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         let g = gate[i] ?? 1;
         if (chainActive && !isAnchor) g *= chain.has(i) ? pulse : offChainDim;
         if (isAnchor) g = 1; // anchor never dims
+        // Sequential node flash — when the brainwave sweep passes
+        // this node's depth, it lights up. The whole DAG fires in
+        // causal order, visibly.
+        if (!isAnchor && graph) {
+          const nd = graph.depth.get(t.id) ?? 0;
+          g *= waveBoostFor(nd);
+        }
         if (g <= 0.001) continue;
         let color: string; let alpha: number; let coreR: number; let haloR: number;
         switch (t.kind as ThoughtKind) {
@@ -845,8 +981,33 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         </div>
       </div>
 
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none" style={{ color: WARM_DIM, opacity: hintVisible && !selectedId ? 0.55 : 0, transition: "opacity 900ms ease-out" }}>
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none" style={{ color: WARM_DIM, opacity: hintVisible && !selectedId && !tourCaption ? 0.55 : 0, transition: "opacity 900ms ease-out" }}>
         <div className="font-mono text-[0.52rem] uppercase tracking-[0.24em] text-center">drag · scroll · click</div>
+      </div>
+
+      {/* Auto-tour chyron — surfaces when the scene is self-narrating.
+          Pulsing acid dot signals "camera is moving automatically,
+          you can still interrupt by dragging or clicking". */}
+      <div
+        className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none"
+        style={{
+          color: WARM,
+          opacity: tourCaption && !selectedId ? 0.9 : 0,
+          transition: "opacity 700ms ease-out",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--boared-acid)] opacity-75 animate-ping" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--boared-acid)]" />
+          </span>
+          <span className="font-serif italic text-[0.88rem]">
+            {tourCaption ?? ""}
+          </span>
+          <span className="font-mono text-[0.52rem] uppercase tracking-[0.2em]" style={{ color: WARM_DIM }}>
+            tap to stop
+          </span>
+        </div>
       </div>
 
       {!selectedId && hoverInfo && (
