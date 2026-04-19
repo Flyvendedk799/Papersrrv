@@ -11,6 +11,10 @@ export interface RunForIssue {
   invocationSource: string;
   usageJson: Record<string, unknown> | null;
   resultJson: Record<string, unknown> | null;
+  // Dossier causal linkage. Set by the server when the run was
+  // spawned in response to a specific comment or activity.
+  triggeredByCommentId?: string | null;
+  triggeredByActivityId?: string | null;
 }
 
 export interface IssueForRun {

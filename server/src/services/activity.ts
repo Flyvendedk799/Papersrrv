@@ -95,6 +95,8 @@ export function activityService(db: Db) {
           invocationSource: heartbeatRuns.invocationSource,
           usageJson: heartbeatRuns.usageJson,
           resultJson: heartbeatRuns.resultJson,
+          triggeredByCommentId: heartbeatRuns.triggeredByCommentId,
+          triggeredByActivityId: heartbeatRuns.triggeredByActivityId,
         })
         .from(heartbeatRuns)
         .where(

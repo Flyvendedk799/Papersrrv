@@ -24,38 +24,116 @@ export interface CausalGraph {
 
 /* ── Graph ──────────────────────────────────────────────────────── */
 
+/* Explicit causal-linkage fields on each payload kind. When present,
+ * these override the time-proximity fallback below — the graph then
+ * reflects *actual* causation (who replied to what, which run a
+ * comment triggered, which run a sub-matter was spawned from) rather
+ * than "these two thoughts happened near each other". */
+type CommentPayload = { id: string; replyToCommentId?: string | null };
+type RunPayload = {
+  triggeredByCommentId?: string | null;
+  triggeredByActivityId?: string | null;
+};
+type SubissuePayload = {
+  createdFromCommentId?: string | null;
+  createdFromRunId?: string | null;
+};
+type ActivityPayload = {
+  runId?: string | null;
+  triggeredByCommentId?: string | null;
+};
+
+const FALLBACK_WINDOW_MS = 30 * 60 * 1000;
+
 export function buildGraph(thoughts: Thought[]): CausalGraph {
   const parents = new Map<string, string[]>();
   const children = new Map<string, string[]>();
   const depth = new Map<string, number>();
   const issue = thoughts.find(t => t.kind === "issue");
   if (!issue) return { parents, children, depth };
+
+  // Every thought id that actually exists in this graph — used to
+  // filter out payload references that point at something outside
+  // the issue's slice (e.g. a cross-issue reply target).
+  const known = new Set(thoughts.map(t => t.id));
+
   const sorted = [...thoughts].sort((a, b) => a.ts - b.ts);
   parents.set(issue.id, []);
   depth.set(issue.id, 0);
-  let lastComment: Thought | null = null;
-  const lastByAuthor = new Map<string, Thought>();
+
   const addChild = (p: string, c: string) => {
     const arr = children.get(p) ?? [];
-    arr.push(c);
+    if (!arr.includes(c)) arr.push(c);
     children.set(p, arr);
   };
+
+  let lastComment: Thought | null = null;
   for (const t of sorted) {
     if (t.kind === "issue" || t.kind === "ancestor") continue;
+
     const ps: string[] = [];
-    const same = lastByAuthor.get(t.author);
-    if (same) ps.push(same.id);
-    if ((t.kind === "activity" || t.kind === "run") && lastComment && !ps.includes(lastComment.id))
-      ps.push(lastComment.id);
-    if (t.kind === "comment" && lastComment && lastComment.author !== t.author &&
-        t.ts - lastComment.ts < 600000 && !ps.includes(lastComment.id))
-      ps.push(lastComment.id);
+
+    // Phase 1 — explicit fields on the payload. These are the truth.
+    const payload = t.payload;
+    if (t.kind === "comment" && payload) {
+      const c = payload as CommentPayload;
+      if (c.replyToCommentId) {
+        const pid = `comment:${c.replyToCommentId}`;
+        if (known.has(pid)) ps.push(pid);
+      }
+    } else if (t.kind === "run" && payload) {
+      const r = payload as RunPayload;
+      if (r.triggeredByCommentId) {
+        const pid = `comment:${r.triggeredByCommentId}`;
+        if (known.has(pid)) ps.push(pid);
+      }
+      if (r.triggeredByActivityId) {
+        const pid = `activity:${r.triggeredByActivityId}`;
+        if (known.has(pid) && !ps.includes(pid)) ps.push(pid);
+      }
+    } else if (t.kind === "subissue" && payload) {
+      const s = payload as SubissuePayload;
+      if (s.createdFromCommentId) {
+        const pid = `comment:${s.createdFromCommentId}`;
+        if (known.has(pid)) ps.push(pid);
+      }
+      if (s.createdFromRunId) {
+        const pid = `run:${s.createdFromRunId}`;
+        if (known.has(pid) && !ps.includes(pid)) ps.push(pid);
+      }
+    } else if (t.kind === "activity" && payload) {
+      const e = payload as ActivityPayload;
+      if (e.triggeredByCommentId) {
+        const pid = `comment:${e.triggeredByCommentId}`;
+        if (known.has(pid)) ps.push(pid);
+      }
+      if (e.runId) {
+        const pid = `run:${e.runId}`;
+        if (known.has(pid) && !ps.includes(pid)) ps.push(pid);
+      }
+    }
+
+    // Phase 2 — fallback. If nothing explicit, link to the most
+    // recent comment within FALLBACK_WINDOW_MS, regardless of
+    // author. Comments are the primary causal trigger in a
+    // user-driven workflow; "same author consecutive" (the old
+    // heuristic) was mostly noise.
+    if (ps.length === 0 && lastComment && t.id !== lastComment.id) {
+      if (t.ts - lastComment.ts >= 0 && t.ts - lastComment.ts < FALLBACK_WINDOW_MS) {
+        ps.push(lastComment.id);
+      }
+    }
+
+    // Phase 3 — last resort. Parent to the issue anchor.
     if (ps.length === 0) ps.push(issue.id);
+
     parents.set(t.id, ps);
     for (const p of ps) addChild(p, t.id);
-    lastByAuthor.set(t.author, t);
     if (t.kind === "comment") lastComment = t;
   }
+
+  // BFS depth from issue. Unreachable thoughts get depth 1 so they
+  // still render somewhere on the DAG plane.
   const queue = [issue.id];
   while (queue.length) {
     const id = queue.shift()!;
