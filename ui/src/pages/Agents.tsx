@@ -10,17 +10,22 @@ import { useSidebar } from "../context/SidebarContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
-import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { relativeTime, cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Bot, Plus, List, GitBranch, SlidersHorizontal, RefreshCw } from "lucide-react";
+import { Bot, Plus, SlidersHorizontal, RefreshCw } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
 import { PageHeader } from "../components/boared/PageHeader";
-import { Wire, WireList } from "../components/boared/Wire";
+import { AgentRoster } from "../components/agents/AgentRoster";
+import {
+  AgentRosterToolbar,
+  type RosterGroup,
+  type RosterSort,
+  type RosterView,
+} from "../components/agents/AgentRosterToolbar";
 
 const adapterLabels: Record<string, string> = {
   claude_local: "Claude",
@@ -83,9 +88,16 @@ export function Agents() {
   const queryClient = useQueryClient();
   const pathSegment = location.pathname.split("/").pop() ?? "all";
   const tab: FilterTab = (pathSegment === "all" || pathSegment === "active" || pathSegment === "paused" || pathSegment === "error") ? pathSegment : "all";
-  const [view, setView] = useState<"list" | "org">("org");
+
+  // Roster presentation state (design guide "thin page, uncontrolled
+  // roster" — the toolbar mediates all of these).
+  const [view, setView] = useState<RosterView>("org");
+  const [sort, setSort] = useState<RosterSort>("live");
+  const [groupBy, setGroupBy] = useState<RosterGroup>("none");
+  const [search, setSearch] = useState("");
   const forceListView = isMobile;
-  const effectiveView: "list" | "org" = forceListView ? "list" : view;
+  const effectiveView: RosterView = forceListView && view === "org" ? "list" : view;
+
   const [showTerminated, setShowTerminated] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [adapterMenuOpen, setAdapterMenuOpen] = useState(false);
@@ -119,7 +131,6 @@ export function Agents() {
     refetchInterval: 15_000,
   });
 
-  // Map agentId -> first live run + live run count
   const liveRunByAgent = useMemo(() => {
     const map = new Map<string, { runId: string; liveCount: number }>();
     for (const r of runs ?? []) {
@@ -154,6 +165,7 @@ export function Agents() {
 
   const filtered = filterAgents(agents ?? [], tab, showTerminated);
   const filteredOrg = filterOrgTree(orgTree ?? [], tab, showTerminated);
+  const liveCount = filtered.filter((a) => liveRunByAgent.has(a.id)).length;
 
   return (
     <div className="boared-reveal max-w-[1400px] mx-auto">
@@ -261,31 +273,6 @@ export function Agents() {
               </div>
             )}
           </div>
-          {/* View toggle */}
-          {!forceListView && (
-            <div className="flex items-center border border-foreground">
-              <button
-                className={cn(
-                  "p-1.5 transition-colors",
-                  effectiveView === "list" ? "bg-foreground text-background" : "text-foreground hover:bg-foreground/[0.06]"
-                )}
-                onClick={() => setView("list")}
-                aria-label="List view"
-              >
-                <List className="h-3.5 w-3.5" />
-              </button>
-              <button
-                className={cn(
-                  "p-1.5 transition-colors border-l border-foreground",
-                  effectiveView === "org" ? "bg-foreground text-background" : "text-foreground hover:bg-foreground/[0.06]"
-                )}
-                onClick={() => setView("org")}
-                aria-label="Org tree view"
-              >
-                <GitBranch className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -304,78 +291,49 @@ export function Agents() {
         />
       )}
 
-      {/* List view */}
-      {effectiveView === "list" && filtered.length > 0 && (
-        <WireList>
-          {filtered.map((agent) => (
-            <Wire
-              key={agent.id}
-              href={agentUrl(agent)}
-              leading={
-                <span className="relative flex h-2.5 w-2.5">
-                  <span
-                    className={`absolute inline-flex h-full w-full ${agentStatusDot[agent.status] ?? agentStatusDotDefault}`}
-                  />
-                </span>
-              }
-              title={
-                <div className="flex items-baseline gap-3 min-w-0">
-                  <span className="truncate text-foreground">{agent.name}</span>
-                  <span className="shrink-0 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground truncate">
-                    {agent.role}{agent.title ? ` · ${agent.title}` : ""}
-                  </span>
-                </div>
-              }
-              trailing={
-                <div className="flex items-center gap-3">
-                  <span className="sm:hidden">
-                    {liveRunByAgent.has(agent.id) ? (
-                      <LiveRunIndicator
-                        agentRef={agentRouteRef(agent)}
-                        runId={liveRunByAgent.get(agent.id)!.runId}
-                        liveCount={liveRunByAgent.get(agent.id)!.liveCount}
-                      />
-                    ) : (
-                      <StatusBadge status={agent.status} />
-                    )}
-                  </span>
-                  <div className="hidden sm:flex items-center gap-4">
-                    {liveRunByAgent.has(agent.id) && (
-                      <LiveRunIndicator
-                        agentRef={agentRouteRef(agent)}
-                        runId={liveRunByAgent.get(agent.id)!.runId}
-                        liveCount={liveRunByAgent.get(agent.id)!.liveCount}
-                      />
-                    )}
-                    <span className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground w-16 text-right">
-                      {adapterLabels[agent.adapterType] ?? agent.adapterType}
-                    </span>
-                    <span className="font-mono text-[0.62rem] text-muted-foreground w-16 text-right tabular-nums">
-                      {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
-                    </span>
-                    <span className="w-20 flex justify-end">
-                      <StatusBadge status={agent.status} />
-                    </span>
-                  </div>
-                </div>
-              }
-            />
-          ))}
-        </WireList>
+      {agents && agents.length > 0 && (
+        <AgentRosterToolbar
+          search={search}
+          onSearchChange={setSearch}
+          view={effectiveView}
+          onViewChange={setView}
+          sort={sort}
+          onSortChange={setSort}
+          groupBy={groupBy}
+          onGroupByChange={setGroupBy}
+          disableOrg={forceListView}
+          totalCount={(agents ?? []).length}
+          visibleCount={filtered.length}
+          liveCount={liveCount}
+        />
       )}
 
-      {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
-        <p className="font-mono text-[0.72rem] text-muted-foreground text-center py-8">
-          No agents match the selected filter.
-        </p>
+      {/* List / grid: AgentRoster takes over presentation */}
+      {effectiveView !== "org" && agents && agents.length > 0 && (
+        <AgentRoster
+          agents={filtered}
+          liveRunByAgent={liveRunByAgent}
+          view={effectiveView}
+          sort={sort}
+          groupBy={groupBy}
+          search={search}
+        />
       )}
 
-      {/* Org chart view */}
+      {/* Org chart view — search applied by matching node name/role */}
       {effectiveView === "org" && filteredOrg.length > 0 && (
         <div className="border-t border-[var(--boared-rule)]">
-          {filteredOrg.map((node) => (
-            <OrgTreeNode key={node.id} node={node} depth={0} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
-          ))}
+          {filteredOrg
+            .filter((n) => matchesOrgSearch(n, search))
+            .map((node) => (
+              <OrgTreeNode
+                key={node.id}
+                node={node}
+                depth={0}
+                agentMap={agentMap}
+                liveRunByAgent={liveRunByAgent}
+              />
+            ))}
         </div>
       )}
 
@@ -394,6 +352,14 @@ export function Agents() {
   );
 }
 
+function matchesOrgSearch(node: OrgNode, needle: string): boolean {
+  if (!needle) return true;
+  const n = needle.toLowerCase();
+  if (node.name.toLowerCase().includes(n)) return true;
+  if (node.role.toLowerCase().includes(n)) return true;
+  return node.reports.some((r) => matchesOrgSearch(r, needle));
+}
+
 function OrgTreeNode({
   node,
   depth,
@@ -406,7 +372,6 @@ function OrgTreeNode({
   liveRunByAgent: Map<string, { runId: string; liveCount: number }>;
 }) {
   const agent = agentMap.get(node.id);
-
   const statusColor = agentStatusDot[node.status] ?? agentStatusDotDefault;
 
   return (
