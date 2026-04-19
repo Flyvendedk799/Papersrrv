@@ -60,6 +60,22 @@ const runSeqCounters = new Map<string, number>();
 export function runnerRoutes(db: Db) {
   const router = Router();
 
+  /* Dashboard "runner status" widget. The local-trusted deployment
+   * doesn't currently have a global runner-paused flag — runs are
+   * controlled per-agent — so this returns a safe default of
+   * `paused: false`. Prevents console 404 spam from Dashboard's
+   * 5-second poll. Proper wiring can replace this when the pause
+   * feature lands. */
+  router.get("/runner/status", async (_req: Request, res: Response) => {
+    res.json({ paused: false });
+  });
+
+  router.post("/runner/pause", async (req: Request, res: Response) => {
+    const { paused } = (req.body ?? {}) as { paused?: boolean };
+    // No-op for now — accept, echo back, never persist.
+    res.json({ paused: Boolean(paused) });
+  });
+
   /**
    * GET /api/runner/poll
    * Returns the next queued run for a local adapter type.

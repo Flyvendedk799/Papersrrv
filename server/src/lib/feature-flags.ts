@@ -13,13 +13,19 @@ export type ServerFeatureFlag =
   | "github_tab_enabled" // backlog 4.0 umbrella flag
   | "github_pat_auth" // backlog 4.0 sub-flag — enable PAT-based connections
   | "github_webhooks" // backlog 4.0 A3 — enable /api/webhooks/github ingress
-  | "pr_actions"; // backlog 4.0 B3 — enable PR mutations (comment/approve/merge)
+  | "pr_actions" // backlog 4.0 B3 — enable PR mutations (comment/approve/merge)
+  // Wave 5 — LLM-backed case synthesis. When on + ANTHROPIC_API_KEY
+  // set, the abstract is rewritten by Claude. Default off so the
+  // template path continues to work and no LLM cost is incurred
+  // until an operator opts in.
+  | "issue_synthesis_llm_enabled";
 
 const DEFAULTS: Record<ServerFeatureFlag, boolean> = {
   github_tab_enabled: false,
   github_pat_auth: false,
   github_webhooks: false,
   pr_actions: false,
+  issue_synthesis_llm_enabled: false,
 };
 
 function readEnv(key: ServerFeatureFlag): boolean | null {

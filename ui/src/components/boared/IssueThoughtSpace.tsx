@@ -23,12 +23,20 @@ import { ParticleGL } from "./thoughtSpace/particleGL";
 
 type ThoughtKind = "issue" | "comment" | "activity" | "subissue" | "run" | "ancestor";
 
-const BG = "#08080A";
-const WARM = "#F2E6C4";
-const WARM_DIM = "#7A6F50";
-const ACID = "#FF6B4A";
-const PARTICLE_MAX = 16000;
-const PARTICLE_MIN = 9000;
+/* Canvas palette — mirrors the --boared-scene-* CSS tokens declared
+ * in ui/src/index.css. The canvas/WebGL rendering loop needs raw
+ * hex literals (no var() resolution in a per-frame path), so these
+ * constants are the authoritative values used when drawing onto
+ * the scene surface. Keep in sync with index.css. */
+const BG = "#1A1815";          // --boared-scene
+const WARM = "#F2E6C4";        // --boared-scene-ink
+const WARM_DIM = "#7A6F50";    // --boared-scene-ink-faint
+const ACID = "#FF6B4A";        // --boared-acid
+/* Halved from the old standalone-scene density (16k/9k) since the
+ * Dossier now renders the scene as an ambient heartbeat band — the
+ * aesthetic is "hint of activity", not "immersive nebula". */
+const PARTICLE_MAX = 8000;
+const PARTICLE_MIN = 4500;
 const INTRO_MS = 2200;
 const HIT_PAD = 14;
 
@@ -147,7 +155,6 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<{ label: string; kind: ThoughtKind; authorName: string } | null>(null);
-  const [hintVisible, setHintVisible] = useState(true);
 
   /* ── Thoughts memo ── */
   const thoughts = useMemo(() => {
@@ -318,19 +325,6 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     lastInteractionRef.current = performance.now();
   }, []);
 
-  /* ── Idle → resurface hint ── after 10 s of no interaction and
-   * no active selection, bring the hint back so users who got
-   * stuck can find their way. */
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      if (selectedId) return;
-      if (hintVisible) return;
-      if (performance.now() - lastInteractionRef.current > 10_000) {
-        setHintVisible(true);
-      }
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [selectedId, hintVisible]);
 
   /* ── Pointer handlers ── */
   const hitTest = useCallback((px: number, py: number) => {
@@ -371,7 +365,6 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   }, [hitTest]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    setHintVisible(false);
     lastInteractionRef.current = performance.now();
     const rect = canvasRef.current?.getBoundingClientRect(); if (!rect) return;
     const cam = cameraRef.current;
@@ -998,7 +991,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   const selectedThought = useMemo(() => selectedId ? thoughts.find(t => t.id === selectedId) ?? null : null, [selectedId, thoughts]);
 
   return (
-    <div ref={wrapperRef} className={cn("relative w-full overflow-hidden border border-foreground select-none", className)} style={{ height: "min(80vh, 860px)", background: BG }}>
+    <div ref={wrapperRef} className={cn("relative w-full h-full overflow-hidden select-none", className)} style={{ background: BG }}>
       <canvas ref={glCanvasRef} className="absolute inset-0 block pointer-events-none" />
       <canvas ref={canvasRef} className="absolute inset-0 block cursor-grab active:cursor-grabbing"
         onPointerMove={handlePointerMove} onPointerDown={handlePointerDown} onPointerUp={handlePointerUp}
@@ -1008,17 +1001,13 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       <div className="absolute top-5 left-5 z-10 pointer-events-none">
         <div className="font-mono text-[0.54rem] uppercase tracking-[0.24em]" style={{ color: WARM_DIM, opacity: 0.7 }}>The thought network</div>
         <div className="flex gap-3 mt-2">
-          {[["run", "#E09437", "Runs"], ["comment", "#5CC8E4", "Comments"], ["subissue", "#3FCF8E", "Sub-issues"], ["ancestor", "#C8A96E", "Ancestry"]] .map(([, c, l]) => (
+          {[["run", "var(--boared-scene-warn)", "Runs"], ["comment", "var(--boared-scene-info)", "Comments"], ["subissue", "var(--boared-scene-success)", "Sub-issues"], ["ancestor", "var(--boared-scene-feature)", "Ancestry"]] .map(([, c, l]) => (
             <div key={l as string} className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full" style={{ background: c as string, opacity: 0.7 }} />
               <span className="font-mono text-[0.46rem] uppercase tracking-[0.12em]" style={{ color: WARM_DIM, opacity: 0.5 }}>{l}</span>
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none" style={{ color: WARM_DIM, opacity: hintVisible && !selectedId ? 0.55 : 0, transition: "opacity 900ms ease-out" }}>
-        <div className="font-mono text-[0.52rem] uppercase tracking-[0.24em] text-center">drag · scroll · click · timeline below</div>
       </div>
 
       {!selectedId && hoverInfo && (
@@ -1035,7 +1024,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
           one source of truth for "what is selected". */}
       {!onNodeActivate && selectedId && selectedThought && (
         <div className="absolute top-1/2 left-6 md:left-10 z-20 max-w-[440px] pointer-events-none" style={{ transform: "translate(0, -50%)" }}>
-          <div className="p-6 pointer-events-auto max-h-[70vh] overflow-y-auto backdrop-blur-sm" style={{ background: "rgba(15,14,12,0.82)", border: `1px solid ${WARM_DIM}`, color: WARM }}>
+          <div className="p-6 pointer-events-auto max-h-[70vh] overflow-y-auto backdrop-blur-sm" style={{ background: "color-mix(in oklab, var(--boared-scene-card) 82%, transparent)", border: `1px solid ${WARM_DIM}`, color: WARM }}>
             <div className="font-mono text-[0.56rem] uppercase tracking-[0.2em] mb-3" style={{ color: WARM_DIM }}>{selectedThought.kind === "issue" ? "The matter" : selectedThought.kind === "comment" ? "Correspondence" : selectedThought.kind === "activity" ? "Activity" : selectedThought.kind === "subissue" ? "Sub-matter" : selectedThought.kind === "ancestor" ? "Ancestor" : "Run"} · {selectedThought.ts > 0 ? relativeTime(new Date(selectedThought.ts).toISOString()) : ""}</div>
             <div className="text-[1.2rem] leading-[1.22] font-semibold max-w-[36ch] mb-3">{shortLabel(selectedThought.label, 140)}</div>
             {selectedThought.kind === "comment" && <div className="text-[0.82rem] leading-snug whitespace-pre-wrap max-w-[40ch] mb-4" style={{ opacity: 0.85 }}>{(selectedThought.payload as IssueComment).body}</div>}

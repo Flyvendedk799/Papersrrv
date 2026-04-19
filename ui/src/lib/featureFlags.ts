@@ -32,7 +32,11 @@ export type FeatureFlagKey =
   | "recently_viewed_files"
   | "provenance_rails"
   | "comment_file_evidence"
-  | "files_insights_panel";
+  | "files_insights_panel"
+  // Issue page v3 — the CaseFile rewrite (outcome-first, fan-out/fan-in
+  // graph, plain-English abstract). Default-off so the existing Dossier
+  // stays live during build-out.
+  | "issue_page_v3";
 
 const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   // Backlog tab is default-off. Opt in via VITE_FF_BACKLOG_TAB_ENABLED=on,
@@ -63,6 +67,7 @@ const DEFAULTS: Record<FeatureFlagKey, boolean> = {
   provenance_rails: false,
   comment_file_evidence: false,
   files_insights_panel: false,
+  issue_page_v3: false,
 };
 
 function envFlag(key: FeatureFlagKey): boolean | null {

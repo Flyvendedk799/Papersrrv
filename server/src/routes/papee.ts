@@ -6,6 +6,7 @@ import { validate } from "../middleware/validate.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { papeeChatService, writePapeeTelemetry } from "../services/papee-chat.js";
 import { papeeToolsService } from "../services/papee-tools.js";
+import { papeeCompanionService } from "../services/papee-companion.js";
 import {
   remember,
   forget,
@@ -93,6 +94,25 @@ export function papeeRoutes(db: Db) {
     const events = Array.isArray(body?.events) ? body.events.slice(0, 200) : [];
     if (events.length > 0) writePapeeTelemetry(companyId, events);
     res.json({ ok: true, count: events.length });
+  });
+
+  /* ─────── Mobile companion snapshot ─────── */
+  /* Feeds the /papee mobile page — live signal (critical/warning/
+   * running agents), recent nudges, ambient copy, ritual state.
+   * Requires a board session so we can key the companion profile
+   * to a specific user. */
+  router.get("/companies/:companyId/papee/mobile-snapshot", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = (req as unknown as { actor?: { type?: string; userId?: string } }).actor;
+    const userId = actor?.userId;
+    if (!userId) {
+      res.status(401).json({ error: "Board authentication required" });
+      return;
+    }
+    const svc = papeeCompanionService(db);
+    const snapshot = await svc.mobileSnapshot(companyId, userId);
+    res.json(snapshot);
   });
 
   /* ─────── PAPEE_TOOLS_PLAN.md §M.11 — memory CRUD ─────── */

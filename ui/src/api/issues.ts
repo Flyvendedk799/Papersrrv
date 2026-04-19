@@ -1,6 +1,52 @@
 import type { Approval, Issue, IssueAttachment, IssueComment, IssueLabel } from "@paperclipai/shared";
 import { api } from "./client";
 
+/* Mirror of server SynthesisPayload — kept narrow so the UI never
+ * needs to import from the server package. */
+export interface CaseSynthesisArtifact {
+  kind: "files" | "pr" | "run-output" | "sub-issue" | "approval";
+  label: string;
+  detail?: string;
+  link?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface CaseSynthesisGraphNode {
+  id: string;
+  kind:
+    | "issue"
+    | "run"
+    | "comment"
+    | "approval"
+    | "sub-issue"
+    | "ancestor"
+    | "delegation";
+  label: string;
+  sublabel?: string;
+  ts?: number;
+  status?: string;
+  authorName?: string;
+  lane?: string;
+}
+
+export interface CaseSynthesisGraphEdge {
+  source: string;
+  target: string;
+  kind: "spawned" | "replied-to" | "produced" | "approved" | "parent" | "resolved-into";
+}
+
+export interface CaseSynthesisPayload {
+  abstract: string;
+  artifacts: CaseSynthesisArtifact[];
+  graph: {
+    nodes: CaseSynthesisGraphNode[];
+    edges: CaseSynthesisGraphEdge[];
+  };
+  generator: "template" | "llm";
+  schemaVersion: number;
+  generatedAt: string;
+}
+
 export const issuesApi = {
   list: (
     companyId: string,
@@ -32,6 +78,10 @@ export const issuesApi = {
     api.post<IssueLabel>(`/companies/${companyId}/labels`, data),
   deleteLabel: (id: string) => api.delete<IssueLabel>(`/labels/${id}`),
   get: (id: string) => api.get<Issue>(`/issues/${id}`),
+  synthesis: (id: string, opts?: { force?: boolean }) =>
+    api.get<CaseSynthesisPayload>(
+      `/issues/${id}/synthesis${opts?.force ? "?force=1" : ""}`,
+    ),
   markRead: (id: string) => api.post<{ id: string; lastReadAt: Date }>(`/issues/${id}/read`, {}),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Issue>(`/companies/${companyId}/issues`, data),

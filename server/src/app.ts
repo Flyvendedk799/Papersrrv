@@ -38,6 +38,7 @@ import { skillRoutes } from "./routes/skills.js";
 import { backlogRoutes } from "./routes/backlog.js";
 import { githubRoutes } from "./routes/github.js";
 import { githubWebhooksRoutes } from "./routes/github-webhooks.js";
+import { papeeRoutes } from "./routes/papee.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
 type UiMode = "none" | "static" | "vite-dev";
@@ -146,6 +147,7 @@ export async function createApp(
   api.use(skillRoutes(db));
   api.use(backlogRoutes(db));
   api.use(githubRoutes(db));
+  api.use(papeeRoutes(db));
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,

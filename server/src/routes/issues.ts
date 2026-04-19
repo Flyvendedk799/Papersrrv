@@ -15,6 +15,7 @@ import { validate } from "../middleware/validate.js";
 import {
   accessService,
   agentService,
+  caseSynthesisService,
   goalService,
   heartbeatService,
   issueApprovalService,
@@ -46,6 +47,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
+  const synthSvc = caseSynthesisService(db);
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
@@ -321,6 +323,27 @@ export function issueRoutes(db: Db, storage: StorageService) {
       ? await projectsSvc.listByIds(issue.companyId, mentionedProjectIds)
       : [];
     res.json({ ...issue, ancestors, project: project ?? null, goal: goal ?? null, mentionedProjects });
+  });
+
+  /* Case-file synthesis — the payload backing the new Dossier.
+   * Cached per-issue by a hash of inputs; recomputed when anything
+   * meaningful changes. `?force=1` bypasses the cache (useful when
+   * diagnosing why a stale synthesis is being served). */
+  router.get("/issues/:id/synthesis", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    const force = req.query.force === "1" || req.query.force === "true";
+    const payload = await synthSvc.getOrCompute(issue.id, { force });
+    if (!payload) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    res.json(payload);
   });
 
   router.post("/issues/:id/read", async (req, res) => {

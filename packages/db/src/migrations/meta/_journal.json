@@ -281,6 +281,13 @@
       "when": 1776597766267,
       "tag": "0039_legacy_drift",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1776597766268,
+      "tag": "0040_case_synthesis_cache",
+      "breakpoints": true
     }
   ]
 }

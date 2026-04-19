@@ -54,6 +54,10 @@ export interface CommentThreadProps {
    *  row. Used by the unified IssueDetail layout to halo the matching
    *  3D comment orb. */
   onRowHover?: (commentId: string | null) => void;
+  /** Optional: render a ReactNode after a given comment (or after the
+   *  leading edge when null). Used by the Conversation view to inject
+   *  burst markers for hidden heartbeat reports between real messages. */
+  renderAfterComment?: (commentId: string | null) => React.ReactNode;
   /** Optional: ref for the comment composer so the Companion's
    *  "Write a note to unblock" CTA can focus it. Exposed as a
    *  MarkdownEditorRef because the composer is the MarkdownEditor. */
@@ -135,6 +139,12 @@ type TimelineItem =
  * individual row components see stable props and skip re-render
  * entirely. That's the one trick that prevents the markdown parser
  * from running 50× per poll cycle on big issues. */
+/* Length threshold for auto-collapsing a comment body. Anything
+ * shorter than this renders fully; longer bodies get clamped with
+ * a "Read more" reveal so a 200-comment thread from chatty agents
+ * doesn't produce a 40-screen wall. Tunable in one place. */
+const COMMENT_COLLAPSE_CHARS = 480;
+
 const CommentRow = memo(function CommentRow({
   comment,
   agentMap,
@@ -148,6 +158,9 @@ const CommentRow = memo(function CommentRow({
   adornment?: React.ReactNode;
   onHoverChange?: (entered: boolean) => void;
 }) {
+  const body = comment.body ?? "";
+  const isLong = body.length > COMMENT_COLLAPSE_CHARS;
+  const [expanded, setExpanded] = useState(false);
   return (
     <div
       key={comment.id}
@@ -178,7 +191,37 @@ const CommentRow = memo(function CommentRow({
           <CopyMarkdownButton text={comment.body} />
         </span>
       </div>
-      <MarkdownBody className="text-sm">{comment.body}</MarkdownBody>
+      {isLong && !expanded ? (
+        <div className="relative">
+          <div className="max-h-[140px] overflow-hidden">
+            <MarkdownBody className="text-sm">{body}</MarkdownBody>
+          </div>
+          <div
+            aria-hidden="true"
+            className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[var(--boared-paper)] via-[var(--boared-paper)]/85 to-transparent pointer-events-none"
+          />
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="relative mt-1 inline-flex items-center gap-1 font-mono text-[0.58rem] uppercase tracking-[0.16em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-acid)] transition-colors"
+          >
+            ▼ Read the full reply · {body.length.toLocaleString()} chars
+          </button>
+        </div>
+      ) : (
+        <>
+          <MarkdownBody className="text-sm">{body}</MarkdownBody>
+          {isLong && (
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="mt-1 inline-flex items-center gap-1 font-mono text-[0.58rem] uppercase tracking-[0.16em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
+            >
+              ▲ Collapse
+            </button>
+          )}
+        </>
+      )}
       {comment.runId && (
         <div className="mt-2 pt-2 border-t border-border/60">
           {comment.runAgentId ? (
@@ -247,12 +290,14 @@ const TimelineList = memo(function TimelineList({
   highlightCommentId,
   rowAdornments,
   onRowHover,
+  renderAfterComment,
 }: {
   timeline: TimelineItem[];
   agentMap?: Map<string, Agent>;
   highlightCommentId?: string | null;
   rowAdornments?: (commentId: string) => React.ReactNode;
   onRowHover?: (commentId: string | null) => void;
+  renderAfterComment?: (commentId: string | null) => React.ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const papeeRegistry = usePapeeTargetRegistryOptional();
@@ -286,24 +331,29 @@ const TimelineList = memo(function TimelineList({
 
   return (
     <div ref={containerRef} className="space-y-3">
+      {/* Leading burst marker — heartbeats that occurred before any
+       * real message in the visible slice. */}
+      {renderAfterComment?.(null)}
       {timeline.map((item) => {
         if (item.kind === "run") {
           return <RunRow key={`run:${item.run.runId}`} run={item.run} agentMap={agentMap} />;
         }
         return (
-          <CommentRow
-            key={item.comment.id}
-            comment={item.comment}
-            agentMap={agentMap}
-            isHighlighted={highlightCommentId === item.comment.id}
-            adornment={rowAdornments?.(item.comment.id)}
-            onHoverChange={
-              onRowHover
-                ? (entered) =>
-                    onRowHover(entered ? item.comment.id : null)
-                : undefined
-            }
-          />
+          <div key={item.comment.id}>
+            <CommentRow
+              comment={item.comment}
+              agentMap={agentMap}
+              isHighlighted={highlightCommentId === item.comment.id}
+              adornment={rowAdornments?.(item.comment.id)}
+              onHoverChange={
+                onRowHover
+                  ? (entered) =>
+                      onRowHover(entered ? item.comment.id : null)
+                  : undefined
+              }
+            />
+            {renderAfterComment?.(item.comment.id)}
+          </div>
         );
       })}
     </div>
@@ -326,6 +376,7 @@ export function CommentThread({
   mentions: providedMentions,
   rowAdornments,
   onRowHover,
+  renderAfterComment,
   composerRef,
 }: CommentThreadProps) {
   const [body, setBody] = useState("");
@@ -462,6 +513,7 @@ export function CommentThread({
         highlightCommentId={highlightCommentId}
         rowAdornments={rowAdornments}
         onRowHover={onRowHover}
+        renderAfterComment={renderAfterComment}
       />
 
       {liveRunSlot}

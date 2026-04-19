@@ -31,7 +31,22 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { IssueDossier } from "../components/boared/IssueDossier";
+import { CaseHero } from "../components/boared/caseFile/CaseHero";
+import { CaseProblem } from "../components/boared/caseFile/CaseProblem";
+import { CaseBanner } from "../components/boared/caseFile/CaseBanner";
+import { CasePageLayout } from "../components/boared/caseFile/CasePageLayout";
+import { CaseSectionRule } from "../components/boared/caseFile/CaseSectionRule";
+import { CaseSidebar } from "../components/boared/caseFile/CaseSidebar";
+import { CaseArtifacts } from "../components/boared/caseFile/CaseArtifacts";
+import { CaseGraph } from "../components/boared/caseFile/CaseGraph";
+import { CaseAtAGlance } from "../components/boared/caseFile/CaseAtAGlance";
+import { CaseParticipants } from "../components/boared/caseFile/CaseParticipants";
+import { CaseRecentActivity } from "../components/boared/caseFile/CaseRecentActivity";
+import { CaseChapterNav } from "../components/boared/caseFile/CaseChapterNav";
+import { CaseStickyBar } from "../components/boared/caseFile/CaseStickyBar";
+import { useCaseKeyboardNav } from "../components/boared/caseFile/useCaseKeyboardNav";
+import { CaseKeyboardCheatSheet } from "../components/boared/caseFile/CaseKeyboardCheatSheet";
+import type { CaseSynthesisPayload } from "../api/issues";
 import { usePapeeEnact } from "../hooks/usePapeeEnact";
 import { isFeatureEnabled } from "../lib/featureFlags";
 import { SentToBacklogIndicator } from "../components/backlog/SentToBacklogIndicator";
@@ -50,6 +65,7 @@ import { ActivityRow } from "./issueDetail/rows/ActivityRow";
 import { FileRow } from "./issueDetail/rows/FileRow";
 import { ApprovalRow } from "./issueDetail/rows/ApprovalRow";
 import { SceneAwareCommentThread } from "./issueDetail/rows/SceneAwareCommentThread";
+import { CaseConversation } from "../components/boared/caseFile/CaseConversation";
 import type { MarkdownEditorRef } from "../components/MarkdownEditor";
 import {
   ChevronDown,
@@ -261,28 +277,65 @@ export function IssueDetail() {
     cost: false,
   });
 
-  // Listen for Companion-dispatched events so the Next-Action CTA can
-  // open the approvals collapsible and focus the comment composer.
+  // Imperative actions the Dossier's next-action chip can invoke to
+  // jump the reader to a relevant below-the-fold section — exposed
+  // via IssueDetailActionsContext so the chip never has to reach
+  // across the DOM or dispatch window events.
   const composerEditorRef = useRef<MarkdownEditorRef | null>(null);
-  useEffect(() => {
-    const expand = () =>
-      setSecondaryOpen((prev) => ({ ...prev, approvals: true }));
-    const focusComposer = () => composerEditorRef.current?.focus();
-    window.addEventListener("paperclip:expand-approvals", expand);
-    window.addEventListener("paperclip:focus-composer", focusComposer);
-    return () => {
-      window.removeEventListener("paperclip:expand-approvals", expand);
-      window.removeEventListener("paperclip:focus-composer", focusComposer);
-    };
+  const expandApprovals = useCallback(() => {
+    setSecondaryOpen((prev) => ({ ...prev, approvals: true }));
   }, []);
+  const focusComposer = useCallback(() => {
+    composerEditorRef.current?.focus();
+  }, []);
+  const issueDetailActions = useMemo(
+    () => ({ expandApprovals, focusComposer }),
+    [expandApprovals, focusComposer],
+  );
+
+  // Keyboard navigation for the whole case page — j/k cycle sections,
+  // r focuses composer, g jumps to graph, etc. `?` toggles the
+  // cheat-sheet that documents the bindings.
+  const { cheatSheetOpen, setCheatSheetOpen } = useCaseKeyboardNav({
+    chapters: [
+      { id: "chapter-overview", label: "Overview" },
+      { id: "chapter-description", label: "Problem" },
+      { id: "chapter-artifacts", label: "Made" },
+      { id: "chapter-graph", label: "Story" },
+      { id: "chapter-correspondence", label: "Thread" },
+      { id: "chapter-files", label: "Files" },
+      { id: "chapter-work", label: "Log" },
+      { id: "chapter-verdict", label: "Approvals" },
+    ],
+    onFocusComposer: focusComposer,
+  });
+
+  // Case synthesis — the abstract + artifacts + graph payload the
+  // CasePage renders. Reads the same cached query CaseHero uses so
+  // fetching happens once per page.
+  const synthesisQuery = useQuery({
+    queryKey: queryKeys.issues.synthesis(issueId!),
+    queryFn: () => issuesApi.synthesis(issueId!),
+    enabled: !!issueId,
+    staleTime: 30_000,
+    refetchOnMount: "always",
+  });
+  const synthesis: CaseSynthesisPayload | null = synthesisQuery.data ?? null;
 
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [viewingFile, setViewingFile] = useState<{path: string; hash: string | null} | null>(null);
+  /* Compact-by-default flags — each section caps at a small N with
+   * a "Show all" expander so big cases don't require 4 screens of
+   * scrolling. Kept in local component state; resets per issue. */
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const [showAllFiles, setShowAllFiles] = useState(false);
+  const ACTIVITY_COMPACT_LIMIT = 5;
+  const FILES_COMPACT_LIMIT = 6;
   // Cap how many comments mount to the DOM at once so giant issues
   // (hundreds of comments, each with a markdown body) stop choking
   // React's reconciliation loop. Default to the most recent 50 with
   // a "load older" button to opt into the rest.
-  const COMMENTS_INITIAL_LIMIT = 50;
+  const COMMENTS_INITIAL_LIMIT = 8;
   const [commentLimit, setCommentLimit] = useState<number>(COMMENTS_INITIAL_LIMIT);
   // Reset the visible window when navigating between issues so a
   // new issue starts at the most-recent slice instead of inheriting
@@ -609,6 +662,9 @@ export function IssueDetail() {
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(issueId!) });
+    // v3: bust the case-file synthesis so its abstract + graph
+    // refresh with the new comment / status / run state.
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.synthesis(issueId!) });
     if (selectedCompanyId) {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.listTouchedByMe(selectedCompanyId) });
@@ -782,9 +838,44 @@ export function IssueDetail() {
     return () => closePanel();
   }, [issue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (isLoading) return <p className="font-mono text-[0.72rem] text-muted-foreground">Loading...</p>;
-  if (error) return <p className="font-mono text-[0.72rem] text-destructive">{error.message}</p>;
-  if (!issue) return null;
+  if (isLoading) return <IssueDetailSkeleton />;
+  if (error) {
+    return (
+      <div className="mx-auto w-full max-w-[960px] px-4 py-10">
+        <div className="border border-destructive/60 bg-destructive/[0.04] p-6">
+          <p className="font-mono text-[0.62rem] uppercase tracking-[0.22em] text-destructive mb-2">
+            Couldn't load this case
+          </p>
+          <p className="text-[0.88rem] text-[var(--boared-ink)] mb-4">{error.message}</p>
+          <button
+            type="button"
+            onClick={() => queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) })}
+            className="inline-flex items-center gap-1.5 h-8 px-3 font-mono text-[0.62rem] uppercase tracking-[0.12em] border border-[var(--boared-rule)] text-[var(--boared-ink)] hover:bg-[var(--boared-ink)]/[0.06] transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!issue) {
+    return (
+      <div className="mx-auto w-full max-w-[960px] px-4 py-16 text-center">
+        <p className="font-serif italic text-[1.4rem] leading-tight text-[var(--boared-ink)] mb-2">
+          This case can't be found.
+        </p>
+        <p className="text-[0.88rem] text-[var(--boared-ink-faint)] mb-6">
+          It may have been deleted, moved, or you may not have access.
+        </p>
+        <Link
+          to="/issues"
+          className="inline-flex items-center gap-1.5 h-8 px-3 font-mono text-[0.62rem] uppercase tracking-[0.12em] border border-[var(--boared-rule)] text-[var(--boared-ink)] hover:bg-[var(--boared-ink)]/[0.06] transition-colors no-underline"
+        >
+          ← Back to issues
+        </Link>
+      </div>
+    );
+  }
 
   // Ancestors are returned oldest-first from the server (root at end, immediate parent at start)
   const ancestors = issue.ancestors ?? [];
@@ -800,7 +891,15 @@ export function IssueDetail() {
 
   const isImageAttachment = (attachment: IssueAttachment) => attachment.contentType.startsWith("image/");
 
+  /* Promoted approval banner — when the case is waiting on a human
+   * decision, this sits directly below the hero and above the
+   * artifacts so readers can't miss what's blocking progress. */
+  const pendingApprovals = (linkedApprovals ?? []).filter((a) => a.status === "pending");
+  const pendingCount = pendingApprovals.length;
+  const hasPendingApproval = pendingCount > 0;
+
   return (
+    <IssueDetailActionsContext.Provider value={issueDetailActions}>
     <IssueDetailShell
       issue={issue}
       comments={comments}
@@ -810,591 +909,607 @@ export function IssueDetail() {
       agentMap={agentMap}
       linkedApprovals={linkedApprovals}
     >
-      {/* ── Hero row ── wider column for scene + Companion side-by-side ── */}
-      <div id="chapter-overview" className="max-w-6xl scroll-mt-8">
-        <PageHeader
-          kicker={<>§ {issue.identifier ?? issue.id.slice(0, 8)}</>}
-          title={
-            <InlineEditor
-              value={issue.title}
-              onSave={(title) => updateIssue.mutate({ title })}
-              as="span"
-              className="boared-display text-[clamp(2.25rem,5vw,3.75rem)] leading-[0.95] text-foreground"
-            />
-          }
-          dateline={relativeTime(issue.updatedAt) + (hasLiveRuns ? " · live" : "")}
-        />
+      {/* Sticky reading aid — md+ only, appears after the hero
+       * scrolls past the viewport. Keeps identity + quick-jump
+       * chips always reachable. */}
+      <CaseStickyBar
+        issue={issue}
+        heroAnchorId="chapter-overview"
+        chapters={[
+          { id: "chapter-description", label: "Problem" },
+          { id: "chapter-artifacts", label: "Made" },
+          { id: "chapter-graph", label: "Story" },
+          { id: "chapter-correspondence", label: "Thread" },
+          ...((issueFiles ?? []).length > 0
+            ? [{ id: "chapter-files", label: "Files" }]
+            : []),
+          ...(activity && activity.length > 0
+            ? [{ id: "chapter-work", label: "Log" }]
+            : []),
+        ]}
+      />
 
-        {/* Unified 3D animated case dossier. IssueDetailShell provides
-            narrative + tour via context so the Dossier doesn't need
-            to re-compute them; DossierMount below is a thin helper
-            that reads the context and passes them in as props. */}
-        <DossierMount
-          issue={issue}
-          comments={comments}
-          activity={activity}
-          childIssues={childIssues}
-          linkedRuns={linkedRuns}
-          agentMap={agentMap}
-        />
-      </div>
-
-      {/* ── Case-file stack ── keeps the original narrow column width ── */}
-      <div className="max-w-3xl space-y-6">
-
-      {/* Parent chain breadcrumb */}
-      {ancestors.length > 0 && (
-        <nav
-          id="chapter-lineage"
-          className="flex items-center gap-1 font-mono text-[0.66rem] uppercase tracking-[0.06em] text-muted-foreground flex-wrap scroll-mt-8"
-        >
-          {[...ancestors].reverse().map((ancestor, i) => (
-            <span key={ancestor.id} className="flex items-center gap-1">
-              {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
-              <Link
-                to={`/issues/${ancestor.identifier ?? ancestor.id}`}
-                className="hover:text-foreground transition-colors truncate max-w-[200px] no-underline text-inherit"
-                title={ancestor.title}
-              >
-                {ancestor.title}
-              </Link>
-            </span>
-          ))}
-          <ChevronRight className="h-3 w-3 shrink-0" />
-          <span className="text-foreground/60 truncate max-w-[200px]">{issue.title}</span>
-        </nav>
-      )}
-
-      {issue.hiddenAt && (
-        <div className="flex items-center gap-2 border border-destructive px-3 py-2 font-mono text-[0.72rem] text-destructive">
-          <EyeOff className="h-4 w-4 shrink-0" />
-          This issue is hidden
-        </div>
-      )}
-
-      <div className="space-y-3">
-        <div className="flex items-center gap-3 min-w-0 flex-wrap">
-          <StatusIcon
-            status={issue.status}
-            onChange={(status) => updateIssue.mutate({ status })}
-          />
-          <PriorityIcon
-            priority={issue.priority}
-            onChange={(priority) => updateIssue.mutate({ priority })}
-          />
-
-          {hasLiveRuns && (
-            <span className="inline-flex items-center gap-1.5 px-1.5 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--boared-acid)] shrink-0">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full bg-[var(--boared-acid)] opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 bg-[var(--boared-acid)]" />
-              </span>
-              Live
-            </span>
-          )}
-
-          {issue.projectId ? (
-            <Link
-              to={`/projects/${issue.projectId}`}
-              className="inline-flex items-center gap-1 font-mono text-[0.66rem] uppercase tracking-[0.06em] text-muted-foreground hover:text-foreground transition-colors min-w-0 no-underline"
-            >
-              <Hexagon className="h-3 w-3 shrink-0" />
-              <span className="truncate">{(projects ?? []).find((p) => p.id === issue.projectId)?.name ?? issue.projectId.slice(0, 8)}</span>
-            </Link>
-          ) : (
-            <span className="inline-flex items-center gap-1 font-mono text-[0.66rem] uppercase tracking-[0.06em] text-muted-foreground opacity-50">
-              <Hexagon className="h-3 w-3 shrink-0" />
-              No project
-            </span>
-          )}
-
-          {(issue.labels ?? []).length > 0 && (
-            <div className="hidden sm:flex items-center gap-2">
-              {(issue.labels ?? []).slice(0, 4).map((label) => (
-                <span
-                  key={label.id}
-                  className="inline-flex items-center gap-1 font-mono text-[0.6rem] uppercase tracking-[0.08em] text-muted-foreground"
-                >
-                  <span className="inline-block h-2 w-2" style={{ backgroundColor: label.color }} />
-                  {label.name}
-                </span>
-              ))}
-              {(issue.labels ?? []).length > 4 && (
-                <span className="font-mono text-[0.6rem] text-muted-foreground">+{(issue.labels ?? []).length - 4}</span>
-              )}
-            </div>
-          )}
-
+      {/* Mobile sticky identity — pins the kicker + title + status
+       * chips to the viewport top once the user scrolls past the
+       * hero. Hidden on md+ since CaseStickyBar takes over. */}
+      <div className="md:hidden sticky top-0 z-30 -mx-3 px-3 py-2 bg-[var(--boared-paper)]/95 backdrop-blur-sm border-b border-[var(--boared-rule)]/60">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] shrink-0">
+            § {issue.identifier ?? issue.id.slice(0, 8)}
+          </span>
+          <span className="truncate text-[0.78rem] text-[var(--boared-ink)]" title={issue.title}>
+            {issue.title}
+          </span>
           <Button
             variant="ghost"
             size="icon-xs"
-            className="ml-auto md:hidden shrink-0"
+            className="ml-auto shrink-0"
             onClick={() => setMobilePropsOpen(true)}
             title="Properties"
           >
             <SlidersHorizontal className="h-4 w-4" />
           </Button>
+        </div>
+      </div>
 
-          <div className="hidden md:flex items-center md:ml-auto shrink-0">
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className={cn(
-                "shrink-0 transition-opacity duration-200",
-                panelVisible ? "opacity-0 pointer-events-none w-0 overflow-hidden" : "opacity-100",
-              )}
-              onClick={() => setPanelVisible(true)}
-              title="Show properties"
+      <CasePageLayout
+        chapterNav={
+          <CaseChapterNav
+            markers={[
+              { id: "chapter-overview", label: "Overview" },
+              { id: "chapter-description", label: "The problem" },
+              { id: "chapter-artifacts", label: "What was made" },
+              { id: "chapter-graph", label: "How it got here" },
+              { id: "chapter-correspondence", label: "Conversation" },
+              ...((issueFiles ?? []).length > 0
+                ? [{ id: "chapter-files", label: "Files touched" }]
+                : []),
+              ...(activity && activity.length > 0
+                ? [{ id: "chapter-work", label: "Activity log" }]
+                : []),
+              ...(linkedApprovals && linkedApprovals.length > 0
+                ? [{ id: "chapter-verdict", label: "Approvals" }]
+                : []),
+            ]}
+          />
+        }
+        lineage={
+          ancestors.length > 0 ? (
+            <nav
+              id="chapter-lineage"
+              aria-label="Case lineage"
+              className="flex items-center gap-1 font-mono text-[0.6rem] uppercase tracking-[0.12em] text-[var(--boared-ink-faint)] flex-wrap scroll-mt-8"
             >
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
-
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={convertToWorkflow.isPending}
-              onClick={() => convertToWorkflow.mutate()}
-            >
-              <Workflow className="h-4 w-4 mr-1" />
-              {convertToWorkflow.isPending ? "Converting..." : "Convert to workflow"}
-            </Button>
-
-            {backlogEnabled && (
-              <SentToBacklogIndicator
-                source="issue"
-                sourceRefId={issue.id}
-                sourceRefType="issue"
+              {[...ancestors].reverse().map((ancestor, i) => (
+                <span key={ancestor.id} className="flex items-center gap-1">
+                  {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />}
+                  <Link
+                    to={`/issues/${ancestor.identifier ?? ancestor.id}`}
+                    className="hover:text-[var(--boared-ink)] transition-colors truncate max-w-[200px] no-underline text-inherit"
+                    title={ancestor.title}
+                  >
+                    {ancestor.title}
+                  </Link>
+                </span>
+              ))}
+              <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="text-[var(--boared-ink)] truncate max-w-[200px]">{issue.title}</span>
+            </nav>
+          ) : null
+        }
+        hero={
+          <div id="chapter-overview" className="scroll-mt-8 space-y-4">
+            <CaseHero
+              issue={issue}
+              hasLiveRuns={hasLiveRuns}
+              onUpdate={(patch) => updateIssue.mutate(patch)}
+            />
+            <CaseAtAGlance
+              synthesis={synthesis}
+              commentsTotal={commentsTotal}
+            />
+            {issue.hiddenAt && (
+              <div className="flex items-center gap-2 border border-destructive/60 bg-destructive/[0.04] px-3 py-2 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-destructive">
+                <EyeOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                This case is hidden
+              </div>
+            )}
+            {hasPendingApproval && (
+              <CaseBanner
+                tone="alert"
+                title={pendingCount === 1 ? "Waiting on approval" : `Waiting on ${pendingCount} approvals`}
+                detail={
+                  pendingCount === 1
+                    ? "This case is blocked on a human decision."
+                    : `${pendingCount} decisions are blocking this case from moving forward.`
+                }
+                action={{
+                  label: "Review",
+                  onClick: () => {
+                    issueDetailActions.expandApprovals();
+                    document.getElementById("chapter-verdict")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  },
+                }}
               />
             )}
+            {backlogEnabled && linkedBacklog && linkedBacklog.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--boared-ink-faint)]">
+                <Inbox className="h-3 w-3" aria-hidden="true" />
+                <span>Sent to backlog:</span>
+                {linkedBacklog.slice(0, 3).map((b, i) => (
+                  <span key={b.id} className="inline-flex items-center">
+                    <Link
+                      to={`/backlog?item=${b.id}`}
+                      className="underline decoration-dotted underline-offset-2 hover:text-[var(--boared-ink)] transition-colors"
+                      title={b.title}
+                    >
+                      {b.title.length > 40 ? `${b.title.slice(0, 40)}…` : b.title}
+                    </Link>
+                    {i < Math.min(linkedBacklog.length, 3) - 1 && <span className="mx-1">·</span>}
+                  </span>
+                ))}
+                {linkedBacklog.length > 3 && (
+                  <Link to="/backlog" className="underline decoration-dotted underline-offset-2 hover:text-[var(--boared-ink)] transition-colors">
+                    +{linkedBacklog.length - 3} more
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
+        }
+        main={
+          <>
+            {/* The problem — description as primary reading. */}
+            <CaseProblem
+              issueId={issue.id}
+              description={issue.description}
+              onSave={(description) => updateIssue.mutate({ description })}
+              mentions={mentionOptions}
+              onAttachImage={async (file) => {
+                const attachment = await uploadAttachment.mutateAsync(file);
+                return attachment.contentPath;
+              }}
+            />
 
-            <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon-xs" className="shrink-0">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-            <PopoverContent className="w-48 p-1" align="end">
-              {backlogEnabled && (
-                <button
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
-                  onClick={() => {
-                    const title = issue.title?.slice(0, 120) || "Captured from issue";
-                    const origin = issue.identifier ?? issue.id.slice(0, 8);
-                    void enactPapeeTool({
-                      kind: "createBacklogItem",
-                      title,
-                      body: issue.description ?? undefined,
-                      source: "issue",
-                      sourceRef: { type: "issue", id: issue.id, identifier: issue.identifier ?? null, origin },
-                      projectId: issue.projectId ?? undefined,
-                      goalId: issue.goalId ?? undefined,
-                    });
-                    setMoreOpen(false);
-                  }}
-                >
-                  <Inbox className="h-3 w-3" />
-                  Send to Backlog
-                </button>
-              )}
-              {backlogEnabled && issue.status !== "backlog" && (
-                <button
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
-                  disabled={moveToBacklog.isPending}
-                  onClick={() => {
-                    moveToBacklog.mutate();
-                    setMoreOpen(false);
-                  }}
-                >
-                  <Inbox className="h-3 w-3" />
-                  {moveToBacklog.isPending ? "Moving..." : "Move to Backlog"}
-                </button>
-              )}
-              {backlogEnabled &&
-                issue.status === "backlog" &&
-                linkedBacklog &&
-                linkedBacklog.length > 0 && (
+            {/* What was made — CaseArtifacts from synthesis. */}
+            <section id="chapter-artifacts" className="space-y-3 scroll-mt-8">
+              <CaseSectionRule
+                label="What was made"
+                meta={
+                  synthesis?.artifacts?.length
+                    ? `${synthesis.artifacts.length} ${synthesis.artifacts.length === 1 ? "artifact" : "artifacts"}`
+                    : undefined
+                }
+                action={
                   <button
-                    className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
-                    disabled={restoreFromBacklog.isPending}
+                    type="button"
+                    onClick={() =>
+                      queryClient.invalidateQueries({ queryKey: queryKeys.issues.synthesis(issue.id) })
+                    }
+                    className="font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
+                    title="Re-synthesise this case"
+                  >
+                    ↻ refresh
+                  </button>
+                }
+              />
+              <CaseArtifacts
+                artifacts={synthesis?.artifacts ?? []}
+                loading={synthesisQuery.isLoading}
+                onRefresh={() =>
+                  queryClient.invalidateQueries({ queryKey: queryKeys.issues.synthesis(issue.id) })
+                }
+              />
+            </section>
+
+            {/* How it got here — the fan-out/fan-in graph. */}
+            <section id="chapter-graph" className="space-y-3 scroll-mt-8">
+              <CaseSectionRule
+                label="How it got here"
+                meta={
+                  synthesis?.graph?.nodes?.length
+                    ? `${synthesis.graph.nodes.length} ${synthesis.graph.nodes.length === 1 ? "step" : "steps"}`
+                    : undefined
+                }
+              />
+              <CaseGraph
+                graph={synthesis?.graph ?? { nodes: [], edges: [] }}
+                synthesis={synthesis}
+                loading={synthesisQuery.isLoading}
+              />
+            </section>
+
+            {/* The conversation — filters out automated heartbeat
+             * posts so the reader sees the real dialogue first.
+             * Pass the FULL comment list; CaseConversation handles
+             * classification, capping, older-loading and the
+             * Conversation/Full-log toggle internally. */}
+            <section id="chapter-correspondence" className="space-y-3 scroll-mt-8">
+              <CaseSectionRule
+                label="The conversation"
+                meta={
+                  commentsTotal > 0
+                    ? `${commentsTotal} ${commentsTotal === 1 ? "entry" : "entries"} total`
+                    : undefined
+                }
+              />
+              <CaseConversation
+                comments={commentsWithRunMeta}
+                initialLimit={COMMENTS_INITIAL_LIMIT}
+                linkedRuns={timelineRuns}
+                issueStatus={issue.status}
+                agentMap={agentMap}
+                draftKey={`paperclip:issue-comment-draft:${issue.id}`}
+                reassignOptions={commentReassignOptions}
+                currentAssigneeValue={currentAssigneeValue}
+                mentions={mentionOptions}
+                composerRef={composerEditorRef}
+                commentNodeById={rowLookups.commentByCommentId}
+                activity={activity}
+                onAdd={async (body, reopen, reassignment) => {
+                  if (reassignment) {
+                    await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });
+                    return;
+                  }
+                  await addComment.mutateAsync({ body, reopen });
+                }}
+                imageUploadHandler={async (file) => {
+                  const attachment = await uploadAttachment.mutateAsync(file);
+                  return attachment.contentPath;
+                }}
+                onAttachImage={async (file) => {
+                  await uploadAttachment.mutateAsync(file);
+                }}
+                liveRunSlot={<LiveRunWidget issueId={issueId!} companyId={issue.companyId} />}
+              />
+            </section>
+
+            {/* Files touched — only rendered when runs actually produced files. */}
+            {(issueFiles ?? []).length > 0 && (
+              <section id="chapter-files" className="space-y-3 scroll-mt-8">
+                <CaseSectionRule
+                  label="Files touched"
+                  meta={`${(issueFiles ?? []).length} ${(issueFiles ?? []).length === 1 ? "file" : "files"}`}
+                />
+                <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+                  {(issueFiles ?? [])
+                    .slice(0, showAllFiles ? undefined : FILES_COMPACT_LIMIT)
+                    .map((snap) => {
+                      const isActive = viewingFile?.path === snap.filePath;
+                      return (
+                        <FileRow
+                          key={snap.id}
+                          snap={snap}
+                          isActive={isActive}
+                          runNode={rowLookups.runByRunId.get(snap.runId)}
+                          onClick={() =>
+                            setViewingFile(
+                              isActive
+                                ? null
+                                : { path: snap.filePath, hash: snap.contentHash },
+                            )
+                          }
+                        />
+                      );
+                    })}
+                </div>
+                {!showAllFiles && (issueFiles ?? []).length > FILES_COMPACT_LIMIT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllFiles(true)}
+                    className="w-full py-2 border border-dashed border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] hover:border-[var(--boared-ink-soft)] hover:bg-[var(--boared-paper-2)] transition-colors"
+                  >
+                    Show all {(issueFiles ?? []).length} · {(issueFiles ?? []).length - FILES_COMPACT_LIMIT} more files
+                  </button>
+                )}
+                {showAllFiles && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllFiles(false)}
+                    className="w-full py-2 font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
+                  >
+                    Collapse
+                  </button>
+                )}
+                {viewingFile && selectedCompanyId && (
+                  <InlineFilePreview
+                    companyId={selectedCompanyId}
+                    filePath={viewingFile.path}
+                    contentHash={viewingFile.hash}
+                    onClose={() => setViewingFile(null)}
+                  />
+                )}
+              </section>
+            )}
+
+            {/* Activity log — supplementary; readable only on request. */}
+            {activity && activity.length > 0 && (
+              <section id="chapter-work" className="space-y-3 scroll-mt-8">
+                <CaseSectionRule
+                  label="Activity log"
+                  meta={`${activity.length} ${activity.length === 1 ? "event" : "events"}`}
+                />
+                <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+                  {activity
+                    .slice(0, showAllActivity ? 200 : ACTIVITY_COMPACT_LIMIT)
+                    .map((evt) => (
+                      <ActivityRow
+                        key={evt.id}
+                        event={evt}
+                        eventNode={rowLookups.eventByEventId.get(evt.id)}
+                        agentMap={agentMap}
+                        actorLabel={<ActorIdentity evt={evt} agentMap={agentMap} />}
+                        verbLabel={formatAction(evt.action, evt.details)}
+                      />
+                    ))}
+                </div>
+                {!showAllActivity && activity.length > ACTIVITY_COMPACT_LIMIT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllActivity(true)}
+                    className="w-full py-2 border border-dashed border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] hover:border-[var(--boared-ink-soft)] hover:bg-[var(--boared-paper-2)] transition-colors"
+                  >
+                    Show all {Math.min(activity.length, 200)} · {Math.min(activity.length, 200) - ACTIVITY_COMPACT_LIMIT} more events
+                  </button>
+                )}
+                {showAllActivity && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllActivity(false)}
+                    className="w-full py-2 font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
+                  >
+                    Collapse
+                  </button>
+                )}
+              </section>
+            )}
+
+            {/* Attachments — image uploads. */}
+            {(attachments && attachments.length > 0) || attachmentError ? (
+              <section className="space-y-3">
+                <CaseSectionRule
+                  label="Attachments"
+                  action={
+                    <>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        onChange={handleFilePicked}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadAttachment.isPending}
+                        className="inline-flex items-center gap-1 font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
+                      >
+                        <Paperclip className="h-3 w-3" aria-hidden="true" />
+                        {uploadAttachment.isPending ? "Uploading…" : "Upload image"}
+                      </button>
+                    </>
+                  }
+                />
+                {attachmentError && (
+                  <p className="font-mono text-[0.7rem] text-destructive">{attachmentError}</p>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {(attachments ?? []).map((attachment) => (
+                    <div key={attachment.id} className="border border-[var(--boared-rule)] p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <a
+                          href={attachment.contentPath}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[0.78rem] text-[var(--boared-ink)] hover:underline truncate"
+                          title={attachment.originalFilename ?? attachment.id}
+                        >
+                          {attachment.originalFilename ?? attachment.id}
+                        </a>
+                        <button
+                          type="button"
+                          className="text-[var(--boared-ink-faint)] hover:text-destructive transition-colors"
+                          onClick={() => deleteAttachment.mutate(attachment.id)}
+                          disabled={deleteAttachment.isPending}
+                          title="Delete attachment"
+                          aria-label="Delete attachment"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <p className="font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] mt-1">
+                        {attachment.contentType} · {(attachment.byteSize / 1024).toFixed(1)} KB
+                      </p>
+                      {isImageAttachment(attachment) && (
+                        <a href={attachment.contentPath} target="_blank" rel="noreferrer">
+                          <img
+                            src={attachment.contentPath}
+                            alt={attachment.originalFilename ?? "attachment"}
+                            className="mt-2 max-h-56 border border-[var(--boared-rule)] object-contain bg-[var(--boared-paper-2)] w-full"
+                            loading="lazy"
+                          />
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {/* Approvals (verdict anchor) — shown inline when any
+             * exist, with the acid-red banner already promoted
+             * above when pending. */}
+            <div id="chapter-verdict" className="scroll-mt-8" aria-hidden={!(linkedApprovals && linkedApprovals.length > 0)}>
+              {linkedApprovals && linkedApprovals.length > 0 && (
+                <section className="space-y-3">
+                  <CaseSectionRule
+                    label="Approvals"
+                    meta={`${linkedApprovals.length} ${linkedApprovals.length === 1 ? "decision" : "decisions"}`}
+                  />
+                  <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+                    {linkedApprovals.map((approval) => {
+                      const node = rowLookups.approvalByApprovalId.get(approval.id);
+                      const body = (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <StatusBadge status={approval.status} />
+                            <span className="text-[0.84rem] text-[var(--boared-ink)]">
+                              {approval.type
+                                .replace(/_/g, " ")
+                                .replace(/^./, (c) => c.toUpperCase())}
+                            </span>
+                            <span className="font-mono text-[0.6rem] tabular-nums text-[var(--boared-ink-faint)]">
+                              {approval.id.slice(0, 8)}
+                            </span>
+                          </div>
+                          <span className="font-mono text-[0.58rem] uppercase tracking-[0.14em] tabular-nums text-[var(--boared-ink-faint)]">
+                            {relativeTime(approval.createdAt)}
+                          </span>
+                        </>
+                      );
+                      if (!node) {
+                        return (
+                          <Link
+                            key={approval.id}
+                            to={`/approvals/${approval.id}`}
+                            className="flex items-center justify-between px-3 py-2 hover:bg-[var(--boared-paper-2)] transition-colors no-underline text-inherit"
+                          >
+                            {body}
+                          </Link>
+                        );
+                      }
+                      return (
+                        <ApprovalRow
+                          key={approval.id}
+                          approval={node}
+                          href={`/approvals/${approval.id}`}
+                        >
+                          {body}
+                        </ApprovalRow>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </div>
+          </>
+        }
+        sidebar={
+          <CaseSidebar
+            issue={issue}
+            agents={agents}
+            projects={projects}
+            activityCount={activity?.length ?? 0}
+            costSummary={issueCostSummary}
+            participants={<CaseParticipants synthesis={synthesis} />}
+            recentActivity={<CaseRecentActivity synthesis={synthesis} />}
+            onOpenProperties={() => setMobilePropsOpen(true)}
+            primaryActions={
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={convertToWorkflow.isPending}
+                  onClick={() => convertToWorkflow.mutate()}
+                  className="w-full justify-start font-mono text-[0.66rem] uppercase tracking-[0.1em]"
+                >
+                  <Workflow className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                  {convertToWorkflow.isPending ? "Converting…" : "Convert to workflow"}
+                </Button>
+                {backlogEnabled && (
+                  <SentToBacklogIndicator
+                    source="issue"
+                    sourceRefId={issue.id}
+                    sourceRefType="issue"
+                  />
+                )}
+              </>
+            }
+            moreActions={
+              <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start font-mono text-[0.66rem] uppercase tracking-[0.1em] text-[var(--boared-ink-faint)]"
+                  >
+                    <MoreHorizontal className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                    More actions
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-1" align="end">
+                  {backlogEnabled && (
+                    <button
+                      className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
+                      onClick={() => {
+                        const title = issue.title?.slice(0, 120) || "Captured from issue";
+                        const origin = issue.identifier ?? issue.id.slice(0, 8);
+                        void enactPapeeTool({
+                          kind: "createBacklogItem",
+                          title,
+                          body: issue.description ?? undefined,
+                          source: "issue",
+                          sourceRef: { type: "issue", id: issue.id, identifier: issue.identifier ?? null, origin },
+                          projectId: issue.projectId ?? undefined,
+                          goalId: issue.goalId ?? undefined,
+                        });
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <Inbox className="h-3 w-3" aria-hidden="true" />
+                      Send to Backlog
+                    </button>
+                  )}
+                  {backlogEnabled && issue.status !== "backlog" && (
+                    <button
+                      className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
+                      disabled={moveToBacklog.isPending}
+                      onClick={() => {
+                        moveToBacklog.mutate();
+                        setMoreOpen(false);
+                      }}
+                    >
+                      <Inbox className="h-3 w-3" aria-hidden="true" />
+                      {moveToBacklog.isPending ? "Moving…" : "Move to Backlog"}
+                    </button>
+                  )}
+                  {backlogEnabled &&
+                    issue.status === "backlog" &&
+                    linkedBacklog &&
+                    linkedBacklog.length > 0 && (
+                      <button
+                        className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
+                        disabled={restoreFromBacklog.isPending}
+                        onClick={() => {
+                          const target = linkedBacklog[0];
+                          if (!target) return;
+                          restoreFromBacklog.mutate(target.id);
+                          setMoreOpen(false);
+                        }}
+                      >
+                        <Inbox className="h-3 w-3" aria-hidden="true" />
+                        {restoreFromBacklog.isPending ? "Restoring…" : "Restore from Backlog"}
+                      </button>
+                    )}
+                  <button
+                    className="flex items-center gap-2 w-full px-2 py-1.5 text-xs hover:bg-foreground/[0.03] text-destructive"
                     onClick={() => {
-                      const target = linkedBacklog[0];
-                      if (!target) return;
-                      restoreFromBacklog.mutate(target.id);
+                      updateIssue.mutate(
+                        { hiddenAt: new Date().toISOString() },
+                        { onSuccess: () => navigate("/issues/all") },
+                      );
                       setMoreOpen(false);
                     }}
                   >
-                    <Inbox className="h-3 w-3" />
-                    {restoreFromBacklog.isPending
-                      ? "Restoring..."
-                      : "Restore from Backlog"}
+                    <EyeOff className="h-3 w-3" aria-hidden="true" />
+                    Hide this case
                   </button>
-                )}
-              <button
-                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs hover:bg-foreground/[0.03] text-destructive"
-                onClick={() => {
-                  updateIssue.mutate(
-                    { hiddenAt: new Date().toISOString() },
-                    { onSuccess: () => navigate("/issues/all") },
-                  );
-                  setMoreOpen(false);
-                }}
-              >
-                <EyeOff className="h-3 w-3" />
-                Hide this issue
-              </button>
-            </PopoverContent>
-            </Popover>
-          </div>
-        </div>
-
-        {backlogEnabled && linkedBacklog && linkedBacklog.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Inbox className="h-3 w-3" />
-            <span>Sent to Backlog:</span>
-            {linkedBacklog.slice(0, 3).map((b, i) => (
-              <span key={b.id} className="inline-flex items-center">
-                <Link
-                  to={`/backlog?item=${b.id}`}
-                  className="underline decoration-dotted underline-offset-2 hover:text-foreground"
-                  title={b.title}
-                >
-                  {b.title.length > 40 ? `${b.title.slice(0, 40)}…` : b.title}
-                </Link>
-                {i < Math.min(linkedBacklog.length, 3) - 1 && <span className="mx-1">·</span>}
-              </span>
-            ))}
-            {linkedBacklog.length > 3 && (
-              <Link to="/backlog" className="underline decoration-dotted underline-offset-2 hover:text-foreground">
-                +{linkedBacklog.length - 3} more
-              </Link>
-            )}
-          </div>
-        )}
-
-        <InlineEditor
-          value={issue.description ?? ""}
-          onSave={(description) => updateIssue.mutate({ description })}
-          as="p"
-          className="text-[0.82rem] text-muted-foreground"
-          placeholder="Add a description..."
-          multiline
-          mentions={mentionOptions}
-          imageUploadHandler={async (file) => {
-            const attachment = await uploadAttachment.mutateAsync(file);
-            return attachment.contentPath;
-          }}
-        />
-      </div>
-
-      <div className="space-y-3">
-        <SectionRule
-          label="Attachments"
-          meta={
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="hidden"
-                onChange={handleFilePicked}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadAttachment.isPending}
-                className="inline-flex items-center gap-1 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Paperclip className="h-3 w-3" />
-                {uploadAttachment.isPending ? "Uploading..." : "Upload image"}
-              </button>
-            </>
-          }
-        />
-
-        {attachmentError && (
-          <p className="font-mono text-[0.72rem] text-destructive">{attachmentError}</p>
-        )}
-
-        {(!attachments || attachments.length === 0) ? (
-          <p className="font-mono text-[0.72rem] text-muted-foreground">No attachments yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {attachments.map((attachment) => (
-              <div key={attachment.id} className="border border-[var(--boared-rule)] p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <a
-                    href={attachment.contentPath}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[0.78rem] hover:underline truncate"
-                    title={attachment.originalFilename ?? attachment.id}
-                  >
-                    {attachment.originalFilename ?? attachment.id}
-                  </a>
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => deleteAttachment.mutate(attachment.id)}
-                    disabled={deleteAttachment.isPending}
-                    title="Delete attachment"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <p className="font-mono text-[0.62rem] text-muted-foreground">
-                  {attachment.contentType} · {(attachment.byteSize / 1024).toFixed(1)} KB
-                </p>
-                {isImageAttachment(attachment) && (
-                  <a href={attachment.contentPath} target="_blank" rel="noreferrer">
-                    <img
-                      src={attachment.contentPath}
-                      alt={attachment.originalFilename ?? "attachment"}
-                      className="mt-2 max-h-56 border border-[var(--boared-rule)] object-contain bg-[var(--boared-paper-2)]"
-                      loading="lazy"
-                    />
-                  </a>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* THE CASE FILE — sections stacked as a continuous paper trail.
-          No tabs. Each section is a labeled "filing" in the dossier. */}
-      <div className="space-y-10">
-        <SectionRule id="chapter-correspondence" label="Correspondence" />
-          {hiddenCommentCount > 0 && (
-            <button
-              type="button"
-              onClick={() =>
-                setCommentLimit((c) =>
-                  Math.min(commentsTotal, c + COMMENTS_INITIAL_LIMIT * 2),
-                )
-              }
-              className="w-full mb-3 px-3 py-2 border border-[var(--boared-rule)] font-mono text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.03] transition-colors"
-            >
-              Load {Math.min(hiddenCommentCount, COMMENTS_INITIAL_LIMIT * 2)} older comments · {hiddenCommentCount} hidden
-            </button>
-          )}
-          <SceneAwareCommentThread
-            comments={visibleComments}
-            linkedRuns={timelineRuns}
-            issueStatus={issue.status}
-            agentMap={agentMap}
-            draftKey={`paperclip:issue-comment-draft:${issue.id}`}
-            enableReassign
-            reassignOptions={commentReassignOptions}
-            currentAssigneeValue={currentAssigneeValue}
-            mentions={mentionOptions}
-            composerRef={composerEditorRef}
-            commentNodeById={rowLookups.commentByCommentId}
-            onAdd={async (body, reopen, reassignment) => {
-              if (reassignment) {
-                await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });
-                return;
-              }
-              await addComment.mutateAsync({ body, reopen });
-            }}
-            imageUploadHandler={async (file) => {
-              const attachment = await uploadAttachment.mutateAsync(file);
-              return attachment.contentPath;
-            }}
-            onAttachImage={async (file) => {
-              await uploadAttachment.mutateAsync(file);
-            }}
-            liveRunSlot={<LiveRunWidget issueId={issueId!} companyId={issue.companyId} />}
+                </PopoverContent>
+              </Popover>
+            }
           />
-
-        <SectionRule id="chapter-subtasks" label="Sub-matters" meta={`${childIssues.length} ${childIssues.length === 1 ? "entry" : "entries"}`} />
-        <div>
-          {childIssues.length === 0 ? (
-            <p className="font-mono text-[0.72rem] text-muted-foreground">No sub-issues.</p>
-          ) : (
-            <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
-              {childIssues.map((child) => (
-                <SubmatterRow
-                  key={child.id}
-                  child={child}
-                  descendant={rowLookups.descByIssueId.get(child.id)}
-                  agentMap={agentMap}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <SectionRule id="chapter-work" label="Activity log" />
-        <div>
-          {!activity || activity.length === 0 ? (
-            <p className="font-mono text-[0.72rem] text-muted-foreground">No activity yet.</p>
-          ) : (
-            <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
-              {activity.slice(0, 20).map((evt) => (
-                <ActivityRow
-                  key={evt.id}
-                  event={evt}
-                  eventNode={rowLookups.eventByEventId.get(evt.id)}
-                  agentMap={agentMap}
-                  actorLabel={<ActorIdentity evt={evt} agentMap={agentMap} />}
-                  verbLabel={formatAction(evt.action, evt.details)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {(issueFiles ?? []).length > 0 && (
-        <>
-        <SectionRule id="chapter-files" label="Files touched" meta={`${(issueFiles ?? []).length} ${(issueFiles ?? []).length === 1 ? "file" : "files"}`} />
-        <div>
-          {!linkedRuns ? (
-            <p className="font-mono text-[0.72rem] text-muted-foreground">Loading runs...</p>
-          ) : !issueFiles || issueFiles.length === 0 ? (
-            <p className="font-mono text-[0.72rem] text-muted-foreground">No files touched by runs on this issue.</p>
-          ) : (
-            <>
-              <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
-                {issueFiles.map((snap) => {
-                  const isActive = viewingFile?.path === snap.filePath;
-                  return (
-                    <FileRow
-                      key={snap.id}
-                      snap={snap}
-                      isActive={isActive}
-                      runNode={rowLookups.runByRunId.get(snap.runId)}
-                      onClick={() =>
-                        setViewingFile(
-                          isActive
-                            ? null
-                            : { path: snap.filePath, hash: snap.contentHash },
-                        )
-                      }
-                    />
-                  );
-                })}
-              </div>
-              {viewingFile && selectedCompanyId && (
-                <InlineFilePreview
-                  companyId={selectedCompanyId}
-                  filePath={viewingFile.path}
-                  contentHash={viewingFile.hash}
-                  onClose={() => setViewingFile(null)}
-                />
-              )}
-            </>
-          )}
-        </div>
-        </>
-        )}
-      </div>
-
-      {/* Synthetic verdict anchor — matches chapter-verdict even when
-          there are no approvals to render. Kept invisible. */}
-      <div id="chapter-verdict" className="scroll-mt-8" aria-hidden="true" />
-
-      {linkedApprovals && linkedApprovals.length > 0 && (
-        <Collapsible
-          open={secondaryOpen.approvals}
-          onOpenChange={(open) => setSecondaryOpen((prev) => ({ ...prev, approvals: open }))}
-          className="border border-[var(--boared-rule)]"
-        >
-          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
-            <span className="boared-label">
-              Linked approvals ({linkedApprovals.length})
-            </span>
-            <ChevronDown
-              className={cn("h-4 w-4 text-muted-foreground transition-transform", secondaryOpen.approvals && "rotate-180")}
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
-              {linkedApprovals.map((approval) => {
-                const node = rowLookups.approvalByApprovalId.get(approval.id);
-                const body = (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge status={approval.status} />
-                      <span>
-                        {approval.type
-                          .replace(/_/g, " ")
-                          .replace(/^./, (c) => c.toUpperCase())}
-                      </span>
-                      <span className="font-mono text-[0.66rem] text-muted-foreground">
-                        {approval.id.slice(0, 8)}
-                      </span>
-                    </div>
-                    <span className="font-mono text-[0.62rem] text-muted-foreground tabular-nums">
-                      {relativeTime(approval.createdAt)}
-                    </span>
-                  </>
-                );
-                if (!node) {
-                  return (
-                    <Link
-                      key={approval.id}
-                      to={`/approvals/${approval.id}`}
-                      className="flex items-center justify-between px-3 py-2 text-[0.78rem] hover:bg-foreground/[0.03] transition-colors no-underline text-inherit"
-                    >
-                      {body}
-                    </Link>
-                  );
-                }
-                return (
-                  <ApprovalRow
-                    key={approval.id}
-                    approval={node}
-                    href={`/approvals/${approval.id}`}
-                  >
-                    {body}
-                  </ApprovalRow>
-                );
-              })}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
-
-      {linkedRuns && linkedRuns.length > 0 && (
-        <Collapsible
-          open={secondaryOpen.cost}
-          onOpenChange={(open) => setSecondaryOpen((prev) => ({ ...prev, cost: open }))}
-          className="border border-[var(--boared-rule)]"
-        >
-          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
-            <span className="boared-label">Cost summary</span>
-            <ChevronDown
-              className={cn("h-4 w-4 text-muted-foreground transition-transform", secondaryOpen.cost && "rotate-180")}
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="border-t border-[var(--boared-rule)] px-3 py-2">
-              {!issueCostSummary.hasCost && !issueCostSummary.hasTokens ? (
-                <div className="font-mono text-[0.72rem] text-muted-foreground">No cost data yet.</div>
-              ) : (
-                <div className="flex flex-wrap gap-3 font-mono text-[0.72rem] text-muted-foreground tabular-nums">
-                  {issueCostSummary.hasCost && (
-                    <span className="text-foreground">
-                      ${issueCostSummary.cost.toFixed(4)}
-                    </span>
-                  )}
-                  {issueCostSummary.hasTokens && (
-                    <span>
-                      Tokens {formatTokens(issueCostSummary.totalTokens)}
-                      {issueCostSummary.cached > 0
-                        ? ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)}, cached ${formatTokens(issueCostSummary.cached)})`
-                        : ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)})`}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
-
-      </div>
-      {/* ── End of case-file stack (narrow column) ── */}
+        }
+      />
 
       {/* Mobile properties drawer */}
       <Sheet open={mobilePropsOpen} onOpenChange={setMobilePropsOpen}>
@@ -1409,10 +1524,66 @@ export function IssueDetail() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      {/* Keyboard cheat-sheet popover — toggled by `?` via the
+       * useCaseKeyboardNav hook. Fixed-positioned; renders over
+       * the whole page. */}
+      <CaseKeyboardCheatSheet
+        open={cheatSheetOpen}
+        onClose={() => setCheatSheetOpen(false)}
+      />
     </IssueDetailShell>
+    </IssueDetailActionsContext.Provider>
   );
 }
 
+/* Loading skeleton — matches the Dossier's hero shape so the page
+ * doesn't thrash when the issue query resolves. Shimmer is
+ * suppressed on prefers-reduced-motion via the CSS utility. */
+function IssueDetailSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-[1280px] px-3 md:px-6 space-y-6 animate-pulse">
+      <div className="space-y-3">
+        <div className="h-3 w-28 bg-[var(--boared-rule)]/50" />
+        <div className="h-10 w-3/4 bg-[var(--boared-rule)]/40" />
+      </div>
+      <div className="border border-[var(--boared-rule)] bg-[var(--boared-paper)]">
+        <div className="p-4 space-y-3 border-b border-[var(--boared-rule)]">
+          <div className="h-3 w-40 bg-[var(--boared-rule)]/50" />
+          <div className="h-5 w-2/3 bg-[var(--boared-rule)]/40" />
+          <div className="h-3 w-1/2 bg-[var(--boared-rule)]/40" />
+        </div>
+        <div className="p-4 space-y-2">
+          <div className="h-16 bg-[var(--boared-rule)]/30" />
+          <div className="h-16 bg-[var(--boared-rule)]/30" />
+          <div className="h-16 bg-[var(--boared-rule)]/30" />
+        </div>
+        <div className="h-[140px] md:h-[260px] bg-[var(--boared-scene)]/80 border-t border-[var(--boared-rule)]" />
+        <div className="h-12 border-t border-[var(--boared-rule)]/50 bg-[var(--boared-paper-2)]" />
+      </div>
+      <div className="mx-auto w-full max-w-[960px] space-y-3">
+        <div className="h-4 w-24 bg-[var(--boared-rule)]/50" />
+        <div className="h-3 w-full bg-[var(--boared-rule)]/30" />
+        <div className="h-3 w-5/6 bg-[var(--boared-rule)]/30" />
+        <div className="h-3 w-2/3 bg-[var(--boared-rule)]/30" />
+      </div>
+    </div>
+  );
+}
+
+/* Actions the Dossier's next-action chip can invoke to jump the reader
+ * to a relevant section. Replaces the paperclip:* window events that
+ * the CaseCompanion used. Imperative, ref-stable, no DOM bridges. */
+interface IssueDetailActions {
+  expandApprovals: () => void;
+  focusComposer: () => void;
+}
+const IssueDetailActionsContext =
+  React.createContext<IssueDetailActions | null>(null);
+
+function useIssueDetailActions(): IssueDetailActions | null {
+  return React.useContext(IssueDetailActionsContext);
+}
 
 /* ─────────────────────────────────────────────────────────────────────
  *  IssueDetailShell
@@ -1491,7 +1662,13 @@ function IssueDetailShell(props: IssueDetailShellProps) {
       tourRunning={tourRunning}
     >
       <IssueDetailDataContext.Provider value={data}>
-        <div className="boared-reveal space-y-6">{props.children}</div>
+        {/* Unified page shell — responsive grid with a 1280 px hero
+         * cap and a 960 px narrow reading column centred beneath.
+         * Children opt into width by dropping their own max-w-*
+         * and letting the shell own the layout. */}
+        <div className="boared-reveal mx-auto w-full max-w-[1280px] px-3 md:px-6 space-y-6">
+          {props.children}
+        </div>
       </IssueDetailDataContext.Provider>
     </SceneStateProvider>
   );
@@ -1527,61 +1704,5 @@ function useIssueDetailData(): IssueDetailData {
   const v = React.useContext(IssueDetailDataContext);
   if (!v) throw new Error("Must be inside IssueDetailShell");
   return v;
-}
-
-/* Thin wrapper that reads narrative/tour from IssueDetailDataContext
- * and passes them to IssueDossier. Lets the Dossier stay decoupled
- * from the shell's internal data shape. Also defines the onNextAction
- * bridge that mirrors what the old CaseCompanion did — scroll + open
- * the relevant below-the-fold section so the chip click lands
- * somewhere meaningful. */
-function DossierMount(props: {
-  issue: IssueDetailData["issue"];
-  comments: IssueDetailData["comments"];
-  activity: IssueDetailData["activity"];
-  childIssues: IssueDetailData["childIssues"];
-  linkedRuns: IssueDetailData["linkedRuns"];
-  agentMap: IssueDetailData["agentMap"];
-}) {
-  const data = useIssueDetailData();
-  const onNextAction = React.useCallback(() => {
-    const kind = data.narrative.nextAction?.kind;
-    if (!kind) return;
-    const anchorId =
-      kind === "approvals" ? "chapter-verdict"
-      : kind === "composer" ? "chapter-correspondence"
-      : kind === "run" ? "chapter-work"
-      : "chapter-correspondence";
-    const el = document.getElementById(anchorId);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-    // Companion used to also dispatch side-effects (expand the
-    // approvals collapsible, focus the composer). Those listeners are
-    // still wired in IssueDetail — fire them so the UX matches.
-    if (kind === "approvals") {
-      window.dispatchEvent(new Event("paperclip:expand-approvals"));
-    } else if (kind === "composer") {
-      window.dispatchEvent(new Event("paperclip:focus-composer"));
-    }
-  }, [data.narrative]);
-  return (
-    <IssueDossier
-      issue={props.issue}
-      comments={props.comments}
-      activity={props.activity}
-      childIssues={props.childIssues}
-      linkedRuns={props.linkedRuns}
-      agentMap={props.agentMap}
-      narrative={{
-        lede: data.narrative.lede ?? null,
-        nextAction: data.narrative.nextAction
-          ? {
-              kind: String(data.narrative.nextAction.kind),
-              label: data.narrative.nextAction.label,
-            }
-          : null,
-      }}
-      onNextAction={onNextAction}
-    />
-  );
 }
 

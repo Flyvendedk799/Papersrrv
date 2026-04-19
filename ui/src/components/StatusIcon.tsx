@@ -101,13 +101,22 @@ export function StatusIcon({ status, onChange, className, showLabel }: StatusIco
   const trigger = showLabel ? (
     <button
       type="button"
-      className="inline-flex items-center gap-2 cursor-pointer hover:bg-foreground/[0.04] px-1 -mx-1 py-0.5 transition-colors"
+      aria-label={`Status: ${label}. Click to change.`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      className="inline-flex items-center gap-2 cursor-pointer hover:bg-foreground/[0.04] px-1 -mx-1 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--boared-ink)]/40"
     >
       {box}
       <span className="font-mono text-[0.7rem] uppercase tracking-[0.06em] text-foreground">{label}</span>
     </button>
   ) : (
-    <button type="button" className="cursor-pointer">
+    <button
+      type="button"
+      aria-label={`Status: ${label}. Click to change.`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--boared-ink)]/40"
+    >
       {box}
     </button>
   );

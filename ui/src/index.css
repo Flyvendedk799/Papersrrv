@@ -76,6 +76,50 @@
   --boared-acid-ink: #F2F0EA;
   --boared-blood: #B22B1A;       /* destructive shares the same ink */
 
+  /* ──────────────────────────────────────────────────────────────
+   * Issue-page semantic palette (paper-facing).
+   *
+   * These six tokens read well on --boared-paper at AA contrast.
+   * They're used by the Dossier, CaseSummary, and case-file stack
+   * for status/role signalling: success=done, warn=in-progress,
+   * info=question/todo, review=in-review/approval-pending,
+   * feature=opener/gold-accent, mute=backlog/neutral. Keep each
+   * tuned for paper — the 3D scene has its own brighter variants
+   * further down.
+   * ────────────────────────────────────────────────────────────── */
+  --boared-success:  #2D7F5E;
+  --boared-warn:     #A55F1F;
+  --boared-info:     #2E7A8F;
+  --boared-review:   #6B3FA7;
+  --boared-feature:  #8B6F3D;
+  --boared-mute:     #82827A;
+  /* The "live now" channel is always the stamp red, aliased so
+   * component sites can read intent, not colour. */
+  --boared-live:     var(--boared-acid);
+
+  /* ──────────────────────────────────────────────────────────────
+   * 3D chronicle scene (night-sky-over-paper).
+   *
+   * The WebGL canvas inside the Dossier uses a warm dark ink as
+   * its background so it reads as *night over paper*, not as a
+   * console injected into a document. The scene-facing variants
+   * of each status colour are brighter so glowing particles /
+   * labels keep contrast against the dark.
+   * ────────────────────────────────────────────────────────────── */
+  --boared-scene:           #1A1815;
+  --boared-scene-ink:       #F2E6C4;
+  --boared-scene-ink-soft:  #B5A88A;
+  --boared-scene-ink-faint: #7A6F50;
+  --boared-scene-rule:      #3A342D;
+  --boared-scene-card:      #221E19;
+  --boared-scene-card-raised: #2A2620;
+  --boared-scene-success:   #3FCF8E;
+  --boared-scene-warn:      #E09437;
+  --boared-scene-info:      #5CC8E4;
+  --boared-scene-review:    #A36ADE;
+  --boared-scene-feature:   #C8A96E;
+  --boared-scene-mute:      #8B8FA3;
+
   color-scheme: light;
   --radius: 0;
   --background: var(--boared-paper);

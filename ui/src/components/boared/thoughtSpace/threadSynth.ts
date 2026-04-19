@@ -54,6 +54,10 @@ export interface ThreadEntry {
   quote: string;
   /** "caused 2 runs" · "spawned 1 sub-matter" · "led to approval" — or null. */
   consequence: string | null;
+  /** When this entry is a comment replying to another, the parent
+   * comment's thoughtId. Lets the summary render one level of
+   * threading. */
+  replyToThoughtId: string | null;
   /** Raw entity for callers that need more (currently unused by the
    * summary renderer, but the escape hatch is here). */
   raw: IssueComment | RunForIssue | Issue;
@@ -96,8 +100,11 @@ const DONE_STATUSES = new Set(["done", "cancelled"]);
 /* ──────────────────── Quote extraction ────────────────── */
 
 /** Strip markdown-ish syntax the body might carry and collapse to
- * a first-sentence preview. Not exhaustive; good enough for scan. */
-function trimQuote(raw: string, maxChars = 180): string {
+ * a first-sentence preview. The heuristic prefers a sentence that
+ * ends within 120–220 chars; otherwise falls back to a 160-char cut
+ * with ellipsis. Aggressively strips headings / bullets / blockquote
+ * chevrons / code fences / numbered-list markers. */
+function trimQuote(raw: string, maxChars = 160): string {
   if (!raw) return "";
   let s = raw.trim();
   // Strip code fences (keep the language hint out of the quote)
@@ -107,21 +114,31 @@ function trimQuote(raw: string, maxChars = 180): string {
   // Strip image/link tag noise, keep the text
   s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");
   s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
-  // Strip heading hashes and bullet markers
-  s = s.replace(/^#{1,6}\s+/gm, "");
+  // Strip heading hashes, bullet markers, numbered-list markers, blockquote chevrons
+  s = s.replace(/^\s*#{1,6}\s+/gm, "");
   s = s.replace(/^\s*[-*+]\s+/gm, "");
+  s = s.replace(/^\s*\d+[.)]\s+/gm, "");
+  s = s.replace(/^\s*>+\s?/gm, "");
   // Strip leading @mentions so quotes don't all start with handles
-  s = s.replace(/^(@\w+\s+)+/g, "");
+  s = s.replace(/^(@[\w-]+\s+)+/g, "");
+  // Drop emphasis markers but keep the text
+  s = s.replace(/(\*\*|__)(.+?)\1/g, "$2");
+  s = s.replace(/(\*|_)(.+?)\1/g, "$2");
   // Collapse whitespace
   s = s.replace(/\s+/g, " ").trim();
   if (s.length === 0) return "";
-  // Prefer cutting at a sentence boundary if the first one is short
-  const firstSentenceMatch = s.match(/^(.{20,200}?[.!?])(\s|$)/);
-  if (firstSentenceMatch && firstSentenceMatch[1].length <= maxChars) {
-    return firstSentenceMatch[1];
-  }
+  // Prefer a sentence that ends within the sweet spot 120–220 chars;
+  // this gives the reader a complete clause most of the time.
+  const sweetSpot = s.match(/^(.{120,220}?[.!?])(\s|$)/);
+  if (sweetSpot) return sweetSpot[1];
+  // Otherwise accept a shorter sentence if it lands under maxChars.
+  const shortSentence = s.match(/^(.{20,}?[.!?])(\s|$)/);
+  if (shortSentence && shortSentence[1].length <= maxChars) return shortSentence[1];
   if (s.length <= maxChars) return s;
-  return s.slice(0, maxChars - 1).trim() + "…";
+  // Fall back: cut at a word boundary near maxChars.
+  const cut = s.slice(0, maxChars - 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > maxChars - 30 ? cut.slice(0, lastSpace) : cut).trim() + "…";
 }
 
 /* ──────────────────── Role inference ────────────────── */
@@ -269,54 +286,104 @@ function synthesiseHeadline(
   subs: Issue[],
   participants: Participant[],
 ): string {
-  const n = comments.length + runs.length + subs.length;
-  const days = Math.max(0, Math.floor((Date.now() - new Date(issue.createdAt).getTime()) / (24 * 60 * 60 * 1000)));
+  const now = Date.now();
+  const createdAt = new Date(issue.createdAt).getTime();
+  const days = Math.max(0, Math.floor((now - createdAt) / (24 * 60 * 60 * 1000)));
   const ageStr = days === 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
-  const agentNames = participants.filter((p) => p.runCount >= 1).map((p) => p.name);
-  const reviewers = participants.filter((p) => p.role === "reviewer").map((p) => p.name);
+  const liveRunCount = runs.filter((r) => LIVE_RUN_STATUSES.has(r.status)).length;
+  const totalEvents = comments.length + runs.length + subs.length;
   const reporter = participants.find((p) => p.role === "reporter");
-  const status = issue.status.replace(/_/g, " ");
+  const reviewerNames = participants.filter((p) => p.role === "reviewer").map((p) => p.name);
+  const lastActivityTs = Math.max(
+    createdAt,
+    ...comments.map((c) => new Date(c.createdAt).getTime()),
+    ...runs.map((r) => new Date(r.startedAt ?? r.createdAt ?? 0).getTime()),
+  );
+  const staleDays = Math.max(0, Math.floor((now - lastActivityTs) / (24 * 60 * 60 * 1000)));
 
-  const parts: string[] = [];
-  parts.push(`Opened ${ageStr}${reporter ? ` by ${reporter.name}` : ""}.`);
-  if (agentNames.length > 0) {
-    parts.push(
-      `${agentNames.slice(0, 2).join(" and ")}${agentNames.length > 2 ? ` (+${agentNames.length - 2} more)` : ""} worked it across ${runs.length} run${runs.length === 1 ? "" : "s"}.`,
-    );
-  }
-  if (reviewers.length > 0) {
-    parts.push(`${reviewers.slice(0, 2).join(", ")} reviewed.`);
-  }
+  /* Branch on case shape. Each branch yields at most two sentences.
+   * The first is about identity + age; the second is about the
+   * current signal (resolution, live, stall, review, quiet). */
+  const opener = reporter
+    ? `Opened ${ageStr} by ${reporter.name}.`
+    : `Opened ${ageStr}.`;
+
   if (DONE_STATUSES.has(issue.status)) {
-    parts.push(`Resolved.`);
-  } else if (issue.status === "blocked") {
-    parts.push(`Currently blocked.`);
-  } else {
-    const openSubs = subs.filter((s) => !DONE_STATUSES.has(s.status)).length;
-    const liveRunCount = runs.filter((r) => LIVE_RUN_STATUSES.has(r.status)).length;
-    if (liveRunCount > 0) parts.push(`${liveRunCount} run${liveRunCount === 1 ? "" : "s"} live right now.`);
-    else if (openSubs > 0) parts.push(`${openSubs} open sub-matter${openSubs === 1 ? "" : "s"} still pending.`);
-    else parts.push(`Status: ${status}.`);
+    if (issue.status === "cancelled") return `${opener} Cancelled.`;
+    if (days === 0) return `${opener} Resolved the same day.`;
+    return `${opener} Resolved after ${days} ${days === 1 ? "day" : "days"}.`;
   }
-  const out = parts.join(" ");
-  // Unused n kept for future tuning; silence the lint.
-  void n;
-  return out;
+
+  if (issue.status === "blocked") {
+    return `${opener} Stuck — needs a human to step in.`;
+  }
+
+  if (liveRunCount > 0) {
+    const names = runs
+      .filter((r) => LIVE_RUN_STATUSES.has(r.status))
+      .map((r) => participants.find((p) => p.id === r.agentId)?.name)
+      .filter(Boolean)
+      .slice(0, 1);
+    const who = names[0] ? `${names[0]} is` : liveRunCount === 1 ? "An agent is" : `${liveRunCount} agents are`;
+    return `${opener} ${who} working on it right now.`;
+  }
+
+  if (totalEvents === 0) {
+    return `${opener} Nothing else yet.`;
+  }
+
+  if (staleDays >= 3) {
+    return `${opener} Nothing's happened for ${staleDays} ${staleDays === 1 ? "day" : "days"}.`;
+  }
+
+  if (reviewerNames.length > 0) {
+    return `${opener} ${reviewerNames.slice(0, 2).join(", ")} reviewed.`;
+  }
+
+  if (runs.length > 0) {
+    const agentCount = new Set(runs.map((r) => r.agentId)).size;
+    return `${opener} ${agentCount} ${agentCount === 1 ? "agent" : "agents"} across ${runs.length} ${runs.length === 1 ? "run" : "runs"}.`;
+  }
+
+  return `${opener} ${comments.length} ${comments.length === 1 ? "message" : "messages"} in the thread.`;
 }
 
 /* ──────────────────── Entries + consequences ────────────────── */
+
+/** Find approval-request activity events (approval.created /
+ * approval.requested) within a short window after `ts`. Returns the
+ * count. When the approval schema isn't surfaced to the activity log
+ * in a given deployment this is simply 0. */
+function approvalRequestsAfter(
+  ts: number,
+  activity: ActivityEvent[],
+  windowMs: number,
+): number {
+  const end = ts + windowMs;
+  let n = 0;
+  for (const e of activity) {
+    const t = new Date(e.createdAt).getTime();
+    if (t <= ts || t > end) continue;
+    if (e.action === "approval.created" || e.action === "approval.requested") n++;
+  }
+  return n;
+}
 
 function consequenceFor(
   entry: { ts: number; authorId: string | null; thoughtId: string; kind: ThreadEntryKind },
   comments: IssueComment[],
   runs: RunForIssue[],
   subs: Issue[],
+  activity: ActivityEvent[],
 ): string | null {
-  // For a comment: count runs/subs that started shortly after, or
-  // by the same author within 15 min.
+  // For a comment: count runs / subs / approval-requests that
+  // landed shortly after. 10 min window — tighter than before to
+  // reduce spurious attributions. Order the parts so the strongest
+  // signal appears first.
   if (entry.kind === "comment") {
     const startWindow = entry.ts;
-    const endWindow = entry.ts + 15 * 60 * 1000;
+    const windowMs = 10 * 60 * 1000;
+    const endWindow = entry.ts + windowMs;
     const runsAfter = runs.filter((r) => {
       const rTs = new Date(r.startedAt ?? r.createdAt ?? 0).getTime();
       return rTs > startWindow && rTs <= endWindow;
@@ -325,18 +392,25 @@ function consequenceFor(
       const sTs = new Date(s.createdAt).getTime();
       return sTs > startWindow && sTs <= endWindow;
     }).length;
+    const approvalsAfter = approvalRequestsAfter(entry.ts, activity, windowMs);
     const parts: string[] = [];
+    if (approvalsAfter > 0) parts.push(`led to ${approvalsAfter > 1 ? `${approvalsAfter} approvals` : "approval"}`);
     if (runsAfter > 0) parts.push(`caused ${runsAfter} run${runsAfter === 1 ? "" : "s"}`);
-    if (subsAfter > 0) parts.push(`spawned ${subsAfter} sub-matter${subsAfter === 1 ? "" : "s"}`);
+    if (subsAfter > 0) parts.push(`spawned ${subsAfter} related case${subsAfter === 1 ? "" : "s"}`);
     return parts.length > 0 ? parts.join(" · ") : null;
   }
   if (entry.kind === "run") {
     const r = runs.find((rr) => rr.runId === entry.thoughtId.slice("run:".length));
     if (!r) return null;
+    const rTs = new Date(r.startedAt ?? r.createdAt ?? 0).getTime();
+    const approvalsAfter = approvalRequestsAfter(rTs, activity, 10 * 60 * 1000);
+    const parts: string[] = [];
     const status = r.status;
-    if (LIVE_RUN_STATUSES.has(status)) return "live now";
-    if (r.finishedAt) return "finished";
-    return status;
+    if (LIVE_RUN_STATUSES.has(status)) parts.push("live now");
+    else if (r.finishedAt) parts.push("finished");
+    else parts.push(status);
+    if (approvalsAfter > 0) parts.push(`led to ${approvalsAfter > 1 ? `${approvalsAfter} approvals` : "approval"}`);
+    return parts.join(" · ");
   }
   if (entry.kind === "subissue") {
     const s = subs.find((ss) => `subissue:${ss.id}` === entry.thoughtId);
@@ -349,7 +423,14 @@ function consequenceFor(
 /* ──────────────────── Public entry-point ────────────────── */
 
 export function synthesiseThread(input: Input): ThreadSynthesis {
-  const { issue, comments = [], linkedRuns = [], childIssues = [], agentMap } = input;
+  const {
+    issue,
+    comments = [],
+    activity = [],
+    linkedRuns = [],
+    childIssues = [],
+    agentMap,
+  } = input;
 
   const entries: ThreadEntry[] = [];
 
@@ -370,6 +451,7 @@ export function synthesiseThread(input: Input): ThreadSynthesis {
       ts: new Date(c.createdAt).getTime(),
       quote: trimQuote(body),
       consequence: null,
+      replyToThoughtId: c.replyToCommentId ? `comment:${c.replyToCommentId}` : null,
       raw: c,
     });
   }
@@ -391,6 +473,7 @@ export function synthesiseThread(input: Input): ThreadSynthesis {
       ts: new Date(r.startedAt ?? r.createdAt ?? issue.createdAt).getTime(),
       quote: `${name} ${verb}.`,
       consequence: null,
+      replyToThoughtId: null,
       raw: r,
     });
   }
@@ -406,8 +489,9 @@ export function synthesiseThread(input: Input): ThreadSynthesis {
         ? agentMap.get(s.createdByAgentId)?.name ?? "—"
         : s.createdByUserId ?? "—",
       ts: new Date(s.createdAt).getTime(),
-      quote: `Sub-matter filed: ${s.identifier ?? s.id.slice(0, 6)} · ${s.title}`,
+      quote: `Related case filed: ${s.identifier ?? s.id.slice(0, 6)} · ${s.title}`,
       consequence: null,
+      replyToThoughtId: null,
       raw: s,
     });
   }
@@ -417,7 +501,7 @@ export function synthesiseThread(input: Input): ThreadSynthesis {
 
   // Compute consequences (needs the sorted list to find "shortly after")
   for (const e of entries) {
-    e.consequence = consequenceFor(e, comments, linkedRuns, childIssues);
+    e.consequence = consequenceFor(e, comments, linkedRuns, childIssues, activity);
   }
 
   const participants = computeParticipants(issue, comments, linkedRuns, agentMap);

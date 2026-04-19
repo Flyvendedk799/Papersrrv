@@ -44,8 +44,24 @@ import { TimelineRibbon } from "./TimelineRibbon";
 import { CaseSummary } from "./CaseSummary";
 
 /** Narrow slice of `narrativeFor` output the Dossier consumes. */
+export interface DossierNextAction {
+  kind: string;
+  label: string;
+  /** One-line explanation of why this action was suggested — surfaced
+   * as an aria-describedby hint on the chip. */
+  rationale?: string;
+  /** Per-action activation handler. Falls back to the Dossier's
+   * top-level onNextAction prop when omitted. */
+  onActivate?: () => void;
+}
+
 export interface DossierNarrative {
   lede?: string | null;
+  /** Up to 2 chips, ordered by priority. The first renders as the
+   * primary acid chip; the second (if any) as a secondary outline. */
+  actions?: DossierNextAction[];
+  /** Legacy single-action shape — still accepted. When present and
+   * `actions` is empty, renders as a single acid chip. */
   nextAction?: {
     kind: string;
     label: string;
@@ -77,8 +93,11 @@ function domIdFor(thoughtId: string): string | null {
   return null;
 }
 
-const REPLAY_DURATION_MS = 30_000;
-const CHAPTER_CARD_VISIBLE_MS = 2400;
+const REPLAY_DURATION_MS = 12_000;
+const CHAPTER_CARD_VISIBLE_MS = 2000;
+const SCENE_BAND_HEIGHT_MOBILE = 140;
+const SCENE_BAND_HEIGHT_DESKTOP = 260;
+const SCENE_EXPANDED_HEIGHT = 560;
 
 export function IssueDossier({
   issue,
@@ -287,10 +306,15 @@ export function IssueDossier({
   const isResolved = issue.status === "done" || issue.status === "cancelled";
   const showEndSummary = !isPlaying && isAtEnd && !selectedId;
 
+  /* Heartbeat-band expansion: the scene is ambient by default (140 px
+   * mobile, 260 px desktop). Clicking "Dive into chronicle" expands
+   * it to 560 px for an immersive read. Matches plan E1.1. */
+  const [sceneExpanded, setSceneExpanded] = useState(false);
+
   return (
     <section
       className={cn(
-        "relative border border-[var(--boared-rule)] bg-[#08080A] text-[#F2E6C4] overflow-hidden",
+        "relative border border-[var(--boared-rule)] bg-[var(--boared-paper)] text-[var(--boared-ink)] overflow-hidden",
         className,
       )}
     >
@@ -318,12 +342,20 @@ export function IssueDossier({
         />
       </div>
 
-      {/* ── 3D chronicle (visual support). Same data, in motion —
-            lets the viewer *feel* the pace, hover thoughts for the
-            causal chain, and watch the case resolve. Smaller
-            height than before so it no longer dominates the
-            surface. */}
-      <div className="relative border-t border-[var(--boared-rule)]/50" style={{ height: 420 }}>
+      {/* ── 3D chronicle — the "case heartbeat" band. Ambient by
+            default: small, always on, decorative-informative. Shows
+            activity intensity, resolution state, and live pulses at
+            a glance. Expands to an immersive 560 px view on demand
+            via "Dive into chronicle". */}
+      <div
+        className="relative border-t border-[var(--boared-rule)] transition-[height] duration-500 ease-out"
+        style={{
+          height: sceneExpanded
+            ? SCENE_EXPANDED_HEIGHT
+            : `clamp(${SCENE_BAND_HEIGHT_MOBILE}px, 22vw, ${SCENE_BAND_HEIGHT_DESKTOP}px)`,
+          background: "var(--boared-scene)",
+        }}
+      >
         <IssueThoughtSpace
           ref={tsRef}
           issue={issue}
@@ -338,14 +370,24 @@ export function IssueDossier({
           currentTime={currentTime}
           className="absolute inset-0"
         />
+        {/* Dive-into-chronicle button — expands the ambient band
+            into an immersive view on demand. */}
+        <button
+          type="button"
+          onClick={() => setSceneExpanded((v) => !v)}
+          className="absolute top-2 right-2 z-20 inline-flex items-center gap-1.5 h-7 px-2.5 font-mono text-[0.58rem] uppercase tracking-[0.14em] border border-[var(--boared-scene-ink-faint)] text-[var(--boared-scene-ink)] bg-[color-mix(in_oklab,var(--boared-scene)_75%,transparent)] hover:bg-[var(--boared-scene-card)] backdrop-blur-sm transition-colors"
+          title={sceneExpanded ? "Collapse the chronicle" : "Dive into the chronicle"}
+        >
+          {sceneExpanded ? "↓ Collapse" : "↗ Dive into chronicle"}
+        </button>
         {/* Chapter title card overlay — fires when replay crosses
-            a chapter boundary. */}
+            a chapter boundary. Renders on the scene's warm dark. */}
         {chapterCard && (
           <div
             className="pointer-events-none absolute top-[18%] left-1/2 -translate-x-1/2 max-w-[80%] text-center"
-            style={{ color: "#F2E6C4" }}
+            style={{ color: "var(--boared-scene-ink)" }}
           >
-            <div className="font-mono text-[0.55rem] uppercase tracking-[0.22em] mb-1 text-[#7A6F50]">
+            <div className="font-mono text-[0.6rem] uppercase tracking-[0.22em] mb-1 text-[var(--boared-scene-ink-faint)]">
               {issue.identifier ?? "case"} · chapter
             </div>
             <div
@@ -354,7 +396,7 @@ export function IssueDossier({
             >
               {chapterCard.label}
             </div>
-            <div className="mt-1 font-mono text-[0.6rem] uppercase tracking-[0.14em] text-[#7A6F50]">
+            <div className="mt-1 font-mono text-[0.62rem] uppercase tracking-[0.14em] text-[var(--boared-scene-ink-faint)]">
               {new Date(chapterCard.ts).toLocaleDateString([], {
                 month: "short",
                 day: "numeric",
@@ -369,14 +411,17 @@ export function IssueDossier({
         )}
         {showEndSummary && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-auto text-center px-5 py-4 border border-[var(--boared-rule)]/60 bg-[#08080A]/85 backdrop-blur-sm">
-              <div className="font-mono text-[0.55rem] uppercase tracking-[0.22em] text-[#7A6F50]">
+            <div
+              className="pointer-events-auto text-center px-5 py-4 border border-[var(--boared-scene-rule)] backdrop-blur-sm"
+              style={{ background: "color-mix(in oklab, var(--boared-scene) 85%, transparent)" }}
+            >
+              <div className="font-mono text-[0.6rem] uppercase tracking-[0.22em] text-[var(--boared-scene-ink-faint)]">
                 End of chronicle · {isResolved ? (issue.status === "cancelled" ? "Cancelled" : "Resolved") : "Caught up"}
               </div>
               <button
                 type="button"
                 onClick={onPlayToggle}
-                className="mt-2 inline-flex items-center gap-1.5 h-7 px-3 font-mono text-[0.6rem] uppercase tracking-[0.12em] border border-[#7A6F50]/60 text-[#F2E6C4] hover:bg-[#F2E6C4]/[0.06] transition-colors"
+                className="mt-2 inline-flex items-center gap-1.5 h-7 px-3 font-mono text-[0.62rem] uppercase tracking-[0.12em] border border-[var(--boared-scene-ink-faint)] text-[var(--boared-scene-ink)] hover:bg-[var(--boared-scene-card)] transition-colors"
               >
                 ↻ Replay the chronicle
               </button>
@@ -396,19 +441,51 @@ export function IssueDossier({
         onPlayToggle={onPlayToggle}
       />
 
-      {/* ── Next-action chip. */}
-      {narrative?.nextAction && (
-        <div className="flex items-center justify-end px-3 py-2 border-t border-[var(--boared-rule)]/30">
-          <button
-            type="button"
-            onClick={() => onNextAction?.()}
-            className="inline-flex items-center gap-1.5 h-7 px-3 font-mono text-[0.6rem] uppercase tracking-[0.12em] border border-[var(--boared-acid)]/70 text-[var(--boared-acid)] bg-[var(--boared-acid)]/[0.08] hover:bg-[var(--boared-acid)]/[0.18] transition-colors"
-          >
-            <Sparkles className="h-3 w-3" />
-            {narrative.nextAction.label}
-          </button>
-        </div>
-      )}
+      {/* ── Next-action chip cluster (max 2). First chip is acid
+            primary; second chip renders as an outline secondary.
+            Each chip has an aria-describedby rationale that tells
+            SR users why the system suggested it. */}
+      {(() => {
+        const actions: DossierNextAction[] =
+          narrative?.actions && narrative.actions.length > 0
+            ? narrative.actions.slice(0, 2)
+            : narrative?.nextAction
+              ? [{ kind: narrative.nextAction.kind, label: narrative.nextAction.label }]
+              : [];
+        if (actions.length === 0) return null;
+        return (
+          <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[var(--boared-rule)]/30">
+            {actions.map((a, i) => {
+              const isPrimary = i === 0;
+              const activate = a.onActivate ?? onNextAction;
+              const hintId = a.rationale ? `next-action-${a.kind}-${i}-hint` : undefined;
+              return (
+                <span key={`${a.kind}-${i}`} className="inline-flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => activate?.()}
+                    aria-describedby={hintId}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 h-7 px-3 font-mono text-[0.6rem] uppercase tracking-[0.12em] transition-colors focus-visible:outline-none focus-visible:ring-2",
+                      isPrimary
+                        ? "border border-[var(--boared-acid)]/70 text-[var(--boared-acid)] bg-[var(--boared-acid)]/[0.08] hover:bg-[var(--boared-acid)]/[0.18] focus-visible:ring-[var(--boared-acid)]/50"
+                        : "border border-[var(--boared-rule)] text-[var(--boared-ink)] bg-transparent hover:bg-[var(--boared-ink)]/[0.06] focus-visible:ring-[var(--boared-ink)]/40",
+                    )}
+                  >
+                    {isPrimary && <Sparkles className="h-3 w-3" />}
+                    {a.label}
+                  </button>
+                  {hintId && (
+                    <span id={hintId} className="sr-only">
+                      {a.rationale}
+                    </span>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <style>{`
         @keyframes dossier-chapter-fade {

@@ -52,6 +52,14 @@ export const issues = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    /* Case-file synthesis cache. Populated by the synthesis endpoint
+     * on demand and invalidated by a hash mismatch on inputs. Shape
+     * is `SynthesisPayload` from server/src/services/case-synthesis
+     * but we keep the column `unknown` here to avoid dragging server
+     * types into the shared db package. See 0040_case_synthesis_cache.sql. */
+    synthesisJson: jsonb("synthesis_json").$type<unknown>(),
+    synthesisVersion: text("synthesis_version"),
+    synthesisGeneratedAt: timestamp("synthesis_generated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
