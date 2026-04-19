@@ -94,6 +94,11 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   const projVis = useRef(new Uint8Array(64));
   /** Per-node opacity multiplier, rebuilt on gateById / node changes. */
   const gateRef = useRef(new Float32Array(64));
+  /** Active causal chain (target + transitive ancestors + descendants).
+   * Empty set = no active chain = everything at full brightness. */
+  const chainRef = useRef<Set<number>>(new Set());
+  /** Target of the current chain; null when nothing hovered/selected. */
+  const chainTargetRef = useRef<number>(-1);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<{ label: string; kind: ThoughtKind; authorName: string } | null>(null);
@@ -314,6 +319,52 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       if (focusIdx >= 0) { attract = mind[focusIdx].pos; attractStr = sIdx >= 0 ? 0.5 : 0.85; }
       field.update(dt, edges, mind, attract, attractStr, now * 0.001);
 
+      // ── Rebuild causal chain when the hover/select target changes.
+      // Chain = target + transitive ancestors (via graph.parents) +
+      // transitive descendants (via graph.children). When populated,
+      // nodes outside the chain dim to highlight the causal path.
+      if (focusIdx !== chainTargetRef.current) {
+        chainTargetRef.current = focusIdx;
+        const chain = chainRef.current;
+        chain.clear();
+        if (focusIdx >= 0 && graphRef.current) {
+          const byId = byIdRef.current;
+          const g = graphRef.current;
+          const rootId = mind[focusIdx].thought.id;
+          chain.add(focusIdx);
+          // Upstream: walk parents recursively
+          const upStack: string[] = [rootId];
+          const seenUp = new Set<string>([rootId]);
+          while (upStack.length) {
+            const id = upStack.pop()!;
+            const ps = g.parents.get(id) ?? [];
+            for (const p of ps) {
+              if (seenUp.has(p)) continue;
+              seenUp.add(p);
+              const pi = byId.get(p);
+              if (pi !== undefined) chain.add(pi);
+              upStack.push(p);
+            }
+          }
+          // Downstream: walk children recursively
+          const downStack: string[] = [rootId];
+          const seenDown = new Set<string>([rootId]);
+          while (downStack.length) {
+            const id = downStack.pop()!;
+            const ks = g.children.get(id) ?? [];
+            for (const c of ks) {
+              if (seenDown.has(c)) continue;
+              seenDown.add(c);
+              const ci = byId.get(c);
+              if (ci !== undefined) chain.add(ci);
+              downStack.push(c);
+            }
+          }
+        }
+      }
+      const chain = chainRef.current;
+      const chainActive = chain.size > 0;
+
       // Project nodes
       const sx = projSx.current, sy = projSy.current, sc = projSc.current, vis = projVis.current;
       const cY = Math.cos(cam.rotY), sYR = Math.sin(cam.rotY), cX = Math.cos(cam.rotX), sXR = Math.sin(cam.rotX);
@@ -347,15 +398,25 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       // for the glow effect.  Only structural edges, not activity noise.
       const graph = graphRef.current;
       const gate = gateRef.current;
+      // Amplify the active causal chain; dim everything outside it.
+      const chainBoost = 1.35;  // chain edges a touch brighter
+      const offChainDim = 0.28; // non-chain ~28% brightness
+      // Animated pulse phase for chain edges — sinusoid 0.4..1.0 over
+      // ~1.2 s so brainwaves look like they're firing along the chain.
+      const pulse = 0.7 + 0.3 * Math.sin(now * 0.005);
       if (graph && intro > 0.1) {
         ctx.lineCap = "round";
 
         // Helper: draw a glowing line; extra `g` multiplier dims the
-        // whole line when either endpoint is gated (scrubber/focus).
-        const glowLine = (x1: number, y1: number, x2: number, y2: number, col: string, a: number, w: number, g: number) => {
-          ctx.shadowColor = col; ctx.shadowBlur = 10;
-          ctx.strokeStyle = col; ctx.lineWidth = w;
-          ctx.globalAlpha = a * intro * g;
+        // whole line when either endpoint is gated (scrubber/focus),
+        // `inChain` adds the chain boost/pulse when active.
+        const glowLine = (x1: number, y1: number, x2: number, y2: number, col: string, a: number, w: number, g: number, inChain: boolean) => {
+          const mul = chainActive
+            ? (inChain ? chainBoost * pulse : offChainDim)
+            : 1;
+          ctx.shadowColor = col; ctx.shadowBlur = inChain && chainActive ? 16 : 10;
+          ctx.strokeStyle = col; ctx.lineWidth = inChain && chainActive ? w * 1.4 : w;
+          ctx.globalAlpha = a * intro * g * mul;
           ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
           ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
         };
@@ -370,15 +431,17 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
             if (ci === undefined || !vis[ci]) continue;
             const gc = gate[ci] ?? 1;
             const gEdge = Math.min(gp, gc);
+            const inChain = chainActive && chain.has(pi) && chain.has(ci);
             const pk = mind[pi].thought.kind, ck = mind[ci].thought.kind;
             if (pk === "activity" && ck === "activity") continue;
             if (pk === "activity" || ck === "activity") {
-              // Dim for activity-involved edges
+              // Dim for activity-involved edges — still honour chain.
+              const mul = chainActive ? (inChain ? chainBoost * pulse : offChainDim) : 1;
               ctx.strokeStyle = WARM_DIM; ctx.lineWidth = 0.5;
-              ctx.globalAlpha = 0.08 * intro * gEdge; ctx.shadowBlur = 0;
+              ctx.globalAlpha = 0.08 * intro * gEdge * mul; ctx.shadowBlur = 0;
               ctx.beginPath(); ctx.moveTo(sx[pi], sy[pi]); ctx.lineTo(sx[ci], sy[ci]); ctx.stroke();
             } else {
-              glowLine(sx[pi], sy[pi], sx[ci], sy[ci], WARM, 0.18, 1.0, gEdge);
+              glowLine(sx[pi], sy[pi], sx[ci], sy[ci], WARM, 0.18, 1.0, gEdge, inChain);
             }
           }
         }
@@ -389,18 +452,21 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         const gIssue = gate[0] ?? 1;
         if (ancNodes.length > 0 && vis[0]) {
           const g0 = Math.min(gIssue, gate[ancNodes[0]] ?? 1);
-          glowLine(sx[0], sy[0], sx[ancNodes[0]], sy[ancNodes[0]], "#C8A96E", 0.45, 1.8, g0);
+          const inC0 = chainActive && chain.has(0) && chain.has(ancNodes[0]);
+          glowLine(sx[0], sy[0], sx[ancNodes[0]], sy[ancNodes[0]], "#C8A96E", 0.45, 1.8, g0, inC0);
           for (let ai = 1; ai < ancNodes.length; ai++) {
-            const g = Math.min(gate[ancNodes[ai - 1]] ?? 1, gate[ancNodes[ai]] ?? 1);
-            glowLine(sx[ancNodes[ai - 1]], sy[ancNodes[ai - 1]], sx[ancNodes[ai]], sy[ancNodes[ai]], "#C8A96E", 0.4, 1.5, g);
+            const gch = Math.min(gate[ancNodes[ai - 1]] ?? 1, gate[ancNodes[ai]] ?? 1);
+            const inC = chainActive && chain.has(ancNodes[ai - 1]) && chain.has(ancNodes[ai]);
+            glowLine(sx[ancNodes[ai - 1]], sy[ancNodes[ai - 1]], sx[ancNodes[ai]], sy[ancNodes[ai]], "#C8A96E", 0.4, 1.5, gch, inC);
           }
         }
 
         // Subissue connections — emerald luminous threads
         for (let i = 0; i < mind.length; i++) {
           if (mind[i].thought.kind === "subissue" && vis[i] && vis[0]) {
-            const g = Math.min(gIssue, gate[i] ?? 1);
-            glowLine(sx[0], sy[0], sx[i], sy[i], "#3FCF8E", 0.35, 1.4, g);
+            const gch = Math.min(gIssue, gate[i] ?? 1);
+            const inC = chainActive && chain.has(0) && chain.has(i);
+            glowLine(sx[0], sy[0], sx[i], sy[i], "#3FCF8E", 0.35, 1.4, gch, inC);
           }
         }
         ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.lineCap = "butt";
@@ -415,7 +481,11 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         const t = mind[i].thought;
         const nodeR = mind[i].radius * sc[i];
         if (nodeR < 0.5) continue;
-        const g = gate[i] ?? 1;
+        let g = gate[i] ?? 1;
+        // Chain dim: non-chain nodes get ~28% brightness while a
+        // chain is active. Chain nodes get a subtle pulse matching
+        // the edge pulse so the whole lineage reads as "firing".
+        if (chainActive) g *= chain.has(i) ? pulse : offChainDim;
         if (g <= 0.001) continue;
         let color: string; let alpha: number; let coreR: number; let haloR: number;
         switch (t.kind as ThoughtKind) {

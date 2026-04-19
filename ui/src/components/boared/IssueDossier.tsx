@@ -1,51 +1,34 @@
 /**
  * IssueDossier — the hero block of IssueDetail.
  *
- * One unified surface that merges the old pair (IssueScene +
- * IssueCaseMap) into a single animated experience:
+ * One unified 3D animated surface that tells the case's story through
+ * navigation, not through a linear timeline control. The shape:
  *
- *   ┌─ metrics strip (age · breakdown · thread · runs live) ─┐
- *   │                                                        │
- *   │  ┌ Phase ┬──── IssueThoughtSpace (3D) ───┬ Motion ┐    │
- *   │  │  rail │                               │  feed  │    │
- *   │  │       │   particles, causal edges,    │        │    │
- *   │  │       │   nodes, camera orbit         │ click  │    │
- *   │  │       │                               │ → fly  │    │
- *   │  └───────┴───────────────────────────────┴────────┘    │
- *   │                                                        │
- *   │  ◀────────●────────────▶   [▶ play]   "just now"       │
- *   └────────────────────────────────────────────────────────┘
+ *   ┌─ metrics strip (age · breakdown · thread · runs) ──┐
+ *   │ phase rail │   ThoughtSpace (DAG flow)             │
+ *   │  (nav      │   · left-to-right causal depth axis   │ motion │
+ *   │   only)    │   · hover/select → causal chain glows │ feed   │
+ *   │            │   · brainwave pulses along edges      │        │
+ *   └─────────────────────────────────────────────────────────────┘
  *
- * - Phase rail: click a phase to focus its cluster. The camera flies
- *   to a representative node; everything outside the phase fades to
- *   ~10 %. Click again to clear.
- * - Scrubber: event-weighted (each comment/run/activity/subissue is
- *   one beat). Dragging left hides later beats (they fade to ~5 %);
- *   Play auto-advances over ~20 s telling the story forward.
- * - Motion feed: the case's comments + runs newest-first. Click an
- *   entry and the camera flies to that node in 3D.
+ * Storytelling is driven by exploration, not a play button: hover any
+ * thought and its full upstream lineage + downstream consequences
+ * light up (chain tracing lives inside IssueThoughtSpace). Clicking a
+ * thought flies the camera to it. The phase rail and motion feed are
+ * purely navigation aids — they fly the camera, no other state.
  *
- * The heavy-lifting visualization (graph / particles / camera) lives
- * in IssueThoughtSpace. This wrapper only owns layout + state and
- * drives the graph through its gateById map and focusNodeId ref.
+ * The heavy-lifting visualisation (graph, layout, particles, camera,
+ * chain trace) lives in IssueThoughtSpace. This wrapper owns layout
+ * + the tiny navigation HUD.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useMemo, useRef } from "react";
 import {
   ChevronRight,
-  Clock,
   GitBranch,
   Layers,
   ListTree,
   MessageSquare,
-  Pause,
-  Play,
   Radio,
   Target,
 } from "lucide-react";
@@ -74,9 +57,9 @@ interface Props {
   className?: string;
 }
 
-interface Beat {
+interface FeedItem {
   id: string;
-  kind: "comment" | "run" | "subissue" | "activity";
+  kind: "comment" | "run";
   ts: number;
   label: string;
   authorName: string;
@@ -86,56 +69,42 @@ interface Beat {
 const DONE = new Set(["done", "cancelled"]);
 const LIVE_RUN = new Set(["queued", "running", "in_progress"]);
 
-/* ──────────────────── ID helpers (must match ThoughtSpace) ────────────────── */
-
-function tsIdComment(id: string) { return `comment:${id}`; }
-function tsIdRun(id: string)     { return `run:${id}`; }
-function tsIdSub(id: string)     { return `subissue:${id}`; }
-function tsIdAct(id: string)     { return `activity:${id}`; }
-function tsIdAnc(id: string)     { return `ancestor:${id}`; }
-function tsIdIssue(id: string)   { return `issue:${id}`; }
-
-function phaseOf(id: string): Phase {
-  if (id.startsWith("ancestor:")) return "ancestors";
-  if (id.startsWith("issue:")) return "anchor";
-  if (id.startsWith("subissue:")) return "subissues";
-  // comment / run / activity all count as motion
-  return "motion";
-}
-
-/* ──────────────────── Component ────────────────── */
+// ID helpers — must match the shape IssueThoughtSpace emits when it
+// builds its internal thoughts[] array.
+const idComment = (id: string) => `comment:${id}`;
+const idRun = (id: string) => `run:${id}`;
+const idSub = (id: string) => `subissue:${id}`;
+const idAnc = (id: string) => `ancestor:${id}`;
+const idIssue = (id: string) => `issue:${id}`;
 
 export function IssueDossier({
   issue,
   comments,
-  activity,
+  activity: _activity,
   childIssues,
   linkedRuns,
   agentMap,
   className,
 }: Props) {
   const tsRef = useRef<IssueThoughtSpaceHandle>(null);
-  const [focusedPhase, setFocusedPhase] = useState<Phase | null>(null);
 
-  /* Metrics — mirrors the old IssueCaseMap tiles so the reads match. */
   const metrics = useMemo(() => {
     const kids = childIssues ?? [];
     const total = kids.length;
     const done = kids.filter((k) => DONE.has(k.status)).length;
     const liveRunCount = (linkedRuns ?? []).filter((r) => LIVE_RUN.has(r.status)).length;
     const commentCount = (comments ?? []).length;
-    const createdMs = new Date(issue.createdAt).getTime();
-    const ageMs = Date.now() - createdMs;
+    const ageMs = Date.now() - new Date(issue.createdAt).getTime();
     return { total, done, liveRunCount, commentCount, ageMs };
   }, [childIssues, linkedRuns, comments, issue.createdAt]);
 
-  /* Beats — every event as one tick; scrubber is event-weighted. */
-  const beats = useMemo<Beat[]>(() => {
-    const out: Beat[] = [];
+  /* Motion feed — comments + runs, newest first. Click to fly camera. */
+  const motionFeed = useMemo<FeedItem[]>(() => {
+    const out: FeedItem[] = [];
     for (const c of comments ?? []) {
       const who = c.authorAgentId ? agentMap.get(c.authorAgentId)?.name ?? "—" : "—";
       out.push({
-        id: tsIdComment(c.id),
+        id: idComment(c.id),
         kind: "comment",
         ts: new Date(c.createdAt).getTime(),
         label: c.body.replace(/\s+/g, " ").slice(0, 120),
@@ -145,7 +114,7 @@ export function IssueDossier({
     for (const r of linkedRuns ?? []) {
       const who = agentMap.get(r.agentId)?.name ?? "agent";
       out.push({
-        id: tsIdRun(r.runId),
+        id: idRun(r.runId),
         kind: "run",
         ts: new Date(r.startedAt ?? r.createdAt ?? issue.createdAt).getTime(),
         label: `${who} · ${r.status}`,
@@ -153,140 +122,34 @@ export function IssueDossier({
         isLive: LIVE_RUN.has(r.status),
       });
     }
-    for (const ch of childIssues ?? []) {
-      out.push({
-        id: tsIdSub(ch.id),
-        kind: "subissue",
-        ts: new Date(ch.createdAt).getTime(),
-        label: `${ch.identifier ?? ch.id.slice(0, 6)} · ${ch.title}`,
-        authorName: ch.assigneeAgentId
-          ? agentMap.get(ch.assigneeAgentId)?.name ?? "—"
-          : "—",
-      });
-    }
-    for (const e of activity ?? []) {
-      if (e.action === "issue.comment_added") continue;
-      const who = e.agentId ? agentMap.get(e.agentId)?.name ?? "—" : "system";
-      out.push({
-        id: tsIdAct(e.id),
-        kind: "activity",
-        ts: new Date(e.createdAt).getTime(),
-        label: `${who} ${e.action.replace(/^issue\./, "").replace(/_/g, " ")}`,
-        authorName: who,
-      });
-    }
-    out.sort((a, b) => a.ts - b.ts);
-    return out;
-  }, [comments, linkedRuns, childIssues, activity, agentMap, issue.createdAt]);
+    return out.sort((a, b) => b.ts - a.ts).slice(0, 40);
+  }, [comments, linkedRuns, agentMap, issue.createdAt]);
 
-  const [scrubberIdx, setScrubberIdx] = useState<number>(beats.length);
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  /* Keep the scrubber parked at the end when new beats arrive (so the
-   * page doesn't quietly hide new events). If the user dragged it
-   * back, stay there until they release. */
-  const wasAtEndRef = useRef(true);
-  useEffect(() => {
-    if (wasAtEndRef.current) setScrubberIdx(beats.length);
-  }, [beats.length]);
-  useEffect(() => {
-    wasAtEndRef.current = scrubberIdx >= beats.length;
-  }, [scrubberIdx, beats.length]);
-
-  /* Play: advance one beat per (duration / beats). ~1.5s + 600ms per
-   * beat, capped at 30s so gigantic issues don't hang forever. */
-  useEffect(() => {
-    if (!isPlaying || beats.length === 0) return;
-    const startIdx = 0;
-    const start = performance.now();
-    const durMs = Math.min(30_000, 1500 + beats.length * 600);
-    setScrubberIdx(startIdx);
-    let raf = 0;
-    const tick = () => {
-      const t = Math.min(1, (performance.now() - start) / durMs);
-      const next = Math.round(startIdx + t * (beats.length - startIdx));
-      setScrubberIdx(next);
-      if (t < 1) raf = requestAnimationFrame(tick);
-      else setIsPlaying(false);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [isPlaying, beats.length]);
-
-  /* Motion feed — newest first, capped. */
-  const motionFeed = useMemo<Beat[]>(
-    () => beats.filter((b) => b.kind !== "subissue").slice().reverse().slice(0, 30),
-    [beats],
-  );
-
-  /* gateById — the per-node opacity map that drives scrubber + focus.
-   * Recompute when any input changes; ThoughtSpace does a
-   * ref-equality check in its memo comparator, so allocating a fresh
-   * Map here is fine. */
-  const gateById = useMemo(() => {
-    const map = new Map<string, number>();
-    const scrubCutoffTs =
-      scrubberIdx >= beats.length
-        ? Number.POSITIVE_INFINITY
-        : beats[scrubberIdx]?.ts ?? Number.POSITIVE_INFINITY;
-
-    const set = (id: string, ts: number) => {
-      let g = 1;
-      if (ts > scrubCutoffTs) g *= 0.05;
-      if (focusedPhase && phaseOf(id) !== focusedPhase) g *= 0.1;
-      map.set(id, g);
-    };
-
-    // Anchor + ancestors are "before time" for the scrubber — always
-    // visible (they're context, not events in the story).
-    map.set(tsIdIssue(issue.id), focusedPhase && focusedPhase !== "anchor" ? 0.1 : 1);
-    (issue.ancestors ?? []).forEach((a) => {
-      map.set(tsIdAnc(a.id), focusedPhase && focusedPhase !== "ancestors" ? 0.1 : 1);
-    });
-
-    for (const c of comments ?? []) set(tsIdComment(c.id), new Date(c.createdAt).getTime());
-    for (const r of linkedRuns ?? [])
-      set(tsIdRun(r.runId), new Date(r.startedAt ?? r.createdAt ?? issue.createdAt).getTime());
-    for (const ch of childIssues ?? []) set(tsIdSub(ch.id), new Date(ch.createdAt).getTime());
-    for (const e of activity ?? []) {
-      if (e.action === "issue.comment_added") continue;
-      set(tsIdAct(e.id), new Date(e.createdAt).getTime());
-    }
-    return map;
-  }, [
-    issue,
-    comments,
-    activity,
-    childIssues,
-    linkedRuns,
-    scrubberIdx,
-    beats,
-    focusedPhase,
-  ]);
-
-  /* Phase click: toggle focus + fly camera to a representative node. */
+  /* Phase click: navigation only — flies the camera to a representative
+   * node in that cluster. No global dimming; the causal-chain dimming
+   * happens inside ThoughtSpace when the user hovers or selects. */
   const onPhaseClick = useCallback(
     (phase: Phase) => {
-      setFocusedPhase((prev) => (prev === phase ? null : phase));
       let targetId: string | null = null;
       switch (phase) {
         case "anchor":
-          targetId = tsIdIssue(issue.id);
+          targetId = idIssue(issue.id);
           break;
         case "ancestors":
-          if (issue.ancestors && issue.ancestors.length > 0)
-            targetId = tsIdAnc(issue.ancestors[0].id);
+          if (issue.ancestors && issue.ancestors.length > 0) {
+            // Nearest ancestor reads best first.
+            targetId = idAnc(issue.ancestors[issue.ancestors.length - 1].id);
+          }
           break;
         case "subissues":
-          if (childIssues && childIssues.length > 0)
-            targetId = tsIdSub(childIssues[0].id);
+          if (childIssues && childIssues.length > 0) targetId = idSub(childIssues[0].id);
           break;
-        case "motion":
-          // Pick the newest live run first, else newest comment.
+        case "motion": {
           const live = (linkedRuns ?? []).find((r) => LIVE_RUN.has(r.status));
-          if (live) targetId = tsIdRun(live.runId);
+          if (live) targetId = idRun(live.runId);
           else if (motionFeed.length > 0) targetId = motionFeed[0].id;
           break;
+        }
       }
       if (targetId) tsRef.current?.focusNodeId(targetId);
     },
@@ -297,13 +160,6 @@ export function IssueDossier({
     tsRef.current?.focusNodeId(id);
   }, []);
 
-  const scrubLabel = useMemo(() => {
-    if (scrubberIdx >= beats.length) return "all events";
-    if (scrubberIdx === 0) return "start";
-    const b = beats[Math.max(0, scrubberIdx - 1)];
-    return b ? relativeTime(new Date(b.ts).toISOString()) : "…";
-  }, [beats, scrubberIdx]);
-
   return (
     <section
       className={cn(
@@ -311,7 +167,7 @@ export function IssueDossier({
         className,
       )}
     >
-      {/* ── Metrics strip ─────────────────────────────────────────── */}
+      {/* Tiny informational strip — just enough to anchor the scene. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 border-b border-[var(--boared-rule)]/50">
         <Metric label="Age" value={formatAge(metrics.ageMs)} sub="since opened" />
         <Metric
@@ -342,10 +198,10 @@ export function IssueDossier({
         />
       </div>
 
-      {/* ── 3-column layout: phase rail | scene | motion feed ─────── */}
-      <div className="grid grid-cols-1 md:grid-cols-[14rem_1fr_20rem] min-h-[clamp(480px,62vh,640px)]">
+      {/* 3-column layout. Phase rail and motion feed are navigation
+          shortcuts — neither drives global state beyond a camera fly. */}
+      <div className="grid grid-cols-1 md:grid-cols-[14rem_1fr_20rem] min-h-[clamp(520px,68vh,720px)]">
         <PhaseRail
-          focused={focusedPhase}
           onClick={onPhaseClick}
           counts={{
             ancestors: (issue.ancestors ?? []).length,
@@ -355,53 +211,26 @@ export function IssueDossier({
           }}
         />
 
-        <div className="relative border-y md:border-y-0 md:border-x border-[var(--boared-rule)]/50 min-h-[480px]">
+        <div className="relative border-y md:border-y-0 md:border-x border-[var(--boared-rule)]/50 min-h-[520px]">
           <IssueThoughtSpace
             ref={tsRef}
             issue={issue}
             comments={comments}
-            activity={activity}
+            activity={_activity}
             childIssues={childIssues}
             linkedRuns={linkedRuns}
             agentMap={agentMap}
-            gateById={gateById}
             className="absolute inset-0"
           />
+          {/* Hint strip — explains the navigation-is-the-story idea
+              so first-time users know what to do. Fades into the
+              scene's own "drag · scroll · click" hint. */}
+          <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 font-mono text-[0.55rem] uppercase tracking-[0.16em] text-[#7A6F50]/80">
+            hover a thought · trace its chain · click to fly
+          </div>
         </div>
 
         <MotionFeed feed={motionFeed} onClick={onMotionClick} />
-      </div>
-
-      {/* ── Scrubber ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--boared-rule)]/50">
-        <button
-          type="button"
-          onClick={() => {
-            if (scrubberIdx >= beats.length) setScrubberIdx(0);
-            setIsPlaying((v) => !v);
-          }}
-          disabled={beats.length === 0}
-          className="inline-flex items-center gap-1.5 h-7 px-2.5 font-mono text-[0.6rem] uppercase tracking-[0.12em] border border-[#7A6F50]/60 text-[#F2E6C4] hover:bg-[#F2E6C4]/[0.06] disabled:opacity-40"
-        >
-          {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-          {isPlaying ? "Pause" : "Play story"}
-        </button>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(1, beats.length)}
-          step={1}
-          value={scrubberIdx}
-          onChange={(e) => {
-            if (isPlaying) setIsPlaying(false);
-            setScrubberIdx(Number(e.target.value));
-          }}
-          aria-label="Story scrubber"
-          className="flex-1 accent-[var(--boared-acid)] cursor-pointer"
-        />
-        <span className="font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[#7A6F50] tabular-nums min-w-[8ch] text-right">
-          {scrubLabel}
-        </span>
       </div>
     </section>
   );
@@ -444,11 +273,9 @@ function Metric({
 }
 
 function PhaseRail({
-  focused,
   onClick,
   counts,
 }: {
-  focused: Phase | null;
   onClick: (p: Phase) => void;
   counts: Record<Phase, number>;
 }) {
@@ -460,24 +287,21 @@ function PhaseRail({
   ];
   return (
     <nav
-      aria-label="Phases of the case"
+      aria-label="Navigate to a phase"
       className="flex md:flex-col border-b md:border-b-0 divide-x md:divide-x-0 md:divide-y divide-[var(--boared-rule)]/50"
     >
       {rows.map((r) => {
-        const active = focused === r.id;
         const available = counts[r.id] > 0 || r.id === "anchor";
         return (
           <button
             key={r.id}
             type="button"
             disabled={!available}
-            aria-pressed={active}
             onClick={() => available && onClick(r.id)}
+            title={available ? `Fly to ${r.label.toLowerCase()}` : undefined}
             className={cn(
               "flex-1 md:flex-initial flex md:flex-row items-start gap-2 px-3 py-3 text-left transition-colors",
-              active
-                ? "bg-[#F2E6C4]/[0.07] text-[#F2E6C4]"
-                : "text-[#F2E6C4]/70 hover:bg-[#F2E6C4]/[0.03] hover:text-[#F2E6C4]",
+              "text-[#F2E6C4]/70 hover:bg-[#F2E6C4]/[0.03] hover:text-[#F2E6C4]",
               !available && "opacity-40 cursor-default",
             )}
           >
@@ -504,7 +328,7 @@ function MotionFeed({
   feed,
   onClick,
 }: {
-  feed: Beat[];
+  feed: FeedItem[];
   onClick: (id: string) => void;
 }) {
   if (feed.length === 0) {
@@ -515,23 +339,19 @@ function MotionFeed({
     );
   }
   return (
-    <div className="max-h-[clamp(480px,62vh,640px)] overflow-y-auto">
+    <div className="max-h-[clamp(520px,68vh,720px)] overflow-y-auto">
       <div className="sticky top-0 z-10 px-3 py-2 border-b border-[var(--boared-rule)]/50 bg-[#08080A]/95 backdrop-blur-sm font-mono text-[0.55rem] uppercase tracking-[0.18em] text-[#7A6F50]">
         Motion · newest first
       </div>
       <ul className="divide-y divide-[var(--boared-rule)]/30">
         {feed.map((b) => {
-          const Icon =
-            b.kind === "comment"
-              ? MessageSquare
-              : b.kind === "run"
-                ? Layers
-                : Clock;
+          const Icon = b.kind === "comment" ? MessageSquare : Layers;
           return (
             <li key={b.id}>
               <button
                 type="button"
                 onClick={() => onClick(b.id)}
+                title="Fly camera to this thought"
                 className="group w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-[#F2E6C4]/[0.04] transition-colors"
               >
                 <Icon className="h-3 w-3 mt-[4px] shrink-0 text-[#7A6F50] group-hover:text-[#F2E6C4]" />
@@ -562,6 +382,8 @@ function MotionFeed({
     </div>
   );
 }
+
+/* ──────────────────── Utils ────────────────── */
 
 function formatAge(ms: number): string {
   const s = Math.floor(ms / 1000);

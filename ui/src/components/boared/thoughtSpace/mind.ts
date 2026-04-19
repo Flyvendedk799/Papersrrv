@@ -98,87 +98,112 @@ function hash(s: string) {
   return Math.abs(h);
 }
 
-export function layoutMind(thoughts: Thought[], _graph: CausalGraph): MindNode[] {
+export function layoutMind(thoughts: Thought[], graph: CausalGraph): MindNode[] {
+  /* ── Causal DAG flow layout ──────────────────────────────────────
+   *
+   *   ancestors  ·  issue  ·  depth 1  ·  depth 2  ·  …  ·  leaf thoughts
+   *   ◀── upstream                                     downstream ──▶
+   *
+   *   X = causal depth (the story's time-agnostic flow axis).
+   *       Ancestors sit at negative X — they're "before" the issue in
+   *       causality. Issue is the origin. Derived thoughts push right
+   *       by the BFS depth computed in buildGraph: depth 1 is the
+   *       first generation spawned from the issue, depth 2 is the
+   *       next, etc.
+   *   Y = kind band. Visual type separates "what kind of thought is
+   *       this?" so two thoughts at the same depth are still readable
+   *       (comments above, runs centred, sub-matters below, activity
+   *       drifting near the issue plane, ancestors stacked up-left).
+   *   Z = spread within (depth, kind) bucket so co-depth siblings
+   *       don't collapse onto a single line. Timestamp order drives
+   *       the sign of the spread — earlier → closer to Z=0, later →
+   *       further out.
+   *
+   * The particle field then flows along the causal edges (built in
+   * buildEdges from graph.children), which — given this layout —
+   * means particles flow left-to-right along the depth axis, exactly
+   * the n8n / workflow brainwave read: upstream thoughts send pulses
+   * to their downstream consequences.
+   * ─────────────────────────────────────────────────────────────── */
+
   const nodes: MindNode[] = [];
   const issue = thoughts.find(t => t.kind === "issue");
   if (!issue) return nodes;
-  nodes.push({ thought: issue, pos: { x: 0, y: 0, z: 0 }, radius: RADII.issue, phase: 0, introDelay: 0 });
 
-  // Group by kind — each type occupies a distinct spatial zone so the
-  // viewer can read structure at a glance: runs orbit the equator,
-  // comments float above, subissues root below, ancestors stack upward.
-  const G = Math.PI * (3 - Math.sqrt(5)); // golden angle
-  const byKind = new Map<ThoughtKind, Thought[]>();
+  const DEPTH_STEP = 110;
+  /** Vertical band per kind. Activity sits near the flow plane
+   * rather than scattered — it's narrative texture, not structure. */
+  const Y_BAND: Record<ThoughtKind, number> = {
+    ancestor: 180, comment: 75, issue: 0, activity: -15, run: -80, subissue: -200,
+  };
+
+  // Anchor
+  nodes.push({
+    thought: issue, pos: { x: 0, y: 0, z: 0 },
+    radius: RADII.issue, phase: 0, introDelay: 0,
+  });
+
+  // Ancestors — sort far → near (great-grandparent first). We want
+  // the nearest ancestor adjacent to the issue (X = -1 step) and the
+  // great-great grandparent pushed further left.
+  const ancestors = thoughts.filter(t => t.kind === "ancestor");
+  // `ts` on ancestors is a negative index (see IssueThoughtSpace:
+  // ts = -(ai+1)). Smaller ts → further-back ancestor → further-left.
+  ancestors.sort((a, b) => a.ts - b.ts);
+  const ancCount = ancestors.length;
+  ancestors.forEach((t, i) => {
+    // i=0 is the oldest ancestor. We want it at the leftmost X, so
+    // depth = -(ancCount - i). The nearest (i=ancCount-1) lands at -1.
+    const depth = -(ancCount - i);
+    const zJ = (hash(t.id + "z") % 60) - 30;
+    const yJ = (hash(t.id + "y") % 40) - 20;
+    nodes.push({
+      thought: t,
+      pos: { x: depth * DEPTH_STEP, y: Y_BAND.ancestor + yJ, z: zJ },
+      radius: RADII.ancestor, phase: 0, introDelay: 60 + (ancCount - i - 1) * 25,
+    });
+  });
+
+  // Group derived thoughts by (depth, kind) so we can spread them
+  // along Z within each bucket.
+  type K = Exclude<ThoughtKind, "issue" | "ancestor">;
+  const buckets = new Map<string, { kind: K; depth: number; list: Thought[] }>();
   for (const t of thoughts) {
-    if (t.kind === "issue") continue;
-    const arr = byKind.get(t.kind as ThoughtKind) ?? [];
-    arr.push(t);
-    byKind.set(t.kind as ThoughtKind, arr);
+    if (t.kind === "issue" || t.kind === "ancestor") continue;
+    const kind = t.kind as K;
+    const depth = Math.max(1, graph.depth.get(t.id) ?? 1);
+    const key = `${depth}:${kind}`;
+    const existing = buckets.get(key);
+    if (existing) existing.list.push(t);
+    else buckets.set(key, { kind, depth, list: [t] });
   }
 
-  // Scale radii down for very small issues so the scene isn't empty
-  const total = thoughts.length - 1;
-  const sc = Math.min(1, Math.max(0.55, total / 40));
+  // Scale-down for single-thought issues so the plane doesn't feel empty
+  const spreadScale = Math.min(1, Math.max(0.55, (thoughts.length - 1) / 40));
 
-  // ── Runs — equatorial ring, Y ≈ 0, radius 130–175 ──
-  const runs = (byKind.get("run") ?? []).sort((a, b) => a.ts - b.ts);
-  runs.forEach((t, i) => {
-    const angle = i * G;
-    const r = (130 + (hash(t.id) % 45)) * sc;
-    const y = (hash(t.id) % 50) - 25; // ±25 spread to reduce bright band
-    nodes.push({
-      thought: t, pos: { x: Math.cos(angle) * r, y, z: Math.sin(angle) * r },
-      radius: RADII.run, phase: (hash(t.id) % 628) / 100, introDelay: 60 + i * 12,
-    });
-  });
-
-  // ── Comments — upper ring, Y ≈ 50–120, radius 85–145 ──
-  const comments = (byKind.get("comment") ?? []).sort((a, b) => a.ts - b.ts);
-  comments.forEach((t, i) => {
-    const angle = i * G + 1.0; // angular offset from runs
-    const r = (85 + (hash(t.id) % 60)) * sc;
-    const y = 50 + (hash(t.id) % 70);
-    nodes.push({
-      thought: t, pos: { x: Math.cos(angle) * r, y: y * sc, z: Math.sin(angle) * r },
-      radius: RADII.comment, phase: (hash(t.id) % 628) / 100, introDelay: 60 + i * 8,
-    });
-  });
-
-  // ── Activity — scattered near center, small radii, spanning full Y ──
-  const acts = (byKind.get("activity") ?? []).sort((a, b) => a.ts - b.ts);
-  const an = Math.max(1, acts.length);
-  acts.forEach((t, i) => {
-    const f = (i + 0.5) / an;
-    const angle = i * G;
-    const r = (35 + (hash(t.id) % 65)) * sc;
-    const y = (f - 0.5) * 170 * sc;
-    nodes.push({
-      thought: t, pos: { x: Math.cos(angle) * r, y, z: Math.sin(angle) * r },
-      radius: RADII.activity, phase: (hash(t.id) % 628) / 100, introDelay: 60 + i * 4,
-    });
-  });
-
-  // ── Subissues — fan downward, Y ≈ −70 to −180 ──
-  const subs = (byKind.get("subissue") ?? []).sort((a, b) => a.ts - b.ts);
-  subs.forEach((t, i) => {
-    const angle = i * G + 0.5;
-    const r = (65 + (hash(t.id) % 65)) * sc;
-    const y = (-70 - (hash(t.id) % 110)) * sc;
-    nodes.push({
-      thought: t, pos: { x: Math.cos(angle) * r, y, z: Math.sin(angle) * r },
-      radius: RADII.subissue, phase: (hash(t.id) % 628) / 100, introDelay: 60 + i * 15,
-    });
-  });
-
-  // ── Ancestors — vertical chain above center ──
-  const ancestors = (byKind.get("ancestor") ?? []).sort((a, b) => a.ts - b.ts);
-  ancestors.forEach((t, i) => {
-    const jx = (hash(t.id) % 16) - 8;
-    const jz = (hash(t.id + "z") % 16) - 8;
-    const y = (130 + i * 80) * sc;
-    nodes.push({
-      thought: t, pos: { x: jx, y, z: jz },
-      radius: RADII.ancestor, phase: 0, introDelay: 60 + i * 25,
+  buckets.forEach(({ kind, depth, list }) => {
+    // Sort by timestamp so the earliest thought at this depth is
+    // closest to Z=0 and later siblings push out symmetrically.
+    list.sort((a, b) => a.ts - b.ts);
+    const n = list.length;
+    const stride = 60 * spreadScale;
+    list.forEach((t, i) => {
+      // Centred zig-zag: i=0 at z=0, i=1 at -stride, i=2 at +stride,
+      // i=3 at -2·stride, etc. Keeps the centre busy and spreads out.
+      const sign = i % 2 === 0 ? 1 : -1;
+      const mag = Math.ceil(i / 2);
+      const z = sign * mag * stride;
+      // Tiny Y jitter so two co-depth siblings of the same kind don't
+      // render at identical screen Y.
+      const yJitter = ((hash(t.id) % 30) - 15) * 0.6;
+      const delay = 60 + i * (kind === "activity" ? 4 : kind === "comment" ? 8 : 12);
+      nodes.push({
+        thought: t,
+        pos: { x: depth * DEPTH_STEP, y: Y_BAND[kind] + yJitter, z },
+        radius: RADII[kind],
+        phase: (hash(t.id) % 628) / 100,
+        introDelay: delay + Math.min(n - 1, 6) * 10,
+      });
     });
   });
 
@@ -241,14 +266,19 @@ export interface Camera {
   zoom: number; tZoom: number;
   target: Vec3; tTarget: Vec3;
   centerX: number; centerY: number;
-  userControlled: number; autoRot: number;
+  userControlled: number; autoRot: number; autoPhase?: number;
 }
 
 export function makeCamera(w: number, h: number): Camera {
   return {
-    focalLength: 600, rotY: 0.3, rotX: -0.28, tRotY: 0.3, tRotX: -0.28,
+    // DAG flow: small slice angle so X (depth) stays roughly
+    // horizontal on screen, tiny bird's-eye tilt so Y bands read.
+    focalLength: 600, rotY: 0.18, rotX: -0.14, tRotY: 0.18, tRotX: -0.14,
     zoom: 0.85, tZoom: 1.1, target: { x: 0, y: 0, z: 0 }, tTarget: { x: 0, y: 0, z: 0 },
-    centerX: w / 2, centerY: h / 2, userControlled: 0, autoRot: 0.04,
+    // autoRot was a full-spin orbit when the layout was brain-orb.
+    // With DAG flow a slow sway is enough to give subtle life without
+    // dragging the flow axis out from under the viewer.
+    centerX: w / 2, centerY: h / 2, userControlled: 0, autoRot: 0.008,
   };
 }
 
@@ -276,15 +306,13 @@ export function updateCamera(cam: Camera, dt: number) {
   cam.target.z = lerp(cam.target.z, cam.tTarget.z, k);
   if (cam.userControlled > 0) cam.userControlled -= dt * 1000;
   else {
-    cam.tRotY += cam.autoRot * dt;
-    cam.rotY += cam.autoRot * dt * 0.5;
-    // Gentle vertical bob: oscillate rotX between -0.6 and -0.2
-    // so the camera sweeps up and down, revealing the 3D depth.
-    cam.tRotX = -0.28 + Math.sin(cam.rotY * 0.25) * 0.12;
+    // Idle: oscillate rotY around 0.18 (the DAG view angle) instead
+    // of accumulating a full orbit. Tiny rotX bob on top. Sway period
+    // ~22 s, amplitude ~0.12 rad (~7°) so the flow axis stays readable.
+    cam.autoPhase = (cam.autoPhase ?? 0) + dt * cam.autoRot * 3;
+    cam.tRotY = 0.18 + Math.sin(cam.autoPhase) * 0.12;
+    cam.tRotX = -0.14 + Math.sin(cam.autoPhase * 0.5 + 1.7) * 0.05;
   }
-  const T = Math.PI * 2, F = T * 2;
-  if (Math.abs(cam.rotY) > F) { const w = Math.floor(cam.rotY / T) * T; cam.rotY -= w; cam.tRotY -= w; }
-  if (Math.abs(cam.rotX) > F) { const w = Math.floor(cam.rotX / T) * T; cam.rotX -= w; cam.tRotX -= w; }
 }
 
 export function focusOn(cam: Camera, p: Vec3, zoom: number) {
