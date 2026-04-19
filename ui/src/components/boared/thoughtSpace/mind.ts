@@ -148,6 +148,11 @@ export function buildGraph(thoughts: Thought[]): CausalGraph {
 
 /* ── Layout ─────────────────────────────────────────────────────── */
 
+/** World units per causal-depth step. Exported so consumers can
+ * place world-space decorations (beacon, chapter guides) at the
+ * same scale the layout uses. */
+export const DAG_DEPTH_STEP = 110;
+
 const RADII: Record<ThoughtKind, number> = {
   issue: 24, run: 14, subissue: 14, comment: 11, activity: 7, ancestor: 16,
 };
@@ -208,7 +213,7 @@ export function layoutMind(thoughts: Thought[], graph: CausalGraph): MindNode[] 
   const issue = thoughts.find(t => t.kind === "issue");
   if (!issue) return nodes;
 
-  const DEPTH_STEP = 110;
+  const DEPTH_STEP = DAG_DEPTH_STEP;
   /** Vertical band per kind. Activity sits near the flow plane
    * rather than scattered — it's narrative texture, not structure. */
   const Y_BAND: Record<ThoughtKind, number> = {

@@ -14,6 +14,7 @@ import type { RunForIssue } from "../../api/activity";
 import {
   buildGraph, layoutMind, buildEdges, makeCamera, project, updateCamera,
   focusOn, panCamera, clamp, Field, SpriteCache, statusColor, kindColor,
+  DAG_DEPTH_STEP,
   type Camera, type MindNode, type Projected, type Edge, type Vec3,
 } from "./thoughtSpace/mind";
 import { authorColor } from "./thoughtSpace/authors";
@@ -99,6 +100,15 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   const chainRef = useRef<Set<number>>(new Set());
   /** Target of the current chain; null when nothing hovered/selected. */
   const chainTargetRef = useRef<number>(-1);
+  /** Max causal depth in the current graph. Drives the beacon x-pos
+   * and the ambient brainwave sweep. Recomputed per rebuild. */
+  const maxDepthRef = useRef(0);
+  /** Non-empty depth buckets (incl negative for ancestors) with
+   * their occupant counts. Drives chapter-marker rendering. */
+  const depthMarkersRef = useRef<Array<{ depth: number; count: number }>>([]);
+  /** Has the user interacted yet? After first click, the hint fades;
+   * on 10s idle, it returns. */
+  const lastInteractionRef = useRef(performance.now());
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<{ label: string; kind: ThoughtKind; authorName: string } | null>(null);
@@ -159,6 +169,22 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     const wc = adapt(n);
     if (!fieldRef.current || fieldRef.current.n !== wc) { fieldRef.current = new Field(wc); seededRef.current = false; }
     if (!seededRef.current && n > 0) { fieldRef.current.seedAll(edges, laid); seededRef.current = true; }
+
+    // Causal-depth summary for the ambient wave + beacon + chapter
+    // markers. Skip the issue anchor itself (depth 0) from the
+    // chapter markers — the anchor has its own visual treatment.
+    let maxD = 0;
+    const counts = new Map<number, number>();
+    for (const nd of laid) {
+      const d = graph.depth.get(nd.thought.id) ?? 0;
+      if (d > maxD) maxD = d;
+      counts.set(d, (counts.get(d) ?? 0) + 1);
+    }
+    maxDepthRef.current = maxD;
+    depthMarkersRef.current = [...counts.entries()]
+      .filter(([d]) => d !== 0)
+      .sort((a, b) => a[0] - b[0])
+      .map(([depth, count]) => ({ depth, count }));
   }, [thoughts]);
 
   /* ── IntersectionObserver pause ── */
@@ -232,6 +258,32 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     focusNodeId: (id: string | null) => setSelectedId(id),
   }), []);
 
+  /* ── Entry animation ── cinematic wide-shot that eases in to the
+   * anchor so the first thing the user sees is "here's the whole
+   * workflow" before it settles to a reading zoom. Setting cam.zoom
+   * directly (not tZoom) skips the initial lerp spike. */
+  useEffect(() => {
+    const cam = cameraRef.current;
+    cam.zoom = 0.5;
+    cam.tZoom = 1.0;
+    introStartRef.current = performance.now();
+    lastInteractionRef.current = performance.now();
+  }, []);
+
+  /* ── Idle → resurface hint ── after 10 s of no interaction and
+   * no active selection, bring the hint back so users who got
+   * stuck can find their way. */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (selectedId) return;
+      if (hintVisible) return;
+      if (performance.now() - lastInteractionRef.current > 10_000) {
+        setHintVisible(true);
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [selectedId, hintVisible]);
+
   /* ── Pointer handlers ── */
   const hitTest = useCallback((px: number, py: number) => {
     const sx = projSx.current, sy = projSy.current, sc = projSc.current, vis = projVis.current;
@@ -272,6 +324,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     setHintVisible(false);
+    lastInteractionRef.current = performance.now();
     const rect = canvasRef.current?.getBoundingClientRect(); if (!rect) return;
     const cam = cameraRef.current;
     const isPan = e.shiftKey || e.button === 1 || e.button === 2;
@@ -398,12 +451,24 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       // for the glow effect.  Only structural edges, not activity noise.
       const graph = graphRef.current;
       const gate = gateRef.current;
+      const maxDepth = maxDepthRef.current;
       // Amplify the active causal chain; dim everything outside it.
       const chainBoost = 1.35;  // chain edges a touch brighter
       const offChainDim = 0.28; // non-chain ~28% brightness
       // Animated pulse phase for chain edges — sinusoid 0.4..1.0 over
       // ~1.2 s so brainwaves look like they're firing along the chain.
       const pulse = 0.7 + 0.3 * Math.sin(now * 0.005);
+      // Ambient brainwave sweep — a pulse wave travels root → leaf
+      // every ~6 s, independent of hover. An edge at normalised
+      // causal depth d is "firing" when the wave phase passes near d.
+      const WAVE_MS = 6000;
+      const wavePhase = (now % WAVE_MS) / WAVE_MS;
+      const waveBoostFor = (childDepth: number): number => {
+        if (maxDepth <= 0) return 1;
+        const normD = Math.max(0, childDepth) / Math.max(1, maxDepth);
+        const diff = Math.min(Math.abs(wavePhase - normD), 1 - Math.abs(wavePhase - normD));
+        return diff < 0.12 ? 1 + (0.12 - diff) * 2.6 : 1;
+      };
       if (graph && intro > 0.1) {
         ctx.lineCap = "round";
 
@@ -434,14 +499,22 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
             const inChain = chainActive && chain.has(pi) && chain.has(ci);
             const pk = mind[pi].thought.kind, ck = mind[ci].thought.kind;
             if (pk === "activity" && ck === "activity") continue;
+            // Ambient brainwave: give this edge a transient boost
+            // when the depth sweep passes through its child.
+            const childD = graph.depth.get(mind[ci].thought.id) ?? 0;
+            const wb = waveBoostFor(childD);
+            // Convergence lift — children with multiple parents get
+            // a small bump so "thoughts combining" is legible.
+            const childParents = graph.parents.get(mind[ci].thought.id)?.length ?? 1;
+            const convergenceLift = childParents > 1 ? 1.35 : 1;
             if (pk === "activity" || ck === "activity") {
-              // Dim for activity-involved edges — still honour chain.
+              // Dim for activity-involved edges — still honour chain + wave.
               const mul = chainActive ? (inChain ? chainBoost * pulse : offChainDim) : 1;
               ctx.strokeStyle = WARM_DIM; ctx.lineWidth = 0.5;
-              ctx.globalAlpha = 0.08 * intro * gEdge * mul; ctx.shadowBlur = 0;
+              ctx.globalAlpha = 0.08 * intro * gEdge * mul * wb; ctx.shadowBlur = 0;
               ctx.beginPath(); ctx.moveTo(sx[pi], sy[pi]); ctx.lineTo(sx[ci], sy[ci]); ctx.stroke();
             } else {
-              glowLine(sx[pi], sy[pi], sx[ci], sy[ci], WARM, 0.18, 1.0, gEdge, inChain);
+              glowLine(sx[pi], sy[pi], sx[ci], sy[ci], WARM, 0.18 * wb * convergenceLift, 1.0, gEdge, inChain);
             }
           }
         }
@@ -472,6 +545,40 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.lineCap = "butt";
       }
 
+      // ── Chapter depth markers ──
+      // Thin vertical guides behind the nodes, one per depth bucket.
+      // Gives scale without clutter: a big workflow reads as many
+      // columns; a small one reads as two.
+      if (intro > 0.4 && graph) {
+        const markers = depthMarkersRef.current;
+        for (const m of markers) {
+          const worldX = m.depth * DAG_DEPTH_STEP;
+          // Project two y-anchors (top 240, bottom -260) at this X
+          // and Z=0, draw a 2D line between. Using project() from
+          // mind.ts keeps us in sync with the camera transform.
+          const top = project(cam, worldX, 240, 0);
+          const bot = project(cam, worldX, -260, 0);
+          if (top.behind || bot.behind) continue;
+          ctx.strokeStyle = WARM;
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = 0.045 * intro;
+          ctx.setLineDash([2, 4]);
+          ctx.beginPath(); ctx.moveTo(top.sx, top.sy); ctx.lineTo(bot.sx, bot.sy); ctx.stroke();
+          ctx.setLineDash([]);
+          if (intro > 0.7 && cam.zoom >= 0.7) {
+            ctx.font = "8px ui-monospace, monospace";
+            ctx.fillStyle = WARM_DIM;
+            ctx.globalAlpha = 0.55 * intro;
+            ctx.fillText(
+              m.depth < 0 ? `U${-m.depth} · ${m.count}` : `D${m.depth} · ${m.count}`,
+              top.sx + 4,
+              top.sy + 6,
+            );
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+
       // ── Node markers: hard crystal core + soft halo ──
       // The STARS of the show. Each structural node gets a bright hard
       // center circle with a soft radial glow behind it.  Activities are
@@ -479,13 +586,17 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       for (let i = 0; i < mind.length; i++) {
         if (!vis[i]) continue;
         const t = mind[i].thought;
-        const nodeR = mind[i].radius * sc[i];
+        const isAnchor = t.kind === "issue";
+        // Anchor boost: the issue node is the "one thing that must
+        // always be legible". 1.6× radius, full alpha regardless of
+        // chain trace or scrubber gate, and it pulses at half the
+        // chain-edge rate so it reads as the heartbeat of the scene.
+        const anchorScale = isAnchor ? 1.6 : 1;
+        const nodeR = mind[i].radius * sc[i] * anchorScale;
         if (nodeR < 0.5) continue;
         let g = gate[i] ?? 1;
-        // Chain dim: non-chain nodes get ~28% brightness while a
-        // chain is active. Chain nodes get a subtle pulse matching
-        // the edge pulse so the whole lineage reads as "firing".
-        if (chainActive) g *= chain.has(i) ? pulse : offChainDim;
+        if (chainActive && !isAnchor) g *= chain.has(i) ? pulse : offChainDim;
+        if (isAnchor) g = 1; // anchor never dims
         if (g <= 0.001) continue;
         let color: string; let alpha: number; let coreR: number; let haloR: number;
         switch (t.kind as ThoughtKind) {
@@ -565,16 +676,28 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         ctx.shadowColor = "rgba(0,0,0,0.85)";
         ctx.shadowBlur = 6;
         ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 1;
+        // LOD: when the viewer zooms out past ~0.7× only the anchor,
+        // the resolution beacon, and chain-traced nodes keep their
+        // labels. Everything else goes quiet so the scene doesn't
+        // become a wall of text at far zoom.
+        const lodZoom = cam.zoom < 0.7;
         for (let i = 0; i < mind.length; i++) {
           if (!vis[i]) continue;
           const t = mind[i].thought;
-          const nr = mind[i].radius * sc[i];
+          const isAnchor = t.kind === "issue";
+          const anchorScale = isAnchor ? 1.6 : 1;
+          const nr = mind[i].radius * sc[i] * anchorScale;
           if (nr < 2) continue;
+          if (lodZoom && !isAnchor && !(chainActive && chain.has(i))) continue;
           let label = ""; let lAlpha = 0; let lColor = WARM; let fontSize = 9;
+          let secondaryLabel: string | null = null;
           switch (t.kind as ThoughtKind) {
             case "issue": {
-              label = (t.payload as Issue).identifier ?? "";
-              lAlpha = 0.85; lColor = WARM; fontSize = 11;
+              const iss = t.payload as Issue;
+              label = iss.identifier ?? "";
+              lAlpha = 0.95; lColor = WARM; fontSize = 12;
+              // Anchor title — the "chapter opening" of the story.
+              secondaryLabel = shortLabel(iss.title ?? "", 48);
               break;
             }
             case "subissue": {
@@ -588,24 +711,98 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
               else { label = t.authorName; lAlpha = 0.45; fontSize = 8; }
               break;
             }
+            case "comment": {
+              // Short "@author: first words" tag. Keeps comments
+              // readable without a hover.
+              const body = (t.payload as { body?: string }).body ?? "";
+              label = `${t.authorName} — ${shortLabel(body, 28)}`;
+              lAlpha = 0.55; lColor = WARM; fontSize = 8;
+              break;
+            }
             case "ancestor": {
               const anc = t.payload as { identifier?: string | null; title: string };
               label = anc.identifier ?? shortLabel(anc.title, 16);
               lAlpha = 0.6; lColor = "#C8A96E"; fontSize = 9;
               break;
             }
-            default: continue; // no label for comments/activity
+            default: continue; // no label for activity
           }
           if (!label || lAlpha < 0.05) continue;
+          const lx = sx[i] + nr * 1.3 + 5;
           ctx.font = `${fontSize}px ui-monospace, monospace`;
           ctx.fillStyle = lColor;
           ctx.globalAlpha = lAlpha * intro;
-          const lx = sx[i] + nr * 1.3 + 5;
           ctx.fillText(label, lx, sy[i]);
+          if (secondaryLabel) {
+            ctx.font = `italic 14px "Fraunces", ui-serif, Georgia, serif`;
+            ctx.globalAlpha = lAlpha * intro * 0.88;
+            ctx.fillText(secondaryLabel, lx, sy[i] + 18);
+          }
         }
         ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
         ctx.globalAlpha = 1;
+      }
+
+      // ── Resolution beacon ("finish line") ──
+      // A world-space marker just past the deepest thought,
+      // reflecting the case's current resolution state. This is the
+      // scene's answer to "where is this headed?" — done = green
+      // celebration, blocked = red choke, in-progress = forward
+      // arrow, todo/backlog = quiet outline.
+      if (intro > 0.4) {
+        const beaconX = (maxDepth + 1) * DAG_DEPTH_STEP;
+        const p = project(cam, beaconX, 0, 0);
+        if (!p.behind) {
+          const status = issue.status;
+          let beaconColor = "#C8A96E", beaconAlpha = 0.45, beaconShape: "dot" | "arrow" | "outline" = "outline";
+          let beaconPulse = 0.85;
+          if (status === "done" || status === "cancelled") {
+            beaconColor = "#3FCF8E"; beaconAlpha = 0.9; beaconShape = "dot";
+            beaconPulse = 0.7 + 0.3 * Math.sin(now * 0.003); // celebratory
+          } else if (status === "blocked") {
+            beaconColor = "#E04444"; beaconAlpha = 0.9; beaconShape = "dot";
+            beaconPulse = 0.6 + 0.4 * Math.abs(Math.sin(now * 0.0052)); // heart-beat
+          } else if (status === "in_progress" || status === "in_review") {
+            beaconColor = "#E09437"; beaconAlpha = 0.85; beaconShape = "arrow";
+          } else {
+            beaconColor = WARM_DIM; beaconAlpha = 0.35; beaconShape = "outline";
+          }
+          const baseR = 18 * p.scale;
+          if (beaconShape === "dot") {
+            const sprite = sprites.get(beaconColor, 96, 0.35);
+            ctx.globalAlpha = beaconAlpha * intro * 0.55 * beaconPulse;
+            const haloR = Math.max(22, baseR * 2.6);
+            ctx.drawImage(sprite, p.sx - haloR, p.sy - haloR, haloR * 2, haloR * 2);
+            ctx.globalAlpha = beaconAlpha * intro * beaconPulse;
+            ctx.fillStyle = beaconColor;
+            ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(5, baseR * 0.55), 0, Math.PI * 2); ctx.fill();
+            ctx.globalAlpha = beaconAlpha * intro * 0.6 * beaconPulse;
+            ctx.fillStyle = "#FFFFFF";
+            ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(2, baseR * 0.22), 0, Math.PI * 2); ctx.fill();
+          } else if (beaconShape === "arrow") {
+            // Forward-arrow nose pointing rightward (along the flow).
+            ctx.globalAlpha = beaconAlpha * intro;
+            ctx.strokeStyle = beaconColor; ctx.lineWidth = 2;
+            ctx.shadowColor = beaconColor; ctx.shadowBlur = 10;
+            const nose = Math.max(18, baseR * 1.1);
+            const flare = Math.max(9, baseR * 0.55);
+            ctx.beginPath();
+            ctx.moveTo(p.sx - nose, p.sy - flare);
+            ctx.lineTo(p.sx + nose * 0.4, p.sy);
+            ctx.lineTo(p.sx - nose, p.sy + flare);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+          } else {
+            // Quiet outline for todo/backlog — "journey hasn't started yet".
+            ctx.globalAlpha = beaconAlpha * intro;
+            ctx.strokeStyle = beaconColor; ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath(); ctx.arc(p.sx, p.sy, Math.max(8, baseR * 0.7), 0, Math.PI * 2); ctx.stroke();
+            ctx.setLineDash([]);
+          }
+          ctx.globalAlpha = 1;
+        }
       }
     };
 
