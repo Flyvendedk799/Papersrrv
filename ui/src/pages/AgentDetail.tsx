@@ -5,7 +5,6 @@ import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents"
 import { skillsApi } from "../api/skills";
 import { heartbeatsApi } from "../api/heartbeats";
 import { ApiError } from "../api/client";
-import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { usePanel } from "../context/PanelContext";
@@ -62,6 +61,8 @@ import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
 import { isUuidLike, type Agent, type HeartbeatRun, type HeartbeatRunEvent, type AgentRuntimeState, type LiveEvent } from "@paperclipai/shared";
 import { agentRouteRef } from "../lib/utils";
+import { PageHeader } from "../components/boared/PageHeader";
+import { SectionRule } from "../components/boared/Kicker";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -463,145 +464,146 @@ export function AgentDetail() {
   const showConfigActionBar = activeView === "configure" && configDirty;
 
   return (
-    <div className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}>
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3 min-w-0">
-          <AgentIconPicker
-            value={agent.icon}
-            onChange={(icon) => updateIcon.mutate(icon)}
-          >
-            <button className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors">
-              <AgentIcon icon={agent.icon} className="h-6 w-6" />
-            </button>
-          </AgentIconPicker>
-          <div className="min-w-0">
-            <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
-            <p className="text-sm text-muted-foreground truncate">
-              {roleLabels[agent.role] ?? agent.role}
-              {agent.title ? ` - ${agent.title}` : ""}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openNewIssue({ assigneeAgentId: agent.id })}
-          >
-            <Plus className="h-3.5 w-3.5 sm:mr-1" />
-            <span className="hidden sm:inline">Assign Task</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => agentAction.mutate("invoke")}
-            disabled={agentAction.isPending || isPendingApproval}
-          >
-            <Play className="h-3.5 w-3.5 sm:mr-1" />
-            <span className="hidden sm:inline">Run Heartbeat</span>
-          </Button>
-          {agent.status === "paused" ? (
+    <div className={cn("boared-reveal max-w-[1400px] mx-auto", isMobile && showConfigActionBar && "pb-24")}>
+      <PageHeader
+        kicker={<>{roleLabels[agent.role] ?? agent.role}</>}
+        title={
+          <span className="flex items-center gap-4">
+            <AgentIconPicker
+              value={agent.icon}
+              onChange={(icon) => updateIcon.mutate(icon)}
+            >
+              <button className="shrink-0 flex items-center justify-center h-14 w-14 border border-foreground hover:bg-foreground/[0.06] transition-colors">
+                <AgentIcon icon={agent.icon} className="h-7 w-7" />
+              </button>
+            </AgentIconPicker>
+            <span className="truncate">{agent.name}</span>
+          </span>
+        }
+        dateline={agent.title ? `${roleLabels[agent.role] ?? agent.role} · ${agent.title}` : (roleLabels[agent.role] ?? agent.role)}
+        actions={
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => agentAction.mutate("resume")}
+              onClick={() => openNewIssue({ assigneeAgentId: agent.id })}
+            >
+              <Plus className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Assign task</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => agentAction.mutate("invoke")}
               disabled={agentAction.isPending || isPendingApproval}
             >
               <Play className="h-3.5 w-3.5 sm:mr-1" />
-              <span className="hidden sm:inline">Resume</span>
+              <span className="hidden sm:inline">Run heartbeat</span>
             </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => agentAction.mutate("pause")}
-              disabled={agentAction.isPending || isPendingApproval}
-            >
-              <Pause className="h-3.5 w-3.5 sm:mr-1" />
-              <span className="hidden sm:inline">Pause</span>
-            </Button>
-          )}
-          <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
-          {mobileLiveRun && (
-            <Link
-              to={`/agents/${canonicalAgentRef}/runs/${mobileLiveRun.id}`}
-              className="sm:hidden flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
-            >
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-              </span>
-              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Live</span>
-            </Link>
-          )}
-
-          {/* Overflow menu */}
-          <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon-xs">
-                <MoreHorizontal className="h-4 w-4" />
+            {agent.status === "paused" ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => agentAction.mutate("resume")}
+                disabled={agentAction.isPending || isPendingApproval}
+              >
+                <Play className="h-3.5 w-3.5 sm:mr-1" />
+                <span className="hidden sm:inline">Resume</span>
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-44 p-1" align="end">
-              <button
-                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
-                onClick={() => {
-                  navigate(`/agents/${canonicalAgentRef}/configure`);
-                  setMoreOpen(false);
-                }}
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => agentAction.mutate("pause")}
+                disabled={agentAction.isPending || isPendingApproval}
               >
-                <Settings className="h-3 w-3" />
-                Configure Agent
-              </button>
-              <button
-                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
-                onClick={() => {
-                  navigate(`/agents/${canonicalAgentRef}/skills`);
-                  setMoreOpen(false);
-                }}
+                <Pause className="h-3.5 w-3.5 sm:mr-1" />
+                <span className="hidden sm:inline">Pause</span>
+              </Button>
+            )}
+            <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
+            {mobileLiveRun && (
+              <Link
+                to={`/agents/${canonicalAgentRef}/runs/${mobileLiveRun.id}`}
+                className="sm:hidden inline-flex items-center gap-1.5 px-2 h-5 border border-[var(--boared-acid)] text-[var(--boared-acid)] hover:bg-[var(--boared-acid)] hover:text-[var(--boared-acid-ink)] transition-colors no-underline"
               >
-                <FileText className="h-3 w-3" />
-                Skills & Plugins
-              </button>
-              <button
-                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
-                onClick={() => {
-                  navigator.clipboard.writeText(agent.id);
-                  setMoreOpen(false);
-                }}
-              >
-                <Copy className="h-3 w-3" />
-                Copy Agent ID
-              </button>
-              <button
-                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
-                onClick={() => {
-                  resetTaskSession.mutate(null);
-                  setMoreOpen(false);
-                }}
-              >
-                <RotateCcw className="h-3 w-3" />
-                Reset Sessions
-              </button>
-              <button
-                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
-                onClick={() => {
-                  agentAction.mutate("terminate");
-                  setMoreOpen(false);
-                }}
-              >
-                <Trash2 className="h-3 w-3" />
-                Terminate
-              </button>
-            </PopoverContent>
-          </Popover>
-        </div>
-      </div>
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full bg-[var(--boared-acid)] opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 bg-[var(--boared-acid)]" />
+                </span>
+                <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em]">Live</span>
+              </Link>
+            )}
 
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+            {/* Overflow menu */}
+            <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon-xs">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-44 p-1" align="end">
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-[0.78rem] hover:bg-foreground/[0.06] transition-colors"
+                  onClick={() => {
+                    navigate(`/agents/${canonicalAgentRef}/configure`);
+                    setMoreOpen(false);
+                  }}
+                >
+                  <Settings className="h-3 w-3" />
+                  Configure agent
+                </button>
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-[0.78rem] hover:bg-foreground/[0.06] transition-colors"
+                  onClick={() => {
+                    navigate(`/agents/${canonicalAgentRef}/skills`);
+                    setMoreOpen(false);
+                  }}
+                >
+                  <FileText className="h-3 w-3" />
+                  Skills & plugins
+                </button>
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-[0.78rem] hover:bg-foreground/[0.06] transition-colors"
+                  onClick={() => {
+                    navigator.clipboard.writeText(agent.id);
+                    setMoreOpen(false);
+                  }}
+                >
+                  <Copy className="h-3 w-3" />
+                  Copy agent id
+                </button>
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-[0.78rem] hover:bg-foreground/[0.06] transition-colors"
+                  onClick={() => {
+                    resetTaskSession.mutate(null);
+                    setMoreOpen(false);
+                  }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset sessions
+                </button>
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-[0.78rem] hover:bg-foreground/[0.06] text-destructive transition-colors"
+                  onClick={() => {
+                    agentAction.mutate("terminate");
+                    setMoreOpen(false);
+                  }}
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Terminate
+                </button>
+              </PopoverContent>
+            </Popover>
+          </div>
+        }
+      />
+
+      {actionError && (
+        <p className="font-mono text-[0.72rem] text-destructive mb-4">{actionError}</p>
+      )}
       {isPendingApproval && (
-        <p className="text-sm text-amber-500">
+        <p className="font-mono text-[0.72rem] text-[var(--boared-acid)] mb-4">
           This agent is pending board approval and cannot be invoked yet.
         </p>
       )}
@@ -616,7 +618,7 @@ export function AgentDetail() {
               : "opacity-0 pointer-events-none"
           )}
         >
-          <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-1.5 shadow-lg">
+          <div className="flex items-center gap-2 bg-background border border-foreground px-3 py-1.5">
             <Button
               variant="ghost"
               size="sm"
@@ -638,7 +640,7 @@ export function AgentDetail() {
 
       {/* Mobile bottom Save/Cancel bar */}
       {isMobile && showConfigActionBar && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur-sm">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--boared-rule)] bg-background">
           <div
             className="flex items-center justify-end gap-2 px-3 py-2"
             style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
@@ -743,8 +745,8 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
         <h3 className="flex items-center gap-2 text-sm font-medium">
           {isLive && (
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+              <span className="animate-ping absolute inline-flex h-full w-full bg-[var(--boared-acid)] opacity-75" />
+              <span className="relative inline-flex h-2 w-2 bg-[var(--boared-acid)]" />
             </span>
           )}
           {isLive ? "Live Run" : "Latest Run"}
@@ -760,8 +762,8 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
       <Link
         to={`/agents/${agentId}/runs/${run.id}`}
         className={cn(
-          "block border rounded-lg p-4 space-y-2 w-full no-underline transition-colors hover:bg-muted/50 cursor-pointer",
-          isLive ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.08)]" : "border-border"
+          "block border  p-4 space-y-2 w-full no-underline transition-colors hover:bg-foreground/[0.04] cursor-pointer",
+          isLive ? "border-[var(--boared-acid)] " : "border-border"
         )}
       >
         <div className="flex items-center gap-2">
@@ -769,11 +771,7 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
           <StatusBadge status={run.status} />
           <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
           <span className={cn(
-            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-            run.invocationSource === "timer" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
-              : run.invocationSource === "assignment" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"
-              : run.invocationSource === "on_demand" ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300"
-              : "bg-muted text-muted-foreground"
+            "inline-flex items-center px-1.5 h-4 border border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.08em] text-muted-foreground shrink-0"
           )}>
             {sourceLabels[run.invocationSource] ?? run.invocationSource}
           </span>
@@ -811,70 +809,102 @@ function AgentOverview({
   agentId: string;
   agentRouteId: string;
 }) {
+  // Compose a single editorial standfirst sentence from the agent's data
+  // — replaces the 4-chart trend grid that read as a dashboard knockoff.
+  const totalRuns = runs.length;
+  const completedRuns = runs.filter((r) => r.status === "succeeded" || r.status === "failed" || r.status === "timed_out").length;
+  const successRuns = runs.filter((r) => r.status === "succeeded").length;
+  const successRate = completedRuns > 0 ? Math.round((successRuns / completedRuns) * 100) : null;
+  const openIssues = assignedIssues.filter((i) => i.status !== "done" && i.status !== "cancelled").length;
+
   return (
-    <div className="space-y-8">
-      {/* Latest Run */}
-      <LatestRunCard runs={runs} agentId={agentRouteId} />
+    <div className="space-y-12">
+      {/* THE DOSSIER — editorial sections, no card grid, no charts. */}
 
-      {/* Charts */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <ChartCard title="Run Activity" subtitle="Last 14 days">
-          <RunActivityChart runs={runs} />
-        </ChartCard>
-        <ChartCard title="Issues by Priority" subtitle="Last 14 days">
-          <PriorityChart issues={assignedIssues} />
-        </ChartCard>
-        <ChartCard title="Issues by Status" subtitle="Last 14 days">
-          <IssueStatusChart issues={assignedIssues} />
-        </ChartCard>
-        <ChartCard title="Success Rate" subtitle="Last 14 days">
-          <SuccessRateChart runs={runs} />
-        </ChartCard>
-      </div>
+      {/* Standfirst — agent stats as one prose sentence */}
+      <section>
+        <p className="boared-display text-[1.4rem] leading-[1.5] text-foreground/85 max-w-[58ch]">
+          {totalRuns === 0 ? (
+            <span className="text-muted-foreground italic">Has not yet filed a single dispatch.</span>
+          ) : (
+            <>
+              <span className="text-foreground">
+                {totalRuns} {totalRuns === 1 ? "run" : "runs"} on the books
+              </span>
+              <span className="text-muted-foreground">
+                {successRate !== null ? `, ${successRate}% successful` : ""}.{" "}
+                {openIssues > 0
+                  ? `${openIssues} ${openIssues === 1 ? "matter" : "matters"} on the desk.`
+                  : "No matters open."}
+              </span>
+            </>
+          )}
+        </p>
+      </section>
 
-      {/* Recent Issues */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">Recent Issues</h3>
-          <Link to={`/issues?assignee=${agentId}`} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            See All &rarr;
-          </Link>
-        </div>
+      {/* Latest dispatch — keep LatestRunCard but framed under a kicker */}
+      <section>
+        <SectionRule label="Latest dispatch" />
+        <LatestRunCard runs={runs} agentId={agentRouteId} />
+      </section>
+
+      {/* Assigned matters */}
+      <section>
+        <SectionRule
+          label="On the desk"
+          meta={
+            <Link
+              to={`/issues?assignee=${agentId}`}
+              className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground transition-colors no-underline"
+            >
+              See all →
+            </Link>
+          }
+        />
         {assignedIssues.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No assigned issues.</p>
+          <p className="font-mono text-[0.72rem] text-muted-foreground italic">No matters on the desk.</p>
         ) : (
-          <div className="border border-border rounded-lg">
+          <div className="border-t border-foreground divide-y divide-[var(--boared-rule)]">
             {assignedIssues.slice(0, 10).map((issue) => (
-              <EntityRow
+              <Link
                 key={issue.id}
-                identifier={issue.identifier ?? issue.id.slice(0, 8)}
-                title={issue.title}
                 to={`/issues/${issue.identifier ?? issue.id}`}
-                trailing={<StatusBadge status={issue.status} />}
-              />
+                className="group/row grid grid-cols-[auto_1fr_auto] items-baseline gap-x-4 py-3 px-1 cursor-pointer hover:bg-foreground/[0.025] no-underline text-inherit transition-colors"
+              >
+                <span className="font-mono text-[0.62rem] uppercase tracking-[0.06em] text-muted-foreground shrink-0">
+                  {issue.identifier ?? issue.id.slice(0, 8)}
+                </span>
+                <span className="text-[0.85rem] leading-snug text-foreground truncate">
+                  {issue.title}
+                </span>
+                <StatusBadge status={issue.status} />
+              </Link>
             ))}
             {assignedIssues.length > 10 && (
-              <div className="px-3 py-2 text-xs text-muted-foreground text-center border-t border-border">
-                +{assignedIssues.length - 10} more issues
+              <div className="px-1 py-2 font-mono text-[0.62rem] text-muted-foreground text-center">
+                +{assignedIssues.length - 10} more
               </div>
             )}
           </div>
         )}
-      </div>
+      </section>
 
       {/* Costs */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium">Costs</h3>
+      <section>
+        <SectionRule label="Account ledger" />
         <CostsSection runtimeState={runtimeState} runs={runs} />
-      </div>
+      </section>
 
-      {/* Configuration Summary */}
-      <ConfigSummary
-        agent={agent}
-        agentRouteId={agentRouteId}
-        reportsToAgent={reportsToAgent}
-        directReports={directReports}
-      />
+      {/* Standing orders / configuration */}
+      <section>
+        <SectionRule label="Standing orders" />
+        <ConfigSummary
+          agent={agent}
+          agentRouteId={agentRouteId}
+          reportsToAgent={reportsToAgent}
+          directReports={directReports}
+        />
+      </section>
     </div>
   );
 }
@@ -921,7 +951,7 @@ function ConfigSummary({
         </Link>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="border border-border rounded-lg p-4 space-y-3">
+        <div className="border border-[var(--boared-rule)] p-4 space-y-3">
           <h4 className="text-xs text-muted-foreground font-medium">Agent Details</h4>
           <div className="space-y-2 text-sm">
             <SummaryRow label="Adapter">
@@ -960,7 +990,7 @@ function ConfigSummary({
               {reportsToAgent ? (
                 <Link
                   to={`/agents/${agentRouteRef(reportsToAgent)}`}
-                  className="text-blue-600 hover:underline dark:text-blue-400"
+                  className="text-foreground underline-offset-2 hover:underline"
                 >
                   <Identity name={reportsToAgent.name} size="sm" />
                 </Link>
@@ -972,7 +1002,7 @@ function ConfigSummary({
               {instructionsPath ? (
                 <Link
                   to={`/files?file=${encodeURIComponent(instructionsPath)}`}
-                  className="inline-flex items-center gap-1.5 text-blue-600 hover:underline dark:text-blue-400 font-mono text-xs"
+                  className="inline-flex items-center gap-1.5 text-foreground underline-offset-2 hover:underline font-mono text-xs"
                 >
                   <FileText className="h-3.5 w-3.5 flex-shrink-0" />
                   {instructionsPath}
@@ -990,10 +1020,10 @@ function ConfigSummary({
                   <Link
                     key={r.id}
                     to={`/agents/${agentRouteRef(r)}`}
-                    className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400"
+                    className="flex items-center gap-2 text-sm text-foreground underline-offset-2 hover:underline"
                   >
                     <span className="relative flex h-2 w-2">
-                      <span className={`absolute inline-flex h-full w-full rounded-full ${agentStatusDot[r.status] ?? agentStatusDotDefault}`} />
+                      <span className={`absolute inline-flex h-full w-full  ${agentStatusDot[r.status] ?? agentStatusDotDefault}`} />
                     </span>
                     {r.name}
                     <span className="text-muted-foreground text-xs">({roleLabels[r.role] ?? r.role})</span>
@@ -1010,12 +1040,12 @@ function ConfigSummary({
           )}
         </div>
         {instructionsPath ? (
-          <div className="border border-border rounded-lg p-4 space-y-3">
+          <div className="border border-[var(--boared-rule)] p-4 space-y-3">
             <h4 className="text-xs text-muted-foreground font-medium">Agent Files</h4>
             <div className="space-y-2">
               <Link
                 to={`/files?file=${encodeURIComponent(instructionsPath)}`}
-                className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400 font-mono"
+                className="flex items-center gap-2 text-sm text-foreground underline-offset-2 hover:underline font-mono"
               >
                 <FileText className="h-4 w-4 flex-shrink-0" />
                 {instructionsPath.split("/").pop()}
@@ -1023,7 +1053,7 @@ function ConfigSummary({
               {instructionsPath && (
                 <Link
                   to={`/files?file=${encodeURIComponent(instructionsPath.replace(/[^/]+$/, 'HEARTBEAT.md'))}`}
-                  className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400 font-mono"
+                  className="flex items-center gap-2 text-sm text-foreground underline-offset-2 hover:underline font-mono"
                 >
                   <FileText className="h-4 w-4 flex-shrink-0" />
                   HEARTBEAT.md
@@ -1038,7 +1068,7 @@ function ConfigSummary({
                       <Link
                         key={file}
                         to={`/files?file=${encodeURIComponent(filePath)}`}
-                        className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400 font-mono"
+                        className="flex items-center gap-2 text-sm text-foreground underline-offset-2 hover:underline font-mono"
                       >
                         <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                         ../standards/{file}
@@ -1065,7 +1095,7 @@ function ConfigSummary({
             )}
           </div>
         ) : promptText ? (
-          <div className="border border-border rounded-lg p-4 space-y-2">
+          <div className="border border-[var(--boared-rule)] p-4 space-y-2">
             <h4 className="text-xs text-muted-foreground font-medium">Prompt Template</h4>
             <pre className="text-xs text-muted-foreground line-clamp-[12] font-mono whitespace-pre-wrap">{promptText}</pre>
           </div>
@@ -1094,7 +1124,7 @@ function CostsSection({
   return (
     <div className="space-y-4">
       {runtimeState && (
-        <div className="border border-border rounded-lg p-4">
+        <div className="border border-[var(--boared-rule)] p-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <span className="text-xs text-muted-foreground block">Input tokens</span>
@@ -1116,7 +1146,7 @@ function CostsSection({
         </div>
       )}
       {runsWithCost.length > 0 && (
-        <div className="border border-border rounded-lg overflow-hidden">
+        <div className="border border-[var(--boared-rule)] overflow-hidden">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border bg-accent/20">
@@ -1279,7 +1309,7 @@ TODO: Add skill instructions here.
           with YAML frontmatter that gets injected into the agent's skills directory at runtime.
         </p>
         {!isClaudeAdapter && (
-          <p className="text-sm text-amber-500 mt-2">
+          <p className="text-sm text-[var(--boared-acid)] mt-2">
             This agent uses the <strong>{agent.adapterType}</strong> adapter. Skills are currently
             only injected for <strong>claude_local</strong> agents.
           </p>
@@ -1289,13 +1319,13 @@ TODO: Add skill instructions here.
       {/* Skills list */}
       <div className="space-y-3">
         {skills.length === 0 && (
-          <div className="border border-dashed border-border rounded-lg p-6 text-center text-sm text-muted-foreground">
+          <div className="border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
             No skills configured. Add a skill to enhance this agent's capabilities.
           </div>
         )}
 
         {skills.map((skill, idx) => (
-          <div key={skill.name} className="border border-border rounded-lg overflow-hidden">
+          <div key={skill.name} className="border border-[var(--boared-rule)] overflow-hidden">
             <button
               className="flex items-center justify-between w-full px-4 py-2.5 text-left hover:bg-accent/30 transition-colors"
               onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
@@ -1308,7 +1338,7 @@ TODO: Add skill instructions here.
                 <span className="text-xs text-muted-foreground">SKILL.md</span>
               </div>
               <button
-                className="text-xs text-destructive hover:text-destructive/80 px-2 py-0.5 rounded hover:bg-destructive/10"
+                className="text-xs text-destructive hover:text-destructive/80 px-2 py-0.5 hover:bg-destructive/10"
                 onClick={(e) => {
                   e.stopPropagation();
                   removeSkill(idx);
@@ -1321,7 +1351,7 @@ TODO: Add skill instructions here.
             {expandedIdx === idx && (
               <div className="px-4 pb-4">
                 <textarea
-                  className="w-full rounded-md border border-border px-3 py-2 bg-transparent text-sm font-mono placeholder:text-muted-foreground/40 outline-none resize-y min-h-[200px]"
+                  className="w-full border border-[var(--boared-rule)] px-3 py-2 bg-transparent text-sm font-mono placeholder:text-muted-foreground/40 outline-none resize-y min-h-[200px]"
                   style={{ minHeight: 200 }}
                   value={skill.content}
                   onChange={(e) => updateContent(idx, e.target.value)}
@@ -1338,7 +1368,7 @@ TODO: Add skill instructions here.
       {showAdd ? (
         <div className="flex items-center gap-2">
           <input
-            className="flex-1 rounded-md border border-border px-2.5 py-1.5 bg-transparent text-sm font-mono placeholder:text-muted-foreground/40 outline-none"
+            className="flex-1 border border-[var(--boared-rule)] px-2.5 py-1.5 bg-transparent text-sm font-mono placeholder:text-muted-foreground/40 outline-none"
             placeholder="skill-name (lowercase, hyphens ok)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -1397,7 +1427,7 @@ TODO: Add skill instructions here.
 
       {/* Library picker */}
       {showLibrary && (
-        <div className="border border-border rounded-lg overflow-hidden">
+        <div className="border border-[var(--boared-rule)] overflow-hidden">
           <div className="px-4 py-2 bg-muted/30 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Puzzle className="h-3.5 w-3.5 text-indigo-500" />
@@ -1425,7 +1455,7 @@ TODO: Add skill instructions here.
                     }}
                     className={cn(
                       "flex items-center gap-3 w-full px-4 py-2.5 text-left transition-colors",
-                      alreadyAdded ? "opacity-50 cursor-default" : "hover:bg-accent/50",
+                      alreadyAdded ? "opacity-50 cursor-default" : "hover:bg-foreground/[0.06]",
                     )}
                   >
                     <Puzzle className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
@@ -1474,12 +1504,12 @@ TODO: Add skill instructions here.
       )}
 
       {/* Info */}
-      <div className="border border-border/50 rounded-lg p-4 space-y-3 text-xs text-muted-foreground">
+      <div className="border border-[var(--boared-rule)]/50 p-4 space-y-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground text-sm">How skills work</p>
         <ul className="space-y-1.5 list-disc pl-4">
-          <li>Each skill is a <code className="text-[11px] bg-muted px-1 py-0.5 rounded">SKILL.md</code> file with YAML frontmatter defining name, description, and optional triggers.</li>
-          <li>Skills are written to the agent's <code className="text-[11px] bg-muted px-1 py-0.5 rounded">~/.claude/skills/</code> directory before each run.</li>
-          <li>The agent can invoke skills via <code className="text-[11px] bg-muted px-1 py-0.5 rounded">/skill-name</code> or they activate automatically based on triggers.</li>
+          <li>Each skill is a <code className="text-[11px] bg-muted px-1 py-0.5">SKILL.md</code> file with YAML frontmatter defining name, description, and optional triggers.</li>
+          <li>Skills are written to the agent's <code className="text-[11px] bg-muted px-1 py-0.5">~/.claude/skills/</code> directory before each run.</li>
+          <li>The agent can invoke skills via <code className="text-[11px] bg-muted px-1 py-0.5">/skill-name</code> or they activate automatically based on triggers.</li>
           <li>Use skills to give agents specialized capabilities like testing sites, generating visual reports, etc.</li>
         </ul>
       </div>
@@ -1561,7 +1591,7 @@ function AgentConfigurePage({
             ) : (
               <div className="space-y-2">
                 {(configRevisions ?? []).slice(0, 10).map((revision) => (
-                  <div key={revision.id} className="border border-border/70 rounded-md p-3 space-y-2">
+                  <div key={revision.id} className="border border-[var(--boared-rule)]/70 p-3 space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-xs text-muted-foreground">
                         <span className="font-mono">{revision.id.slice(0, 8)}</span>
@@ -1655,7 +1685,7 @@ function ConfigurationTab({
 
       <div>
         <h3 className="text-sm font-medium mb-3">Permissions</h3>
-        <div className="border border-border rounded-lg p-4">
+        <div className="border border-[var(--boared-rule)] p-4">
           <div className="flex items-center justify-between text-sm">
             <span>Can create new agents</span>
             <Button
@@ -1700,11 +1730,7 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
           {run.id.slice(0, 8)}
         </span>
         <span className={cn(
-          "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
-          run.invocationSource === "timer" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
-            : run.invocationSource === "assignment" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"
-            : run.invocationSource === "on_demand" ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300"
-            : "bg-muted text-muted-foreground"
+          "inline-flex items-center px-1.5 h-4 border border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.08em] text-muted-foreground shrink-0"
         )}>
           {sourceLabels[run.invocationSource] ?? run.invocationSource}
         </span>
@@ -1774,7 +1800,7 @@ function RunsTab({
       );
     }
     return (
-      <div className="border border-border rounded-lg overflow-x-hidden">
+      <div className="border border-[var(--boared-rule)] overflow-x-hidden">
         {sorted.map((run) => (
           <RunListItem key={run.id} run={run} isSelected={false} agentId={agentRouteId} />
         ))}
@@ -1787,7 +1813,7 @@ function RunsTab({
     <div className="flex gap-0">
       {/* Left: run list — border stretches full height, content sticks */}
       <div className={cn(
-        "shrink-0 border border-border rounded-lg",
+        "shrink-0 border border-[var(--boared-rule)] ",
         selectedRun ? "w-72" : "w-full",
       )}>
         <div className="sticky top-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 2rem)" }}>
@@ -1973,7 +1999,7 @@ function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agen
   return (
     <div className="space-y-4 min-w-0">
       {/* Run summary card */}
-      <div className="border border-border rounded-lg overflow-hidden">
+      <div className="border border-[var(--boared-rule)] overflow-hidden">
         <div className="flex flex-col sm:flex-row">
           {/* Left column: status + timing */}
           <div className="flex-1 p-4 space-y-3">
@@ -2083,12 +2109,12 @@ function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agen
                 {claudeLoginResult && (
                   <>
                     {!!claudeLoginResult.stdout && (
-                      <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
+                      <pre className="bg-[var(--boared-paper-2)] p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
                         {claudeLoginResult.stdout}
                       </pre>
                     )}
                     {!!claudeLoginResult.stderr && (
-                      <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">
+                      <pre className="bg-[var(--boared-paper-2)] p-3 text-xs font-mono text-destructive overflow-x-auto whitespace-pre-wrap">
                         {claudeLoginResult.stderr}
                       </pre>
                     )}
@@ -2190,7 +2216,7 @@ function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agen
       {touchedIssues && touchedIssues.length > 0 && (
         <div className="space-y-2">
           <span className="text-xs font-medium text-muted-foreground">Issues Touched ({touchedIssues.length})</span>
-          <div className="border border-border rounded-lg divide-y divide-border">
+          <div className="border border-[var(--boared-rule)] divide-y divide-border">
             {touchedIssues.map((issue) => (
               <Link
                 key={issue.issueId}
@@ -2212,7 +2238,7 @@ function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agen
       {run.stderrExcerpt && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-red-600 dark:text-red-400">stderr</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+          <pre className="bg-[var(--boared-paper-2)] p-3 text-xs font-mono text-destructive overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
         </div>
       )}
 
@@ -2220,7 +2246,7 @@ function RunDetail({ run, agentRouteId, adapterType }: { run: HeartbeatRun; agen
       {run.stdoutExcerpt && !run.logRef && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground">stdout</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
+          <pre className="bg-[var(--boared-paper-2)] p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
         </div>
       )}
 
@@ -2620,7 +2646,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   return (
     <div className="space-y-3">
       {adapterInvokePayload && (
-        <div className="rounded-lg border border-border bg-background/60 p-3 space-y-2">
+        <div className="border border-[var(--boared-rule)] bg-background p-3 space-y-2">
           <div className="text-xs font-medium text-muted-foreground">Invocation</div>
           {typeof adapterInvokePayload.adapterType === "string" && (
             <div className="text-xs"><span className="text-muted-foreground">Adapter: </span>{adapterInvokePayload.adapterType}</div>
@@ -2658,7 +2684,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {adapterInvokePayload.prompt !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Prompt</div>
-              <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
+              <pre className="bg-[var(--boared-paper-2)] p-2 text-xs overflow-x-auto whitespace-pre-wrap">
                 {typeof adapterInvokePayload.prompt === "string"
                   ? adapterInvokePayload.prompt
                   : JSON.stringify(adapterInvokePayload.prompt, null, 2)}
@@ -2668,7 +2694,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {adapterInvokePayload.context !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Context</div>
-              <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
+              <pre className="bg-[var(--boared-paper-2)] p-2 text-xs overflow-x-auto whitespace-pre-wrap">
                 {JSON.stringify(adapterInvokePayload.context, null, 2)}
               </pre>
             </div>
@@ -2676,7 +2702,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {adapterInvokePayload.env !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Environment</div>
-              <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap font-mono">
+              <pre className="bg-[var(--boared-paper-2)] p-2 text-xs overflow-x-auto whitespace-pre-wrap font-mono">
                 {formatEnvForDisplay(adapterInvokePayload.env)}
               </pre>
             </div>
@@ -2707,15 +2733,15 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {isLive && (
             <span className="flex items-center gap-1 text-xs text-cyan-400">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+                <span className="animate-ping absolute inline-flex h-full w-full bg-[var(--boared-acid)] opacity-75" />
+                <span className="relative inline-flex h-2 w-2 bg-[var(--boared-acid)]" />
               </span>
               Live
             </span>
           )}
         </div>
       </div>
-      <div className="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5 overflow-x-hidden">
+      <div className="bg-[var(--boared-paper-2)] p-3 font-mono text-xs space-y-0.5 overflow-x-hidden">
         {transcript.length === 0 && !run.logRef && (
           <div className="text-neutral-500">No persisted transcript for this run.</div>
         )}
@@ -2775,7 +2801,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                     </Link>
                   )}
                 </span>
-                <pre className={cn(expandCell, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
+                <pre className={cn(expandCell, "bg-neutral-200 dark:bg-neutral-900  p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
                   {JSON.stringify(entry.input, null, 2)}
                 </pre>
               </div>
@@ -2788,7 +2814,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                 <span className={tsCell}>{time}</span>
                 <span className={cn(lblCell, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
                 {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
-                <pre className={cn(expandCell, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300 max-h-60 overflow-y-auto")}>
+                <pre className={cn(expandCell, "bg-neutral-100 dark:bg-neutral-900  p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300 max-h-60 overflow-y-auto")}>
                   {(() => { try { return JSON.stringify(JSON.parse(entry.content), null, 2); } catch { return entry.content; } })()}
                 </pre>
               </div>
@@ -2848,34 +2874,34 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       </div>
 
       {(run.status === "failed" || run.status === "timed_out") && (
-        <div className="rounded-lg border border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-950/20 p-3 space-y-2">
-          <div className="text-xs font-medium text-red-700 dark:text-red-300">Failure details</div>
+        <div className="border border-destructive p-3 space-y-2">
+          <div className="text-xs font-medium text-destructive">Failure details</div>
           {run.error && (
             <div className="text-xs text-red-600 dark:text-red-200">
-              <span className="text-red-700 dark:text-red-300">Error: </span>
+              <span className="text-destructive">Error: </span>
               {run.error}
             </div>
           )}
           {run.stderrExcerpt && run.stderrExcerpt.trim() && (
             <div>
-              <div className="text-xs text-red-700 dark:text-red-300 mb-1">stderr excerpt</div>
-              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
+              <div className="text-xs text-destructive mb-1">stderr excerpt</div>
+              <pre className="bg-[var(--boared-paper-2)] p-2 text-xs overflow-x-auto whitespace-pre-wrap text-destructive">
                 {run.stderrExcerpt}
               </pre>
             </div>
           )}
           {run.resultJson && (
             <div>
-              <div className="text-xs text-red-700 dark:text-red-300 mb-1">adapter result JSON</div>
-              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
+              <div className="text-xs text-destructive mb-1">adapter result JSON</div>
+              <pre className="bg-[var(--boared-paper-2)] p-2 text-xs overflow-x-auto whitespace-pre-wrap text-destructive">
                 {JSON.stringify(run.resultJson, null, 2)}
               </pre>
             </div>
           )}
           {run.stdoutExcerpt && run.stdoutExcerpt.trim() && !run.resultJson && (
             <div>
-              <div className="text-xs text-red-700 dark:text-red-300 mb-1">stdout excerpt</div>
-              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
+              <div className="text-xs text-destructive mb-1">stdout excerpt</div>
+              <pre className="bg-[var(--boared-paper-2)] p-2 text-xs overflow-x-auto whitespace-pre-wrap text-destructive">
                 {run.stdoutExcerpt}
               </pre>
             </div>
@@ -2886,7 +2912,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       {events.length > 0 && (
         <div>
           <div className="mb-2 text-xs font-medium text-muted-foreground">Events ({events.length})</div>
-          <div className="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
+          <div className="bg-[var(--boared-paper-2)] p-3 font-mono text-xs space-y-0.5">
             {events.map((evt) => {
               const color = evt.color
                 ?? (evt.level ? levelColors[evt.level] : null)
@@ -2959,12 +2985,12 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
     <div className="space-y-6">
       {/* New token banner */}
       {newToken && (
-        <div className="border border-yellow-300 dark:border-yellow-600/40 bg-yellow-50 dark:bg-yellow-500/5 rounded-lg p-4 space-y-2">
+        <div className="border border-[var(--boared-acid)] p-4 space-y-2">
           <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">
             API key created — copy it now, it will not be shown again.
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 bg-neutral-100 dark:bg-neutral-950 rounded px-3 py-1.5 text-xs font-mono text-green-700 dark:text-green-300 truncate">
+            <code className="flex-1 bg-[var(--boared-paper-2)] px-3 py-1.5 text-xs font-mono text-green-700 dark:text-green-300 truncate">
               {tokenVisible ? newToken : newToken.replace(/./g, "•")}
             </code>
             <Button
@@ -2997,13 +3023,13 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
       )}
 
       {/* Create new key */}
-      <div className="border border-border rounded-lg p-4 space-y-3">
+      <div className="border border-[var(--boared-rule)] p-4 space-y-3">
         <h3 className="text-xs font-medium text-muted-foreground flex items-center gap-2">
           <Key className="h-3.5 w-3.5" />
           Create API Key
         </h3>
         <p className="text-xs text-muted-foreground">
-          API keys allow this agent to authenticate calls to the Paperclip server.
+          API keys allow this agent to authenticate calls to the Boared server.
         </p>
         <div className="flex items-center gap-2">
           <Input
@@ -3038,7 +3064,7 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
           <h3 className="text-xs font-medium text-muted-foreground mb-2">
             Active Keys
           </h3>
-          <div className="border border-border rounded-lg divide-y divide-border">
+          <div className="border border-[var(--boared-rule)] divide-y divide-border">
             {activeKeys.map((key: AgentKey) => (
               <div key={key.id} className="flex items-center justify-between px-4 py-2.5">
                 <div>
@@ -3068,7 +3094,7 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
           <h3 className="text-xs font-medium text-muted-foreground mb-2">
             Revoked Keys
           </h3>
-          <div className="border border-border rounded-lg divide-y divide-border opacity-50">
+          <div className="border border-[var(--boared-rule)] divide-y divide-border opacity-50">
             {revokedKeys.map((key: AgentKey) => (
               <div key={key.id} className="flex items-center justify-between px-4 py-2.5">
                 <div>

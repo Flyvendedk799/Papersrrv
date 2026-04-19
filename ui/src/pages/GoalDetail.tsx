@@ -16,10 +16,10 @@ import { InlineEditor } from "../components/InlineEditor";
 import { EntityRow } from "../components/EntityRow";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { projectUrl } from "../lib/utils";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/boared/PageHeader";
+import { SectionRule } from "@/components/boared/Kicker";
 import { Plus } from "lucide-react";
-import type { Goal, Project } from "@paperclipai/shared";
 
 export function GoalDetail() {
   const { goalId } = useParams<{ goalId: string }>();
@@ -111,31 +111,38 @@ export function GoalDetail() {
   }, [goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <p className="font-mono text-[0.72rem] text-destructive">{error.message}</p>;
   if (!goal) return null;
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs uppercase text-muted-foreground">
-            {goal.level}
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={
+          <>
+            §10 · Goals · {goal.level}
+          </>
+        }
+        title={
+          <InlineEditor
+            value={goal.title}
+            onSave={(title) => updateGoal.mutate({ title })}
+            as="span"
+            className="boared-display"
+          />
+        }
+        dateline={
+          <span className="inline-flex items-center gap-3">
+            <StatusBadge status={goal.status} />
           </span>
-          <StatusBadge status={goal.status} />
-        </div>
+        }
+      />
 
-        <InlineEditor
-          value={goal.title}
-          onSave={(title) => updateGoal.mutate({ title })}
-          as="h2"
-          className="text-xl font-bold"
-        />
-
+      <div className="mb-6">
         <InlineEditor
           value={goal.description ?? ""}
           onSave={(description) => updateGoal.mutate({ description })}
           as="p"
-          className="text-sm text-muted-foreground"
+          className="text-[0.9rem] leading-relaxed text-foreground max-w-[72ch]"
           placeholder="Add a description..."
           multiline
           imageUploadHandler={async (file) => {
@@ -148,36 +155,40 @@ export function GoalDetail() {
       <Tabs defaultValue="children">
         <TabsList>
           <TabsTrigger value="children">
-            Sub-Goals ({childGoals.length})
+            Sub-goals ({childGoals.length})
           </TabsTrigger>
           <TabsTrigger value="projects">
             Projects ({linkedProjects.length})
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="children" className="mt-4 space-y-3">
-          <div className="flex items-center justify-start">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => openNewGoal({ parentId: goalId })}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              Sub Goal
-            </Button>
-          </div>
+        <TabsContent value="children" className="mt-6">
+          <SectionRule
+            label="Sub-goals"
+            meta={
+              <button
+                type="button"
+                onClick={() => openNewGoal({ parentId: goalId })}
+                className="font-mono text-[0.62rem] tracking-tight text-foreground hover:text-[var(--boared-acid)] inline-flex items-center gap-1"
+              >
+                <Plus className="h-3 w-3" />
+                New sub-goal
+              </button>
+            }
+          />
           {childGoals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sub-goals.</p>
+            <p className="font-mono text-[0.72rem] text-muted-foreground py-4">No sub-goals.</p>
           ) : (
             <GoalTree goals={childGoals} goalLink={(g) => `/goals/${g.id}`} />
           )}
         </TabsContent>
 
-        <TabsContent value="projects" className="mt-4">
+        <TabsContent value="projects" className="mt-6">
+          <SectionRule label="Linked projects" meta={`${linkedProjects.length} total`} />
           {linkedProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked projects.</p>
+            <p className="font-mono text-[0.72rem] text-muted-foreground py-4">No linked projects.</p>
           ) : (
-            <div className="border border-border">
+            <div className="border-t border-[var(--boared-rule)]">
               {linkedProjects.map((project) => (
                 <EntityRow
                   key={project.id}

@@ -19,7 +19,6 @@ import { ApprovalCard } from "../components/ApprovalCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { timeAgo } from "../lib/timeAgo";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Tabs } from "@/components/ui/tabs";
 import {
   Select,
@@ -39,6 +38,8 @@ import {
 } from "lucide-react";
 import { Identity } from "../components/Identity";
 import { PageTabBar } from "../components/PageTabBar";
+import { PageHeader } from "../components/boared/PageHeader";
+import { SectionRule } from "../components/boared/Kicker";
 import type { HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -213,29 +214,28 @@ function FailedRunCard({
   });
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-red-500/30 bg-gradient-to-br from-red-500/10 via-card to-card p-4">
-      <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-red-500/10 blur-2xl" />
+    <div className="group relative border border-foreground bg-background p-4">
       <button
         type="button"
         onClick={onDismiss}
-        className="absolute right-2 top-2 z-10 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+        className="absolute right-2 top-2 z-10 p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
         aria-label="Dismiss"
       >
         <X className="h-4 w-4" />
       </button>
-      <div className="relative space-y-3">
+      <div className="space-y-3">
         {issue ? (
           <Link
             to={`/issues/${issue.identifier ?? issue.id}`}
-            className="block truncate text-sm font-medium transition-colors hover:text-foreground no-underline text-inherit"
+            className="block truncate text-[0.82rem] transition-colors hover:[text-decoration-color:var(--boared-acid)] no-underline text-inherit"
           >
-            <span className="font-mono text-muted-foreground mr-1.5">
+            <span className="font-mono uppercase tracking-[0.08em] text-[0.62rem] text-muted-foreground mr-2">
               {issue.identifier ?? issue.id.slice(0, 8)}
             </span>
             {issue.title}
           </Link>
         ) : (
-          <span className="block text-sm text-muted-foreground">
+          <span className="block text-[0.82rem] text-muted-foreground">
             {run.errorCode ? `Error code: ${run.errorCode}` : "No linked issue"}
           </span>
         )}
@@ -243,17 +243,15 @@ function FailedRunCard({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md bg-red-500/20 p-1.5">
-                <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-              </span>
+              <XCircle className="h-4 w-4 text-[var(--boared-acid)]" />
               {linkedAgentName ? (
                 <Identity name={linkedAgentName} size="sm" />
               ) : (
-                <span className="text-sm font-medium">Agent {run.agentId.slice(0, 8)}</span>
+                <span className="text-[0.82rem]">Agent {run.agentId.slice(0, 8)}</span>
               )}
               <StatusBadge status={run.status} />
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
+            <p className="mt-2 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">
               {sourceLabel} run failed {timeAgo(run.createdAt)}
             </p>
           </div>
@@ -284,16 +282,16 @@ function FailedRunCard({
           </div>
         </div>
 
-        <div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm">
+        <div className="border-l-2 border-[var(--boared-acid)] bg-[var(--boared-paper-2)] px-3 py-2 text-[0.78rem]">
           {displayError}
         </div>
 
-        <div className="text-xs">
-          <span className="font-mono text-muted-foreground">run {run.id.slice(0, 8)}</span>
+        <div className="font-mono uppercase tracking-[0.08em] text-[0.62rem] text-muted-foreground">
+          run {run.id.slice(0, 8)}
         </div>
 
         {retryRun.isError && (
-          <div className="text-xs text-destructive">
+          <div className="font-mono text-[0.7rem] text-destructive">
             {retryRun.error instanceof Error ? retryRun.error.message : "Failed to retry run"}
           </div>
         )}
@@ -585,11 +583,21 @@ export function Inbox() {
     !isTouchedIssuesLoading &&
     !isRunsLoading;
 
-  const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
-
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§13 · Inbox</>}
+        title={<>The <em className="not-italic font-normal">desk</em>.</>}
+        dateline={
+          tab === "new"
+            ? newItemCount > 0
+              ? `${newItemCount} ${newItemCount === 1 ? "item" : "items"} awaiting your attention`
+              : "Nothing new on the desk."
+            : "Everything filed to your inbox."
+        }
+      />
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-4">
         <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value === "all" ? "all" : "new"}`)}>
           <PageTabBar
             items={[
@@ -599,7 +607,7 @@ export function Inbox() {
                   <>
                     New
                     {newItemCount > 0 && (
-                      <span className="ml-1.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
+                      <span className="ml-1.5 border border-[var(--boared-acid)] px-1.5 py-0.5 font-mono text-[0.6rem] uppercase tracking-[0.08em] text-[var(--boared-acid)]">
                         {newItemCount}
                       </span>
                     )}
@@ -650,8 +658,16 @@ export function Inbox() {
         )}
       </div>
 
-      {approvalsError && <p className="text-sm text-destructive">{approvalsError.message}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {approvalsError && (
+        <div className="mb-4 px-4 py-3 border border-destructive text-destructive font-mono text-[0.72rem]">
+          {approvalsError.message}
+        </div>
+      )}
+      {actionError && (
+        <div className="mb-4 px-4 py-3 border border-destructive text-destructive font-mono text-[0.72rem]">
+          {actionError}
+        </div>
+      )}
 
       {!allLoaded && visibleSections.length === 0 && (
         <PageSkeleton variant="inbox" />
@@ -670,11 +686,8 @@ export function Inbox() {
 
       {showApprovalsSection && (
         <>
-          {showSeparatorBefore("approvals") && <Separator />}
+          <SectionRule label={tab === "new" ? "Approvals needing action" : "Approvals"} />
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {tab === "new" ? "Approvals Needing Action" : "Approvals"}
-            </h3>
             <div className="grid gap-3">
               {approvalsToRender.map((approval) => (
                 <ApprovalCard
@@ -698,31 +711,28 @@ export function Inbox() {
 
       {showJoinRequestsSection && (
         <>
-          {showSeparatorBefore("join_requests") && <Separator />}
+          <SectionRule label="Join requests" />
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Join Requests
-            </h3>
-            <div className="grid gap-3">
+            <div className="grid gap-0 border-t border-[var(--boared-rule)]">
               {joinRequests.map((joinRequest) => (
-                <div key={joinRequest.id} className="rounded-xl border border-border bg-card p-4">
+                <div key={joinRequest.id} className="border-b border-[var(--boared-rule)] py-3.5 px-1">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium">
+                    <div className="space-y-1 min-w-0">
+                      <p className="text-[0.82rem]">
                         {joinRequest.requestType === "human"
                           ? "Human join request"
                           : `Agent join request${joinRequest.agentName ? `: ${joinRequest.agentName}` : ""}`}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        requested {timeAgo(joinRequest.createdAt)} from IP {joinRequest.requestIp}
+                      <p className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">
+                        requested {timeAgo(joinRequest.createdAt)} from ip {joinRequest.requestIp}
                       </p>
                       {joinRequest.requestEmailSnapshot && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="font-mono text-[0.62rem] text-muted-foreground">
                           email: {joinRequest.requestEmailSnapshot}
                         </p>
                       )}
                       {joinRequest.adapterType && (
-                        <p className="text-xs text-muted-foreground">adapter: {joinRequest.adapterType}</p>
+                        <p className="font-mono text-[0.62rem] text-muted-foreground">adapter: {joinRequest.adapterType}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -752,11 +762,8 @@ export function Inbox() {
 
       {showFailedRunsSection && (
         <>
-          {showSeparatorBefore("failed_runs") && <Separator />}
+          <SectionRule label="Failed runs" />
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Failed Runs
-            </h3>
             <div className="grid gap-3">
               {failedRuns.map((run) => (
                 <FailedRunCard
@@ -774,28 +781,25 @@ export function Inbox() {
 
       {showAlertsSection && (
         <>
-          {showSeparatorBefore("alerts") && <Separator />}
+          <SectionRule label="Alerts" />
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Alerts
-            </h3>
-            <div className="divide-y divide-border border border-border">
+            <div className="border-t border-[var(--boared-rule)]">
               {showAggregateAgentError && (
-                <div className="group/alert relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50">
+                <div className="group/alert relative flex items-center gap-3 py-3.5 px-1 border-b border-[var(--boared-rule)] transition-colors hover:bg-foreground/[0.03]">
                   <Link
                     to="/agents"
                     className="flex flex-1 cursor-pointer items-center gap-3 no-underline text-inherit"
                   >
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-                    <span className="text-sm">
-                      <span className="font-medium">{dashboard!.agents.error}</span>{" "}
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--boared-acid)]" />
+                    <span className="text-[0.82rem]">
+                      <span>{dashboard!.agents.error}</span>{" "}
                       {dashboard!.agents.error === 1 ? "agent has" : "agents have"} errors
                     </span>
                   </Link>
                   <button
                     type="button"
                     onClick={() => dismiss("alert:agent-errors")}
-                    className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/alert:opacity-100"
+                    className="p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/alert:opacity-100"
                     aria-label="Dismiss"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -803,22 +807,22 @@ export function Inbox() {
                 </div>
               )}
               {showBudgetAlert && (
-                <div className="group/alert relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50">
+                <div className="group/alert relative flex items-center gap-3 py-3.5 px-1 border-b border-[var(--boared-rule)] transition-colors hover:bg-foreground/[0.03]">
                   <Link
                     to="/costs"
                     className="flex flex-1 cursor-pointer items-center gap-3 no-underline text-inherit"
                   >
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
-                    <span className="text-sm">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--boared-acid)]" />
+                    <span className="text-[0.82rem]">
                       Budget at{" "}
-                      <span className="font-medium">{dashboard!.costs.monthUtilizationPercent}%</span>{" "}
+                      <span>{dashboard!.costs.monthUtilizationPercent}%</span>{" "}
                       utilization this month
                     </span>
                   </Link>
                   <button
                     type="button"
                     onClick={() => dismiss("alert:budget")}
-                    className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/alert:opacity-100"
+                    className="p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/alert:opacity-100"
                     aria-label="Dismiss"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -832,47 +836,44 @@ export function Inbox() {
 
       {showStaleSection && (
         <>
-          {showSeparatorBefore("stale_work") && <Separator />}
+          <SectionRule label="Stale work" />
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Stale Work
-            </h3>
-            <div className="divide-y divide-border border border-border">
+            <div className="border-t border-[var(--boared-rule)]">
               {staleIssues.map((issue) => (
                 <div
                   key={issue.id}
-                  className="group/stale relative flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
+                  className="group/stale relative flex items-center gap-3 py-3.5 px-1 border-b border-[var(--boared-rule)] transition-colors hover:bg-foreground/[0.03]"
                 >
                   <Link
                     to={`/issues/${issue.identifier ?? issue.id}`}
-                    className="flex flex-1 cursor-pointer items-center gap-3 no-underline text-inherit"
+                    className="flex flex-1 min-w-0 cursor-pointer items-center gap-3 no-underline text-inherit"
                   >
                     <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                     <PriorityIcon priority={issue.priority} />
                     <StatusIcon status={issue.status} />
-                    <span className="text-xs font-mono text-muted-foreground">
+                    <span className="font-mono uppercase tracking-[0.08em] text-[0.62rem] text-muted-foreground">
                       {issue.identifier ?? issue.id.slice(0, 8)}
                     </span>
-                    <span className="flex-1 truncate text-sm">{issue.title}</span>
+                    <span className="flex-1 truncate text-[0.82rem]">{issue.title}</span>
                     {issue.assigneeAgentId &&
                       (() => {
                         const name = agentName(issue.assigneeAgentId);
                         return name ? (
                           <Identity name={name} size="sm" />
                         ) : (
-                          <span className="font-mono text-xs text-muted-foreground">
+                          <span className="font-mono text-[0.62rem] text-muted-foreground">
                             {issue.assigneeAgentId.slice(0, 8)}
                           </span>
                         );
                       })()}
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="shrink-0 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">
                       updated {timeAgo(issue.updatedAt)}
                     </span>
                   </Link>
                   <button
                     type="button"
                     onClick={() => dismiss(`stale:${issue.id}`)}
-                    className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/stale:opacity-100"
+                    className="p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/stale:opacity-100"
                     aria-label="Dismiss"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -886,21 +887,18 @@ export function Inbox() {
 
       {showTouchedSection && (
         <>
-          {showSeparatorBefore("issues_i_touched") && <Separator />}
+          <SectionRule label="My recent issues" />
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              My Recent Issues
-            </h3>
-            <div className="divide-y divide-border border border-border">
+            <div className="border-t border-[var(--boared-rule)]">
               {touchedIssues.map((issue) => {
                 const isUnread = issue.isUnreadForMe && !fadingOutIssues.has(issue.id);
                 const isFading = fadingOutIssues.has(issue.id);
                 return (
                   <div
                     key={issue.id}
-                    className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
+                    className="flex items-center gap-3 py-3.5 px-1 border-b border-[var(--boared-rule)] transition-colors hover:bg-foreground/[0.03]"
                   >
-                    <span className="flex w-4 shrink-0 justify-center">
+                    <span className="flex w-3 shrink-0 justify-center">
                       {(isUnread || isFading) && (
                         <button
                           type="button"
@@ -909,11 +907,11 @@ export function Inbox() {
                             e.stopPropagation();
                             markReadMutation.mutate(issue.id);
                           }}
-                          className="group/dot flex h-4 w-4 items-center justify-center rounded-full transition-colors hover:bg-blue-500/20"
+                          className="flex h-3 w-3 items-center justify-center"
                           aria-label="Mark as read"
                         >
                           <span
-                            className={`h-2.5 w-2.5 rounded-full bg-blue-600 dark:bg-blue-400 transition-opacity duration-300 ${
+                            className={`h-2 w-2 bg-[var(--boared-acid)] transition-opacity duration-300 ${
                               isFading ? "opacity-0" : "opacity-100"
                             }`}
                           />
@@ -926,11 +924,11 @@ export function Inbox() {
                     >
                       <PriorityIcon priority={issue.priority} />
                       <StatusIcon status={issue.status} />
-                      <span className="text-xs font-mono text-muted-foreground">
+                      <span className="font-mono uppercase tracking-[0.08em] text-[0.62rem] text-muted-foreground">
                         {issue.identifier ?? issue.id.slice(0, 8)}
                       </span>
-                      <span className="flex-1 truncate text-sm">{issue.title}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
+                      <span className="flex-1 truncate text-[0.82rem]">{issue.title}</span>
+                      <span className="shrink-0 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">
                         {issue.lastExternalCommentAt
                           ? `commented ${timeAgo(issue.lastExternalCommentAt)}`
                           : `updated ${timeAgo(issue.updatedAt)}`}

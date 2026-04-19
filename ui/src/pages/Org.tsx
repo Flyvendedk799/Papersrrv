@@ -10,6 +10,7 @@ import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { ChevronRight, GitBranch } from "lucide-react";
 import { cn } from "../lib/utils";
+import { PageHeader } from "../components/boared/PageHeader";
 
 function OrgTree({
   nodes,
@@ -45,7 +46,7 @@ function OrgTreeNode({
     <div>
       <Link
         to={hrefFn(node.id)}
-        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-accent/50 no-underline text-inherit"
+        className="flex items-center gap-2 px-3 py-2 text-[0.82rem] transition-colors cursor-pointer hover:bg-foreground/[0.03] no-underline text-inherit border-b border-[var(--boared-rule)]"
         style={{ paddingLeft: `${depth * 16 + 12}px` }}
       >
         {hasChildren ? (
@@ -66,20 +67,20 @@ function OrgTreeNode({
         )}
         <span
           className={cn(
-            "h-2 w-2 rounded-full shrink-0",
+            "h-2 w-2 shrink-0",
             node.status === "active"
-              ? "bg-green-400"
+              ? "bg-foreground"
               : node.status === "paused"
-                ? "bg-yellow-400"
+                ? "bg-muted-foreground"
                 : node.status === "pending_approval"
-                  ? "bg-amber-400"
+                  ? "bg-muted-foreground"
                 : node.status === "error"
-                  ? "bg-red-400"
-                  : "bg-neutral-400"
+                  ? "bg-[var(--boared-acid)]"
+                  : "bg-[var(--boared-ink-faint)]"
           )}
         />
-        <span className="font-medium flex-1">{node.name}</span>
-        <span className="text-xs text-muted-foreground">{node.role}</span>
+        <span className="flex-1">{node.name}</span>
+        <span className="font-mono uppercase tracking-[0.08em] text-[0.62rem] text-muted-foreground">{node.role}</span>
         <StatusBadge status={node.status} />
       </Link>
       {hasChildren && expanded && (
@@ -112,8 +113,14 @@ export function Org() {
   }
 
   return (
-    <div className="space-y-4">
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§18 · Organization</>}
+        title={<>The chain of <em>command.</em></>}
+        dateline="Agents and their reporting lines."
+      />
+
+      {error && <p className="font-mono text-[0.72rem] text-destructive">{error.message}</p>}
 
       {data && data.length === 0 && (
         <EmptyState
@@ -123,7 +130,7 @@ export function Org() {
       )}
 
       {data && data.length > 0 && (
-        <div className="border border-border py-1">
+        <div className="border-t border-[var(--boared-rule)] [&>div>div:last-child>a]:border-b-0">
           <OrgTree nodes={data} hrefFn={(id) => `/agents/${id}`} />
         </div>
       )}

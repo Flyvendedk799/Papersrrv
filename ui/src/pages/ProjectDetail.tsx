@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SlidersHorizontal } from "lucide-react";
+import { SubPageHeader } from "../components/boared/PageHeader";
 
 /* ── Top-level tab types ── */
 
@@ -48,28 +49,26 @@ function OverviewContent({
   imageUploadHandler?: (file: File) => Promise<string>;
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <InlineEditor
         value={project.description ?? ""}
         onSave={(description) => onUpdate({ description })}
         as="p"
-        className="text-sm text-muted-foreground"
+        className="text-[0.88rem] leading-relaxed text-foreground"
         placeholder="Add a description..."
         multiline
         imageUploadHandler={imageUploadHandler}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-        <div>
-          <span className="text-muted-foreground">Status</span>
-          <div className="mt-1">
-            <StatusBadge status={project.status} />
-          </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 border-t border-[var(--boared-rule)]">
+        <div className="py-4 sm:border-r border-[var(--boared-rule)] pr-4">
+          <div className="boared-label mb-2">Status</div>
+          <StatusBadge status={project.status} />
         </div>
         {project.targetDate && (
-          <div>
-            <span className="text-muted-foreground">Target Date</span>
-            <p>{project.targetDate}</p>
+          <div className="py-4 sm:pl-4 border-t sm:border-t-0 border-[var(--boared-rule)]">
+            <div className="boared-label mb-2">Target date</div>
+            <p className="font-mono text-[0.78rem] tabular-nums">{project.targetDate}</p>
           </div>
         )}
       </div>
@@ -104,13 +103,13 @@ function ColorPicker({
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="shrink-0 h-5 w-5 rounded-md cursor-pointer hover:ring-2 hover:ring-foreground/20 transition-[box-shadow]"
+        className="shrink-0 h-4 w-4 cursor-pointer border border-foreground/20 hover:border-foreground transition-colors"
         style={{ backgroundColor: currentColor }}
         aria-label="Change project color"
       />
       {open && (
-        <div className="absolute top-full left-0 mt-2 p-2 bg-popover border border-border rounded-lg shadow-lg z-50 w-max">
-          <div className="grid grid-cols-5 gap-1.5">
+        <div className="absolute top-full left-0 mt-2 p-2 bg-background border border-foreground z-50 w-max">
+          <div className="grid grid-cols-5 gap-1">
             {PROJECT_COLORS.map((color) => (
               <button
                 key={color}
@@ -118,10 +117,10 @@ function ColorPicker({
                   onSelect(color);
                   setOpen(false);
                 }}
-                className={`h-6 w-6 rounded-md cursor-pointer transition-[transform,box-shadow] duration-150 hover:scale-110 ${
+                className={`h-5 w-5 cursor-pointer transition-colors ${
                   color === currentColor
-                    ? "ring-2 ring-foreground ring-offset-1 ring-offset-background"
-                    : "hover:ring-2 hover:ring-foreground/30"
+                    ? "outline outline-2 outline-offset-1 outline-foreground"
+                    : "hover:outline hover:outline-1 hover:outline-offset-1 hover:outline-foreground/40"
                 }`}
                 style={{ backgroundColor: color }}
                 aria-label={`Select color ${color}`}
@@ -288,7 +287,7 @@ export function ProjectDetail() {
   }
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <p className="font-mono text-[0.72rem] text-destructive">{error.message}</p>;
   if (!project) return null;
 
   const handleTabChange = (tab: ProjectTab) => {
@@ -300,64 +299,76 @@ export function ProjectDetail() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start gap-3">
-        <div className="h-7 flex items-center">
-          <ColorPicker
-            currentColor={project.color ?? "#6366f1"}
-            onSelect={(color) => updateProject.mutate({ color })}
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <SubPageHeader
+        kicker={
+          <div className="flex items-center gap-2">
+            <ColorPicker
+              currentColor={project.color ?? "#6366f1"}
+              onSelect={(color) => updateProject.mutate({ color })}
+            />
+            <span>§07 · Project</span>
+          </div>
+        }
+        title={
+          <InlineEditor
+            value={project.name}
+            onSave={(name) => updateProject.mutate({ name })}
+            as="span"
+            className="boared-display"
           />
-        </div>
-        <InlineEditor
-          value={project.name}
-          onSave={(name) => updateProject.mutate({ name })}
-          as="h2"
-          className="text-xl font-bold"
-        />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="ml-auto md:hidden shrink-0"
-          onClick={() => setMobilePropsOpen(true)}
-          title="Properties"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className={cn(
-            "shrink-0 ml-auto transition-opacity duration-200 hidden md:flex",
-            panelVisible ? "opacity-0 pointer-events-none w-0 overflow-hidden" : "opacity-100",
-          )}
-          onClick={() => setPanelVisible(true)}
-          title="Show properties"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-        </Button>
-      </div>
+        }
+        dateline={project.targetDate ? `Target · ${project.targetDate}` : undefined}
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="md:hidden shrink-0"
+              onClick={() => setMobilePropsOpen(true)}
+              title="Properties"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={cn(
+                "shrink-0 transition-opacity duration-200 hidden md:flex",
+                panelVisible ? "opacity-0 pointer-events-none w-0 overflow-hidden" : "opacity-100",
+              )}
+              onClick={() => setPanelVisible(true)}
+              title="Show properties"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+          </>
+        }
+      />
 
-      {/* Top-level project tabs */}
-      <div className="flex items-center gap-1 border-b border-border">
+      {/* Top-level project tabs — line-only */}
+      <div className="flex items-center gap-6 border-b border-[var(--boared-rule)] mb-6 -mt-2">
         <button
-          className={`px-3 py-2 text-sm font-medium transition-colors border-b-2 ${
+          className={cn(
+            "relative py-2 font-mono text-[0.7rem] uppercase tracking-[0.08em] transition-colors",
             activeTab === "overview"
-              ? "border-foreground text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
+              ? "text-foreground after:content-[''] after:absolute after:left-0 after:right-0 after:-bottom-px after:h-px after:bg-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
           onClick={() => handleTabChange("overview")}
         >
           Overview
         </button>
         <button
-          className={`px-3 py-2 text-sm font-medium transition-colors border-b-2 ${
+          className={cn(
+            "relative py-2 font-mono text-[0.7rem] uppercase tracking-[0.08em] transition-colors",
             activeTab === "list"
-              ? "border-foreground text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
+              ? "text-foreground after:content-[''] after:absolute after:left-0 after:right-0 after:-bottom-px after:h-px after:bg-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
           onClick={() => handleTabChange("list")}
         >
-          List
+          Issues
         </button>
       </div>
 

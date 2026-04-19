@@ -6,6 +6,18 @@ import { authApi } from "../api/auth";
 import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Wordmark } from "@/components/boared/Wordmark";
+import { cn } from "@/lib/utils";
 import { AGENT_ADAPTER_TYPES } from "@paperclipai/shared";
 import type { AgentAdapterType, JoinRequest } from "@paperclipai/shared";
 
@@ -39,6 +51,53 @@ function readNestedString(value: unknown, path: string[]): string | null {
     current = (current as Record<string, unknown>)[segment];
   }
   return typeof current === "string" && current.trim().length > 0 ? current : null;
+}
+
+function InviteShell({
+  kicker,
+  title,
+  dateline,
+  children,
+}: {
+  kicker: string;
+  title: React.ReactNode;
+  dateline?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 overflow-y-auto bg-background text-foreground">
+      <div className="min-h-full mx-auto max-w-[1080px] px-8 py-10 flex flex-col">
+        <header className="flex items-baseline justify-between gap-6 pb-4 border-b border-[var(--boared-rule)]">
+          <Wordmark size="lg" />
+          <span className="font-mono text-[0.62rem] tracking-[0.1em] uppercase text-muted-foreground">
+            Invitation · Press desk
+          </span>
+        </header>
+
+        <div className="boared-reveal mt-10">
+          <div className="boared-label text-foreground mb-3">{kicker}</div>
+          <h1 className="boared-display text-[clamp(2.5rem,6vw,4.5rem)] leading-[0.95] text-foreground max-w-[22ch]">
+            {title}
+          </h1>
+          {dateline && (
+            <p className="font-mono text-[0.7rem] tracking-tight text-muted-foreground mt-3">
+              {dateline}
+            </p>
+          )}
+          <div className="mt-10 max-w-[64ch]">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="border-t border-[var(--boared-rule)] py-3">
+      <div className="boared-label text-foreground mb-1">{label}</div>
+      <div className="font-mono text-[0.72rem] break-all text-foreground">{value}</div>
+    </div>
+  );
 }
 
 export function InviteLandingPage() {
@@ -118,39 +177,47 @@ export function InviteLandingPage() {
   });
 
   if (!token) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-destructive">Invalid invite token.</div>;
+    return (
+      <InviteShell kicker="§ · Invalid" title="Invalid invite token.">
+        <p className="font-mono text-[0.75rem] text-destructive">No token was provided.</p>
+      </InviteShell>
+    );
   }
 
   if (inviteQuery.isLoading || healthQuery.isLoading || sessionQuery.isLoading) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading invite...</div>;
+    return (
+      <InviteShell kicker="§ · Loading" title="One moment.">
+        <p className="font-mono text-[0.75rem] text-muted-foreground">Loading invite…</p>
+      </InviteShell>
+    );
   }
 
   if (inviteQuery.error || !invite) {
     return (
-      <div className="mx-auto max-w-xl py-10">
-        <div className="rounded-lg border border-border bg-card p-6">
-          <h1 className="text-lg font-semibold">Invite not available</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This invite may be expired, revoked, or already used.
-          </p>
-        </div>
-      </div>
+      <InviteShell
+        kicker="§ · Gone"
+        title={<>This invite is <em>not available.</em></>}
+      >
+        <p className="font-mono text-[0.75rem] text-muted-foreground">
+          This invite may be expired, revoked, or already used.
+        </p>
+      </InviteShell>
     );
   }
 
   if (result?.kind === "bootstrap") {
     return (
-      <div className="mx-auto max-w-xl py-10">
-        <div className="rounded-lg border border-border bg-card p-6">
-          <h1 className="text-lg font-semibold">Bootstrap complete</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            The first instance admin is now configured. You can continue to the board.
-          </p>
-          <Button asChild className="mt-4">
-            <Link to="/">Open board</Link>
-          </Button>
-        </div>
-      </div>
+      <InviteShell
+        kicker="§ · Bootstrapped"
+        title={<>The press is <em>set.</em></>}
+      >
+        <p className="font-mono text-[0.75rem] text-muted-foreground mb-6">
+          The first instance admin is now configured. You can continue to the board.
+        </p>
+        <Button asChild>
+          <Link to="/">Open board</Link>
+        </Button>
+      </InviteShell>
     );
   }
 
@@ -175,147 +242,196 @@ export function InviteLandingPage() {
     const onboardingTextPath = readNestedString(payload.onboarding, ["textInstructions", "path"]);
     const diagnostics = Array.isArray(payload.diagnostics) ? payload.diagnostics : [];
     return (
-      <div className="mx-auto max-w-xl py-10">
-        <div className="rounded-lg border border-border bg-card p-6">
-          <h1 className="text-lg font-semibold">Join request submitted</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Your request is pending admin approval. You will not have access until approved.
-          </p>
-          <div className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-            Request ID: <span className="font-mono">{payload.id}</span>
-          </div>
-          {claimSecret && claimApiKeyPath && (
-            <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">One-time claim secret (save now)</p>
-              <p className="font-mono break-all">{claimSecret}</p>
-              <p className="font-mono break-all">POST {claimApiKeyPath}</p>
-            </div>
-          )}
-          {(onboardingSkillUrl || onboardingSkillPath || onboardingInstallPath) && (
-            <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Paperclip skill bootstrap</p>
-              {onboardingSkillUrl && <p className="font-mono break-all">GET {onboardingSkillUrl}</p>}
-              {!onboardingSkillUrl && onboardingSkillPath && <p className="font-mono break-all">GET {onboardingSkillPath}</p>}
-              {onboardingInstallPath && <p className="font-mono break-all">Install to {onboardingInstallPath}</p>}
-            </div>
-          )}
-          {(onboardingTextUrl || onboardingTextPath) && (
-            <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Agent-readable onboarding text</p>
-              {onboardingTextUrl && <p className="font-mono break-all">GET {onboardingTextUrl}</p>}
-              {!onboardingTextUrl && onboardingTextPath && <p className="font-mono break-all">GET {onboardingTextPath}</p>}
-            </div>
-          )}
-          {diagnostics.length > 0 && (
-            <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Connectivity diagnostics</p>
-              {diagnostics.map((diag, idx) => (
-                <div key={`${diag.code}:${idx}`} className="space-y-0.5">
-                  <p className={diag.level === "warn" ? "text-amber-600 dark:text-amber-400" : undefined}>
-                    [{diag.level}] {diag.message}
-                  </p>
-                  {diag.hint && <p className="font-mono break-all">{diag.hint}</p>}
+      <InviteShell
+        kicker="§ · Submitted"
+        title={<>Request <em>filed.</em></>}
+      >
+        <p className="font-mono text-[0.75rem] text-muted-foreground mb-4">
+          Your request is pending admin approval. You will not have access until approved.
+        </p>
+
+        <Fact label="Request ID" value={payload.id} />
+
+        {claimSecret && claimApiKeyPath && (
+          <>
+            <Fact
+              label="One-time claim secret (save now)"
+              value={
+                <div className="space-y-1">
+                  <div>{claimSecret}</div>
+                  <div className="text-muted-foreground">POST {claimApiKeyPath}</div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+              }
+            />
+          </>
+        )}
+
+        {(onboardingSkillUrl || onboardingSkillPath || onboardingInstallPath) && (
+          <Fact
+            label="Boared skill bootstrap"
+            value={
+              <div className="space-y-1">
+                {onboardingSkillUrl && <div>GET {onboardingSkillUrl}</div>}
+                {!onboardingSkillUrl && onboardingSkillPath && <div>GET {onboardingSkillPath}</div>}
+                {onboardingInstallPath && (
+                  <div className="text-muted-foreground">Install to {onboardingInstallPath}</div>
+                )}
+              </div>
+            }
+          />
+        )}
+
+        {(onboardingTextUrl || onboardingTextPath) && (
+          <Fact
+            label="Agent-readable onboarding text"
+            value={
+              <div className="space-y-1">
+                {onboardingTextUrl && <div>GET {onboardingTextUrl}</div>}
+                {!onboardingTextUrl && onboardingTextPath && <div>GET {onboardingTextPath}</div>}
+              </div>
+            }
+          />
+        )}
+
+        {diagnostics.length > 0 && (
+          <Fact
+            label="Connectivity diagnostics"
+            value={
+              <div className="space-y-2">
+                {diagnostics.map((diag, idx) => (
+                  <div key={`${diag.code}:${idx}`} className="space-y-0.5">
+                    <p className={diag.level === "warn" ? "text-[var(--boared-acid)]" : undefined}>
+                      [{diag.level}] {diag.message}
+                    </p>
+                    {diag.hint && <p className="text-muted-foreground">{diag.hint}</p>}
+                  </div>
+                ))}
+              </div>
+            }
+          />
+        )}
+      </InviteShell>
     );
   }
 
   return (
-    <div className="mx-auto max-w-xl py-10">
-      <div className="rounded-lg border border-border bg-card p-6">
-        <h1 className="text-xl font-semibold">
-          {invite.inviteType === "bootstrap_ceo" ? "Bootstrap your Paperclip instance" : "Join this Paperclip company"}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">Invite expires {dateTime(invite.expiresAt)}.</p>
-
-        {invite.inviteType !== "bootstrap_ceo" && (
-          <div className="mt-5 flex gap-2">
+    <InviteShell
+      kicker={invite.inviteType === "bootstrap_ceo" ? "§ · Bootstrap" : "§ · Invitation"}
+      title={
+        invite.inviteType === "bootstrap_ceo" ? (
+          <>
+            Bootstrap your <em>Boared</em> instance.
+          </>
+        ) : (
+          <>
+            You're invited to <em>join.</em>
+          </>
+        )
+      }
+      dateline={`Invite expires ${dateTime(invite.expiresAt)}`}
+    >
+      {invite.inviteType !== "bootstrap_ceo" && (
+        <div className="mb-6">
+          <div className="boared-label text-muted-foreground mb-2">Join as</div>
+          <div className="flex gap-0 border border-foreground w-fit">
             {availableJoinTypes.map((type) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => setJoinType(type)}
-                className={`rounded-md border px-3 py-1.5 text-sm ${
+                className={cn(
+                  "px-4 h-9 font-mono text-[0.7rem] uppercase tracking-[0.08em] transition-colors",
                   joinType === type
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border bg-background text-foreground"
-                }`}
+                    ? "bg-foreground text-background"
+                    : "bg-background text-foreground hover:bg-foreground/5",
+                )}
               >
-                Join as {type}
+                {type}
               </button>
             ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {joinType === "agent" && invite.inviteType !== "bootstrap_ceo" && (
-          <div className="mt-4 space-y-3">
-            <label className="block text-sm">
-              <span className="mb-1 block text-muted-foreground">Agent name</span>
-              <input
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                value={agentName}
-                onChange={(event) => setAgentName(event.target.value)}
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-muted-foreground">Adapter type</span>
-              <select
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                value={adapterType}
-                onChange={(event) => setAdapterType(event.target.value as AgentAdapterType)}
-              >
+      {joinType === "agent" && invite.inviteType !== "bootstrap_ceo" && (
+        <div className="space-y-4 mb-6 max-w-[44ch]">
+          <div className="space-y-1.5">
+            <Label htmlFor="agent-name" className="boared-label text-muted-foreground">
+              Agent name
+            </Label>
+            <Input
+              id="agent-name"
+              value={agentName}
+              onChange={(event) => setAgentName(event.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="adapter-type" className="boared-label text-muted-foreground">
+              Adapter type
+            </Label>
+            <Select value={adapterType} onValueChange={(v) => setAdapterType(v as AgentAdapterType)}>
+              <SelectTrigger id="adapter-type" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
                 {joinAdapterOptions.map((type) => (
-                  <option key={type} value={type} disabled={!ENABLED_INVITE_ADAPTERS.has(type)}>
-                    {adapterLabels[type]}{!ENABLED_INVITE_ADAPTERS.has(type) ? " (Coming soon)" : ""}
-                  </option>
+                  <SelectItem key={type} value={type} disabled={!ENABLED_INVITE_ADAPTERS.has(type)}>
+                    {adapterLabels[type]}
+                    {!ENABLED_INVITE_ADAPTERS.has(type) ? " (coming soon)" : ""}
+                  </SelectItem>
                 ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-muted-foreground">Capabilities (optional)</span>
-              <textarea
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                rows={4}
-                value={capabilities}
-                onChange={(event) => setCapabilities(event.target.value)}
-              />
-            </label>
+              </SelectContent>
+            </Select>
           </div>
-        )}
 
-        {requiresAuthForHuman && (
-          <div className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-sm">
+          <div className="space-y-1.5">
+            <Label htmlFor="capabilities" className="boared-label text-muted-foreground">
+              Capabilities (optional)
+            </Label>
+            <Textarea
+              id="capabilities"
+              rows={4}
+              value={capabilities}
+              onChange={(event) => setCapabilities(event.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
+      {requiresAuthForHuman && (
+        <div className="mb-5 p-4 border border-foreground bg-[var(--boared-paper-2)] max-w-[56ch]">
+          <p className="font-mono text-[0.72rem] text-foreground">
             Sign in or create an account before submitting a human join request.
-            <div className="mt-2">
-              <Button asChild size="sm" variant="outline">
-                <Link to={`/auth?next=${encodeURIComponent(`/invite/${token}`)}`}>Sign in / Create account</Link>
-              </Button>
-            </div>
+          </p>
+          <div className="mt-3">
+            <Button asChild size="sm" variant="outline">
+              <Link to={`/auth?next=${encodeURIComponent(`/invite/${token}`)}`}>Sign in / Create account</Link>
+            </Button>
           </div>
-        )}
+        </div>
+      )}
 
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+      {error && (
+        <p className="mb-4 font-mono text-[0.7rem] text-destructive border-l-2 border-destructive pl-2">
+          {error}
+        </p>
+      )}
 
-        <Button
-          className="mt-5"
-          disabled={
-            acceptMutation.isPending ||
-            (joinType === "agent" && invite.inviteType !== "bootstrap_ceo" && agentName.trim().length === 0) ||
-            requiresAuthForHuman
-          }
-          onClick={() => acceptMutation.mutate()}
-        >
-          {acceptMutation.isPending
-            ? "Submitting…"
-            : invite.inviteType === "bootstrap_ceo"
-              ? "Accept bootstrap invite"
-              : "Submit join request"}
-        </Button>
-      </div>
-    </div>
+      <Button
+        disabled={
+          acceptMutation.isPending ||
+          (joinType === "agent" && invite.inviteType !== "bootstrap_ceo" && agentName.trim().length === 0) ||
+          requiresAuthForHuman
+        }
+        onClick={() => acceptMutation.mutate()}
+      >
+        {acceptMutation.isPending
+          ? "Submitting…"
+          : invite.inviteType === "bootstrap_ceo"
+            ? "Accept bootstrap invite"
+            : "Submit join request"}
+      </Button>
+    </InviteShell>
   );
 }

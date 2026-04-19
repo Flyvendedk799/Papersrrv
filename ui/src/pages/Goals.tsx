@@ -9,6 +9,8 @@ import { GoalTree } from "../components/GoalTree";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/boared/PageHeader";
+import { SectionRule } from "@/components/boared/Kicker";
 import { Target, Plus } from "lucide-react";
 
 export function Goals() {
@@ -35,26 +37,45 @@ export function Goals() {
   }
 
   return (
-    <div className="space-y-4">
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§10 · Goals</>}
+        title={
+          <>
+            The <em className="not-italic font-normal">long</em>
+            <br />
+            view.
+          </>
+        }
+        dateline="Objectives, sub-goals, and the threads between them."
+        actions={
+          goals && goals.length > 0 ? (
+            <Button size="sm" variant="outline" onClick={() => openNewGoal()}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              New goal
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {error && (
+        <div className="mb-6 px-4 py-3 border border-destructive text-destructive font-mono text-[0.72rem]">
+          {error.message}
+        </div>
+      )}
 
       {goals && goals.length === 0 && (
         <EmptyState
           icon={Target}
           message="No goals yet."
-          action="Add Goal"
+          action="Add goal"
           onAction={() => openNewGoal()}
         />
       )}
 
       {goals && goals.length > 0 && (
         <>
-          <div className="flex items-center justify-start">
-            <Button size="sm" variant="outline" onClick={() => openNewGoal()}>
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-              New Goal
-            </Button>
-          </div>
+          <SectionRule label="Goal tree" meta={`${goals.length} total`} />
           <GoalTree goals={goals} goalLink={(goal) => `/goals/${goal.id}`} />
         </>
       )}

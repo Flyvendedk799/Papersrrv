@@ -6,12 +6,12 @@ import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { cn } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { ShieldCheck } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { PageHeader } from "@/components/boared/PageHeader";
 
 type StatusFilter = "pending" | "all";
 
@@ -75,7 +75,7 @@ export function Approvals() {
   ).length;
 
   if (!selectedCompanyId) {
-    return <p className="text-sm text-muted-foreground">Select a company first.</p>;
+    return <p className="font-mono text-[0.72rem] text-muted-foreground">Select a company first.</p>;
   }
 
   if (isLoading) {
@@ -83,37 +83,68 @@ export function Approvals() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§11 · Approvals</>}
+        title={
+          <>
+            Desks <em className="not-italic font-normal">awaiting</em>
+            <br />
+            a signature.
+          </>
+        }
+        dateline={
+          pendingCount > 0
+            ? `${pendingCount} pending · review and sign off`
+            : "Inbox clear."
+        }
+      />
+
+      <div className="mb-6">
         <Tabs value={statusFilter} onValueChange={(v) => navigate(`/approvals/${v}`)}>
-          <PageTabBar items={[
-            { value: "pending", label: <>Pending{pendingCount > 0 && (
-              <span className={cn(
-                "ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                "bg-yellow-500/20 text-yellow-500"
-              )}>
-                {pendingCount}
-              </span>
-            )}</> },
-            { value: "all", label: "All" },
-          ]} />
+          <PageTabBar
+            items={[
+              {
+                value: "pending",
+                label: (
+                  <>
+                    Pending
+                    {pendingCount > 0 && (
+                      <span className="ml-1.5 font-mono text-[0.6rem] text-[var(--boared-acid)]">
+                        {pendingCount}
+                      </span>
+                    )}
+                  </>
+                ),
+              },
+              { value: "all", label: "All" },
+            ]}
+          />
         </Tabs>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {error && (
+        <div className="mb-4 px-4 py-3 border border-destructive text-destructive font-mono text-[0.72rem]">
+          {error.message}
+        </div>
+      )}
+      {actionError && (
+        <div className="mb-4 px-4 py-3 border border-destructive text-destructive font-mono text-[0.72rem]">
+          {actionError}
+        </div>
+      )}
 
       {filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="flex flex-col items-center justify-center py-20 text-center border-t border-b border-[var(--boared-rule)]">
           <ShieldCheck className="h-8 w-8 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-muted-foreground">
+          <p className="font-mono text-[0.72rem] text-muted-foreground">
             {statusFilter === "pending" ? "No pending approvals." : "No approvals yet."}
           </p>
         </div>
       )}
 
       {filtered.length > 0 && (
-        <div className="grid gap-3">
+        <div className="grid gap-0 border-t border-[var(--boared-rule)]">
           {filtered.map((approval) => (
             <ApprovalCard
               key={approval.id}

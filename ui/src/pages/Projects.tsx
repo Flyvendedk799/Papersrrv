@@ -5,13 +5,18 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { EntityRow } from "../components/EntityRow";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { formatDate, projectUrl } from "../lib/utils";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "../components/boared/PageHeader";
+import { Wire, WireList } from "../components/boared/Wire";
 import { Hexagon, Plus } from "lucide-react";
+
+function todayDateline(): string {
+  const d = new Date();
+  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
 
 export function Projects() {
   const { selectedCompanyId } = useCompany();
@@ -36,47 +41,75 @@ export function Projects() {
     return <PageSkeleton variant="list" />;
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-end">
-        <Button size="sm" variant="outline" onClick={openNewProject}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add Project
-        </Button>
-      </div>
+  const count = projects?.length ?? 0;
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+  return (
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§07 · Projects</>}
+        title={
+          <>
+            The <em>ledger</em> of
+            <br />
+            work in flight.
+          </>
+        }
+        dateline={`${todayDateline()} · ${count} ${count === 1 ? "project" : "projects"} on file`}
+        actions={
+          <button
+            type="button"
+            onClick={openNewProject}
+            className="inline-flex items-center gap-2 px-4 h-9 border border-foreground text-foreground font-mono text-[0.7rem] tracking-tight hover:bg-foreground hover:text-background transition-colors"
+          >
+            <Plus className="size-3.5" />
+            <span>New project</span>
+          </button>
+        }
+      />
+
+      {error && (
+        <div className="mb-6 px-4 py-3 border border-destructive text-destructive font-mono text-[0.72rem]">
+          {error.message}
+        </div>
+      )}
 
       {projects && projects.length === 0 && (
         <EmptyState
           icon={Hexagon}
           message="No projects yet."
-          action="Add Project"
+          action="New project"
           onAction={openNewProject}
         />
       )}
 
       {projects && projects.length > 0 && (
-        <div className="border border-border">
+        <WireList>
           {projects.map((project) => (
-            <EntityRow
+            <Wire
               key={project.id}
-              title={project.name}
-              subtitle={project.description ?? undefined}
-              to={projectUrl(project)}
-              trailing={
-                <div className="flex items-center gap-3">
-                  {project.targetDate && (
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(project.targetDate)}
-                    </span>
+              href={projectUrl(project)}
+              leading={
+                <span
+                  aria-hidden
+                  className="block size-2.5"
+                  style={{ backgroundColor: project.color ?? "var(--boared-ink-faint)" }}
+                />
+              }
+              title={
+                <div className="min-w-0">
+                  <div className="truncate text-foreground">{project.name}</div>
+                  {project.description && (
+                    <div className="truncate font-mono text-[0.68rem] text-muted-foreground mt-0.5">
+                      {project.description}
+                    </div>
                   )}
-                  <StatusBadge status={project.status} />
                 </div>
               }
+              meta={project.targetDate ? formatDate(project.targetDate) : undefined}
+              trailing={<StatusBadge status={project.status} />}
             />
           ))}
-        </div>
+        </WireList>
       )}
     </div>
   );

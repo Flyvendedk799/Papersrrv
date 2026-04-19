@@ -16,9 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { PageHeader } from "../components/boared/PageHeader";
+import { SectionRule } from "../components/boared/Kicker";
+import { Wire, WireList } from "../components/boared/Wire";
+import { Clipping } from "../components/boared/Clipping";
 import {
-  Workflow,
   Play,
   Pause,
   Trash2,
@@ -33,20 +35,13 @@ import {
   Eye,
 } from "lucide-react";
 
-const statusColors: Record<string, string> = {
-  draft: "bg-muted text-muted-foreground",
-  active: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-  paused: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
-  archived: "bg-muted/60 text-muted-foreground/60",
-};
-
 const runStatusIcons: Record<string, React.ReactNode> = {
   pending: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
-  running: <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />,
-  completed: <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />,
-  failed: <XCircle className="h-3.5 w-3.5 text-destructive" />,
+  running: <Loader2 className="h-3.5 w-3.5 text-foreground animate-spin" />,
+  completed: <CheckCircle2 className="h-3.5 w-3.5 text-foreground" />,
+  failed: <XCircle className="h-3.5 w-3.5 text-[var(--boared-acid)]" />,
   cancelled: <XCircle className="h-3.5 w-3.5 text-muted-foreground" />,
-  awaiting_approval: <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />,
+  awaiting_approval: <AlertTriangle className="h-3.5 w-3.5 text-[var(--boared-acid)]" />,
 };
 
 export function WorkflowDetail() {
@@ -182,100 +177,82 @@ export function WorkflowDetail() {
   });
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{(error as Error).message}</p>;
+  if (error) return <p className="font-mono text-[0.72rem] text-destructive">{(error as Error).message}</p>;
   if (!workflow) return null;
 
   const steps = workflow.steps ?? [];
 
   return (
-    <div className="space-y-4">
-      {/* Compact header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <Workflow className="h-5 w-5 text-muted-foreground shrink-0" />
-          <h2 className="text-lg font-bold truncate">{workflow.name}</h2>
-          <Badge variant="secondary" className={statusColors[workflow.status] ?? statusColors.draft}>
-            {workflow.status}
-          </Badge>
-          {workflow.triggerType && workflow.triggerType !== "manual" && (
-            <Badge variant="outline" className="text-xs">
-              {workflow.triggerType}
-            </Badge>
-          )}
-          <span className="text-xs text-muted-foreground">{steps.length} steps</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {workflow.status === "draft" && (
-            <Tooltip>
-              <TooltipTrigger asChild>
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§09 · Workflows</>}
+        title={<em className="not-italic font-normal">{workflow.name}</em>}
+        dateline={
+          <span className="inline-flex items-center gap-3">
+            <span>{steps.length} steps</span>
+            <span aria-hidden>·</span>
+            <Badge variant="outline">{workflow.status.toUpperCase()}</Badge>
+            {workflow.triggerType && workflow.triggerType !== "manual" && (
+              <Badge variant="outline">{workflow.triggerType.toUpperCase()}</Badge>
+            )}
+            {workflow.description && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="text-muted-foreground">{workflow.description}</span>
+              </>
+            )}
+          </span>
+        }
+        actions={
+          <>
+            {workflow.status === "draft" && (
+              <Button
+                size="sm"
+                onClick={() => updateWorkflow.mutate({ status: "active" })}
+                disabled={updateWorkflow.isPending}
+              >
+                <Play className="h-3.5 w-3.5 mr-1.5" />
+                Activate
+              </Button>
+            )}
+            {workflow.status === "active" && (
+              <>
                 <Button
                   size="sm"
-                  onClick={() => updateWorkflow.mutate({ status: "active" })}
-                  disabled={updateWorkflow.isPending}
+                  onClick={() => {
+                    const inputs = (workflow.triggerConfig as Record<string, unknown>)?.inputs;
+                    if (Array.isArray(inputs) && inputs.length > 0) setShowRunForm(true);
+                    else startRun.mutate();
+                  }}
+                  disabled={startRun.isPending}
                 >
                   <Play className="h-3.5 w-3.5 mr-1.5" />
-                  Activate
+                  {startRun.isPending ? "Starting..." : "Run"}
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>Make this workflow live and runnable</TooltipContent>
-            </Tooltip>
-          )}
-          {workflow.status === "active" && (
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      const inputs = (workflow.triggerConfig as Record<string, unknown>)?.inputs;
-                      if (Array.isArray(inputs) && inputs.length > 0) setShowRunForm(true);
-                      else startRun.mutate();
-                    }}
-                    disabled={startRun.isPending}
-                  >
-                    <Play className="h-3.5 w-3.5 mr-1.5" />
-                    {startRun.isPending ? "Starting..." : "Run"}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Execute this workflow now</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => updateWorkflow.mutate({ status: "paused" })}
-                    disabled={updateWorkflow.isPending}
-                  >
-                    <Pause className="h-3.5 w-3.5 mr-1.5" />
-                    Pause
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Temporarily disable this workflow</TooltipContent>
-              </Tooltip>
-            </>
-          )}
-          {workflow.status === "paused" && (
-            <Tooltip>
-              <TooltipTrigger asChild>
                 <Button
                   size="sm"
-                  onClick={() => updateWorkflow.mutate({ status: "active" })}
+                  variant="outline"
+                  onClick={() => updateWorkflow.mutate({ status: "paused" })}
                   disabled={updateWorkflow.isPending}
                 >
-                  <Play className="h-3.5 w-3.5 mr-1.5" />
-                  Resume
+                  <Pause className="h-3.5 w-3.5 mr-1.5" />
+                  Pause
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>Re-activate this workflow</TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-      </div>
-
-      {workflow.description && (
-        <p className="text-sm text-muted-foreground -mt-2">{workflow.description}</p>
-      )}
+              </>
+            )}
+            {workflow.status === "paused" && (
+              <Button
+                size="sm"
+                onClick={() => updateWorkflow.mutate({ status: "active" })}
+                disabled={updateWorkflow.isPending}
+              >
+                <Play className="h-3.5 w-3.5 mr-1.5" />
+                Resume
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Tabs — Builder is default */}
       <Tabs
@@ -303,16 +280,21 @@ export function WorkflowDetail() {
         </TabsContent>
 
         {/* Runs tab — list + detail view */}
-        <TabsContent value="runs" className="mt-4 space-y-3">
+        <TabsContent value="runs" className="mt-4">
           {selectedRunId ? (
-            <div className="space-y-3">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectedRunId(null)}
-              >
-                &larr; Back to runs
-              </Button>
+            <Clipping
+              kicker={<>§ Run · {selectedRunId.slice(0, 8)}</>}
+              title="Run detail"
+              actions={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedRunId(null)}
+                >
+                  &larr; Back to runs
+                </Button>
+              }
+            >
               <WorkflowRunView
                 runId={selectedRunId}
                 onApprove={(stepRunId) =>
@@ -322,12 +304,14 @@ export function WorkflowDetail() {
                   rejectStep.mutate({ runId: selectedRunId, stepRunId })
                 }
               />
-            </div>
+            </Clipping>
           ) : (
             <>
               {!runs || runs.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-sm text-muted-foreground mb-3">No runs yet.</p>
+                <div className="text-center py-12 border-t border-b border-[var(--boared-rule)]">
+                  <p className="font-mono text-[0.72rem] text-muted-foreground mb-4">
+                    No runs yet.
+                  </p>
                   {workflow.status === "active" && (
                     <Button
                       size="sm"
@@ -339,48 +323,50 @@ export function WorkflowDetail() {
                       disabled={startRun.isPending}
                     >
                       <Play className="h-3.5 w-3.5 mr-1.5" />
-                      Start First Run
+                      Start first run
                     </Button>
                   )}
                 </div>
               ) : (
-                <div className="border border-border rounded-lg divide-y divide-border">
-                  {runs.map((run) => (
-                    <button
-                      key={run.id}
-                      onClick={() => setSelectedRunId(run.id)}
-                      className="flex items-center gap-3 p-3 w-full text-left hover:bg-accent/50 transition-colors"
-                    >
-                      <span className="shrink-0">
-                        {runStatusIcons[run.status] ?? runStatusIcons.pending}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium">
-                            Run {run.id.slice(0, 8)}
-                          </p>
-                          <Badge variant="secondary" className="text-xs">
-                            {run.status}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {new Date(run.createdAt).toLocaleString()}
-                          {run.finishedAt && (
-                            <> &middot; Completed {new Date(run.finishedAt).toLocaleString()}</>
-                          )}
-                        </p>
-                      </div>
-                      <Eye className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <SectionRule label="Run history" meta={`${runs.length} total`} />
+                  <WireList>
+                    {runs.map((run) => (
+                      <Wire
+                        key={run.id}
+                        onClick={() => setSelectedRunId(run.id)}
+                        leading={
+                          <span className="flex items-center gap-2">
+                            {runStatusIcons[run.status] ?? runStatusIcons.pending}
+                            <span className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground">
+                              {run.id.slice(0, 8)}
+                            </span>
+                          </span>
+                        }
+                        title={
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Badge variant="outline">{run.status.toUpperCase()}</Badge>
+                            <span className="text-muted-foreground truncate text-[0.78rem]">
+                              {new Date(run.createdAt).toLocaleString()}
+                              {run.finishedAt && (
+                                <> · Completed {new Date(run.finishedAt).toLocaleString()}</>
+                              )}
+                            </span>
+                          </div>
+                        }
+                        trailing={<Eye className="h-3.5 w-3.5 text-muted-foreground" />}
+                      />
+                    ))}
+                  </WireList>
+                </>
               )}
             </>
           )}
         </TabsContent>
 
         {/* Settings tab */}
-        <TabsContent value="settings" className="mt-4 space-y-6">
+        <TabsContent value="settings" className="mt-4">
+          <SectionRule label="Configuration" />
           <div className="space-y-4 max-w-lg">
             <div className="space-y-2">
               <Label htmlFor="edit-name">Name</Label>
@@ -405,7 +391,7 @@ export function WorkflowDetail() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-trigger">Trigger Type</Label>
+              <Label htmlFor="edit-trigger">Trigger type</Label>
               <Input
                 id="edit-trigger"
                 value={editTriggerType}
@@ -426,37 +412,35 @@ export function WorkflowDetail() {
                 })
               }
             >
-              {updateWorkflow.isPending ? "Saving..." : "Save Changes"}
+              {updateWorkflow.isPending ? "Saving..." : "Save changes"}
             </Button>
           </div>
 
-          <div className="border-t border-border pt-6 space-y-3">
-            <h3 className="text-sm font-medium text-destructive">Danger Zone</h3>
-            <div className="flex items-center gap-3">
-              {workflow.status !== "archived" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => updateWorkflow.mutate({ status: "archived" })}
-                  disabled={updateWorkflow.isPending}
-                >
-                  Archive
-                </Button>
-              )}
+          <SectionRule label="Danger zone" />
+          <div className="flex items-center gap-3">
+            {workflow.status !== "archived" && (
               <Button
                 size="sm"
-                variant="destructive"
-                onClick={() => {
-                  if (window.confirm("Delete this workflow? This cannot be undone.")) {
-                    deleteWorkflow.mutate();
-                  }
-                }}
-                disabled={deleteWorkflow.isPending}
+                variant="outline"
+                onClick={() => updateWorkflow.mutate({ status: "archived" })}
+                disabled={updateWorkflow.isPending}
               >
-                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                {deleteWorkflow.isPending ? "Deleting..." : "Delete Workflow"}
+                Archive
               </Button>
-            </div>
+            )}
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                if (window.confirm("Delete this workflow? This cannot be undone.")) {
+                  deleteWorkflow.mutate();
+                }
+              }}
+              disabled={deleteWorkflow.isPending}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              {deleteWorkflow.isPending ? "Deleting..." : "Delete workflow"}
+            </Button>
           </div>
         </TabsContent>
       </Tabs>

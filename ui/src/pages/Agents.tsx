@@ -19,6 +19,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Bot, Plus, List, GitBranch, SlidersHorizontal, RefreshCw } from "lucide-react";
 import type { Agent } from "@paperclipai/shared";
+import { PageHeader } from "../components/boared/PageHeader";
+import { Wire, WireList } from "../components/boared/Wire";
 
 const adapterLabels: Record<string, string> = {
   claude_local: "Claude",
@@ -154,8 +156,24 @@ export function Agents() {
   const filteredOrg = filterOrgTree(orgTree ?? [], tab, showTerminated);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§05 · Agents</>}
+        title={<>The <em>roster.</em></>}
+        dateline={
+          filtered.length > 0
+            ? `${filtered.length} agent${filtered.length !== 1 ? "s" : ""} on record`
+            : "No agents on record"
+        }
+        actions={
+          <Button size="sm" variant="outline" onClick={openNewAgent}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            New agent
+          </Button>
+        }
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-5">
         <Tabs value={tab} onValueChange={(v) => navigate(`/agents/${v}`)}>
           <PageTabBar
             items={[
@@ -173,22 +191,18 @@ export function Agents() {
           <div className="relative">
             <button
               className={cn(
-                "flex items-center gap-1.5 px-2 py-1.5 text-xs transition-colors border border-border",
-                adapterMenuOpen ? "text-foreground bg-accent" : "text-muted-foreground hover:bg-accent/50"
+                "inline-flex items-center gap-1.5 px-2.5 h-8 border border-foreground font-mono text-[0.62rem] uppercase tracking-[0.08em] transition-colors",
+                adapterMenuOpen ? "bg-foreground text-background" : "text-foreground hover:bg-foreground hover:text-background"
               )}
               onClick={() => setAdapterMenuOpen(!adapterMenuOpen)}
               disabled={bulkSwitch.isPending}
             >
-              {bulkSwitch.isPending ? (
-                <RefreshCw className="h-3 w-3 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3 w-3" />
-              )}
-              {bulkSwitch.isPending ? "Switching..." : "Switch All Adapters"}
+              <RefreshCw className={cn("h-3 w-3", bulkSwitch.isPending && "animate-spin")} />
+              {bulkSwitch.isPending ? "Switching…" : "Switch adapters"}
             </button>
             {adapterMenuOpen && (
-              <div className="absolute right-0 top-full mt-1 z-50 w-52 border border-border bg-popover shadow-md p-1">
-                <div className="px-2 py-1 text-[10px] text-muted-foreground uppercase tracking-wider">Switch all agents to:</div>
+              <div className="absolute right-0 top-full mt-1 z-50 w-56 border border-foreground bg-popover p-1">
+                <div className="px-2 py-1 font-mono text-[0.6rem] uppercase tracking-[0.08em] text-muted-foreground">Switch all agents to</div>
                 {SWITCHABLE_ADAPTERS.map((adapter) => {
                   const isCurrent = agents?.length && agents.every((a) =>
                     a.adapterType === adapter.value &&
@@ -198,19 +212,19 @@ export function Agents() {
                     <button
                       key={adapter.label}
                       className={cn(
-                        "flex items-center justify-between w-full px-2 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors",
-                        isCurrent && "text-foreground font-medium"
+                        "flex items-center justify-between w-full px-2 py-1.5 text-[0.78rem] text-left hover:bg-foreground/[0.04] transition-colors",
+                        isCurrent && "text-foreground"
                       )}
                       onClick={() => bulkSwitch.mutate({ adapterType: adapter.value, model: adapter.model ?? undefined })}
                       disabled={bulkSwitch.isPending}
                     >
                       <span>{adapter.label}</span>
-                      {isCurrent && <span className="text-[10px] text-muted-foreground">current</span>}
+                      {isCurrent && <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-muted-foreground">Current</span>}
                     </button>
                   );
                 })}
                 {bulkSwitch.isError && (
-                  <div className="px-2 py-1 text-[10px] text-destructive">
+                  <div className="px-2 py-1 font-mono text-[0.6rem] text-destructive">
                     {bulkSwitch.error instanceof Error ? bulkSwitch.error.message : "Failed"}
                   </div>
                 )}
@@ -221,23 +235,23 @@ export function Agents() {
           <div className="relative">
             <button
               className={cn(
-                "flex items-center gap-1.5 px-2 py-1.5 text-xs transition-colors border border-border",
-                filtersOpen || showTerminated ? "text-foreground bg-accent" : "text-muted-foreground hover:bg-accent/50"
+                "inline-flex items-center gap-1.5 px-2.5 h-8 border border-foreground font-mono text-[0.62rem] uppercase tracking-[0.08em] transition-colors",
+                filtersOpen || showTerminated ? "bg-foreground text-background" : "text-foreground hover:bg-foreground hover:text-background"
               )}
               onClick={() => setFiltersOpen(!filtersOpen)}
             >
               <SlidersHorizontal className="h-3 w-3" />
               Filters
-              {showTerminated && <span className="ml-0.5 px-1 bg-foreground/10 rounded text-[10px]">1</span>}
+              {showTerminated && <span className="ml-0.5 px-1 border border-current text-[0.58rem]">1</span>}
             </button>
             {filtersOpen && (
-              <div className="absolute right-0 top-full mt-1 z-50 w-48 border border-border bg-popover shadow-md p-1">
+              <div className="absolute right-0 top-full mt-1 z-50 w-52 border border-foreground bg-popover p-1">
                 <button
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors"
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-[0.78rem] text-left hover:bg-foreground/[0.04] transition-colors"
                   onClick={() => setShowTerminated(!showTerminated)}
                 >
                   <span className={cn(
-                    "flex items-center justify-center h-3.5 w-3.5 border border-border rounded-sm",
+                    "flex items-center justify-center h-3.5 w-3.5 border border-foreground",
                     showTerminated && "bg-foreground"
                   )}>
                     {showTerminated && <span className="text-background text-[10px] leading-none">&#10003;</span>}
@@ -249,114 +263,116 @@ export function Agents() {
           </div>
           {/* View toggle */}
           {!forceListView && (
-            <div className="flex items-center border border-border">
+            <div className="flex items-center border border-foreground">
               <button
                 className={cn(
                   "p-1.5 transition-colors",
-                  effectiveView === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"
+                  effectiveView === "list" ? "bg-foreground text-background" : "text-foreground hover:bg-foreground/[0.06]"
                 )}
                 onClick={() => setView("list")}
+                aria-label="List view"
               >
                 <List className="h-3.5 w-3.5" />
               </button>
               <button
                 className={cn(
-                  "p-1.5 transition-colors",
-                  effectiveView === "org" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"
+                  "p-1.5 transition-colors border-l border-foreground",
+                  effectiveView === "org" ? "bg-foreground text-background" : "text-foreground hover:bg-foreground/[0.06]"
                 )}
                 onClick={() => setView("org")}
+                aria-label="Org tree view"
               >
                 <GitBranch className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
-          <Button size="sm" variant="outline" onClick={openNewAgent}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            New Agent
-          </Button>
         </div>
       </div>
 
-      {filtered.length > 0 && (
-        <p className="text-xs text-muted-foreground">{filtered.length} agent{filtered.length !== 1 ? "s" : ""}</p>
+      {error && (
+        <div className="mb-4 px-4 py-3 border border-destructive text-destructive font-mono text-[0.72rem]">
+          {error.message}
+        </div>
       )}
-
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {agents && agents.length === 0 && (
         <EmptyState
           icon={Bot}
           message="Create your first agent to get started."
-          action="New Agent"
+          action="New agent"
           onAction={openNewAgent}
         />
       )}
 
       {/* List view */}
       {effectiveView === "list" && filtered.length > 0 && (
-        <div className="border border-border">
-          {filtered.map((agent) => {
-            return (
-              <EntityRow
-                key={agent.id}
-                title={agent.name}
-                subtitle={`${agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
-                to={agentUrl(agent)}
-                leading={
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span
-                      className={`absolute inline-flex h-full w-full rounded-full ${agentStatusDot[agent.status] ?? agentStatusDotDefault}`}
-                    />
+        <WireList>
+          {filtered.map((agent) => (
+            <Wire
+              key={agent.id}
+              href={agentUrl(agent)}
+              leading={
+                <span className="relative flex h-2.5 w-2.5">
+                  <span
+                    className={`absolute inline-flex h-full w-full ${agentStatusDot[agent.status] ?? agentStatusDotDefault}`}
+                  />
+                </span>
+              }
+              title={
+                <div className="flex items-baseline gap-3 min-w-0">
+                  <span className="truncate text-foreground">{agent.name}</span>
+                  <span className="shrink-0 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground truncate">
+                    {agent.role}{agent.title ? ` · ${agent.title}` : ""}
                   </span>
-                }
-                trailing={
-                  <div className="flex items-center gap-3">
-                    <span className="sm:hidden">
-                      {liveRunByAgent.has(agent.id) ? (
-                        <LiveRunIndicator
-                          agentRef={agentRouteRef(agent)}
-                          runId={liveRunByAgent.get(agent.id)!.runId}
-                          liveCount={liveRunByAgent.get(agent.id)!.liveCount}
-                        />
-                      ) : (
-                        <StatusBadge status={agent.status} />
-                      )}
+                </div>
+              }
+              trailing={
+                <div className="flex items-center gap-3">
+                  <span className="sm:hidden">
+                    {liveRunByAgent.has(agent.id) ? (
+                      <LiveRunIndicator
+                        agentRef={agentRouteRef(agent)}
+                        runId={liveRunByAgent.get(agent.id)!.runId}
+                        liveCount={liveRunByAgent.get(agent.id)!.liveCount}
+                      />
+                    ) : (
+                      <StatusBadge status={agent.status} />
+                    )}
+                  </span>
+                  <div className="hidden sm:flex items-center gap-4">
+                    {liveRunByAgent.has(agent.id) && (
+                      <LiveRunIndicator
+                        agentRef={agentRouteRef(agent)}
+                        runId={liveRunByAgent.get(agent.id)!.runId}
+                        liveCount={liveRunByAgent.get(agent.id)!.liveCount}
+                      />
+                    )}
+                    <span className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground w-16 text-right">
+                      {adapterLabels[agent.adapterType] ?? agent.adapterType}
                     </span>
-                    <div className="hidden sm:flex items-center gap-3">
-                      {liveRunByAgent.has(agent.id) && (
-                        <LiveRunIndicator
-                          agentRef={agentRouteRef(agent)}
-                          runId={liveRunByAgent.get(agent.id)!.runId}
-                          liveCount={liveRunByAgent.get(agent.id)!.liveCount}
-                        />
-                      )}
-                      <span className="text-xs text-muted-foreground font-mono w-14 text-right">
-                        {adapterLabels[agent.adapterType] ?? agent.adapterType}
-                      </span>
-                      <span className="text-xs text-muted-foreground w-16 text-right">
-                        {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
-                      </span>
-                      <span className="w-20 flex justify-end">
-                        <StatusBadge status={agent.status} />
-                      </span>
-                    </div>
+                    <span className="font-mono text-[0.62rem] text-muted-foreground w-16 text-right tabular-nums">
+                      {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
+                    </span>
+                    <span className="w-20 flex justify-end">
+                      <StatusBadge status={agent.status} />
+                    </span>
                   </div>
-                }
-              />
-            );
-          })}
-        </div>
+                </div>
+              }
+            />
+          ))}
+        </WireList>
       )}
 
       {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
+        <p className="font-mono text-[0.72rem] text-muted-foreground text-center py-8">
           No agents match the selected filter.
         </p>
       )}
 
       {/* Org chart view */}
       {effectiveView === "org" && filteredOrg.length > 0 && (
-        <div className="border border-border py-1">
+        <div className="border-t border-[var(--boared-rule)]">
           {filteredOrg.map((node) => (
             <OrgTreeNode key={node.id} node={node} depth={0} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
           ))}
@@ -364,13 +380,13 @@ export function Agents() {
       )}
 
       {effectiveView === "org" && orgTree && orgTree.length > 0 && filteredOrg.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
+        <p className="font-mono text-[0.72rem] text-muted-foreground text-center py-8">
           No agents match the selected filter.
         </p>
       )}
 
       {effectiveView === "org" && orgTree && orgTree.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
+        <p className="font-mono text-[0.72rem] text-muted-foreground text-center py-8">
           No organizational hierarchy defined.
         </p>
       )}
@@ -397,16 +413,16 @@ function OrgTreeNode({
     <div style={{ paddingLeft: depth * 24 }}>
       <Link
         to={agent ? agentUrl(agent) : `/agents/${node.id}`}
-        className="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left no-underline text-inherit"
+        className="flex items-center gap-3 px-1 py-3 border-b border-[var(--boared-rule)] hover:bg-foreground/[0.03] transition-colors w-full text-left no-underline text-inherit"
       >
         <span className="relative flex h-2.5 w-2.5 shrink-0">
-          <span className={`absolute inline-flex h-full w-full rounded-full ${statusColor}`} />
+          <span className={`absolute inline-flex h-full w-full ${statusColor}`} />
         </span>
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium">{node.name}</span>
-          <span className="text-xs text-muted-foreground ml-2">
+        <div className="flex-1 min-w-0 flex items-baseline gap-3">
+          <span className="text-[0.82rem] text-foreground truncate">{node.name}</span>
+          <span className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground truncate">
             {roleLabels[node.role] ?? node.role}
-            {agent?.title ? ` - ${agent.title}` : ""}
+            {agent?.title ? ` · ${agent.title}` : ""}
           </span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -421,7 +437,7 @@ function OrgTreeNode({
               <StatusBadge status={node.status} />
             )}
           </span>
-          <div className="hidden sm:flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-4">
             {liveRunByAgent.has(node.id) && (
               <LiveRunIndicator
                 agentRef={agent ? agentRouteRef(agent) : node.id}
@@ -431,10 +447,10 @@ function OrgTreeNode({
             )}
             {agent && (
               <>
-                <span className="text-xs text-muted-foreground font-mono w-14 text-right">
+                <span className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground w-16 text-right">
                   {adapterLabels[agent.adapterType] ?? agent.adapterType}
                 </span>
-                <span className="text-xs text-muted-foreground w-16 text-right">
+                <span className="font-mono text-[0.62rem] text-muted-foreground w-16 text-right tabular-nums">
                   {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
                 </span>
               </>
@@ -446,7 +462,7 @@ function OrgTreeNode({
         </div>
       </Link>
       {node.reports && node.reports.length > 0 && (
-        <div className="border-l border-border/50 ml-4">
+        <div className="border-l border-[var(--boared-rule)] ml-4">
           {node.reports.map((child) => (
             <OrgTreeNode key={child.id} node={child} depth={depth + 1} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
           ))}
@@ -468,14 +484,14 @@ function LiveRunIndicator({
   return (
     <Link
       to={`/agents/${agentRef}/runs/${runId}`}
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
+      className="inline-flex items-center gap-1.5 px-2 h-5 border border-[var(--boared-acid)] text-[var(--boared-acid)] hover:bg-[var(--boared-acid)] hover:text-[var(--boared-acid-ink)] transition-colors no-underline"
       onClick={(e) => e.stopPropagation()}
     >
-      <span className="relative flex h-2 w-2">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+      <span className="relative flex h-1.5 w-1.5">
+        <span className="animate-ping absolute inline-flex h-full w-full bg-[var(--boared-acid)] opacity-75" />
+        <span className="relative inline-flex h-1.5 w-1.5 bg-[var(--boared-acid)]" />
       </span>
-      <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+      <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em]">
         Live{liveCount > 1 ? ` (${liveCount})` : ""}
       </span>
     </Link>

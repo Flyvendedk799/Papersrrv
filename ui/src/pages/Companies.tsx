@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PageHeader } from "@/components/boared/PageHeader";
 import {
   Pencil,
   Check,
@@ -22,10 +23,6 @@ import {
   Plus,
   MoreHorizontal,
   Trash2,
-  Users,
-  CircleDot,
-  DollarSign,
-  Calendar,
 } from "lucide-react";
 
 export function Companies() {
@@ -88,20 +85,37 @@ export function Companies() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-end">
-        <Button size="sm" onClick={() => openOnboarding()}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          New Company
-        </Button>
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§19 · Organizations</>}
+        title={
+          <>
+            Your <em>organizations.</em>
+          </>
+        }
+        dateline={`${companies.length} on the register`}
+        actions={
+          <Button variant="acid" size="sm" onClick={() => openOnboarding()}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            New organization
+          </Button>
+        }
+      />
+
+      <div className="h-6 mb-2">
+        {loading && (
+          <p className="font-mono text-[0.7rem] text-muted-foreground">
+            Loading organizations…
+          </p>
+        )}
+        {error && (
+          <p className="font-mono text-[0.7rem] text-destructive">
+            {error.message}
+          </p>
+        )}
       </div>
 
-      <div className="h-6">
-        {loading && <p className="text-sm text-muted-foreground">Loading companies...</p>}
-        {error && <p className="text-sm text-destructive">{error.message}</p>}
-      </div>
-
-      <div className="grid gap-4">
+      <div className="border-t border-[var(--boared-rule)]">
         {companies.map((company) => {
           const selected = company.id === selectedCompanyId;
           const isEditing = editingId === company.id;
@@ -128,10 +142,10 @@ export function Companies() {
                   setSelectedCompanyId(company.id);
                 }
               }}
-              className={`group text-left bg-card border rounded-lg p-5 transition-colors cursor-pointer ${
+              className={`group relative border-b border-[var(--boared-rule)] px-4 py-5 cursor-pointer transition-colors ${
                 selected
-                  ? "border-primary ring-1 ring-primary"
-                  : "border-border hover:border-muted-foreground/30"
+                  ? "bg-foreground/[0.04] before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-[var(--boared-acid)]"
+                  : "hover:bg-foreground/[0.025]"
               }`}
             >
               {/* Header row: name + menu */}
@@ -145,7 +159,7 @@ export function Companies() {
                       <Input
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
-                        className="h-7 text-sm"
+                        className="h-8 text-sm max-w-sm"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === "Enter") saveEdit();
@@ -158,24 +172,18 @@ export function Companies() {
                         onClick={saveEdit}
                         disabled={editMutation.isPending}
                       >
-                        <Check className="h-3.5 w-3.5 text-green-500" />
+                        <Check className="h-3.5 w-3.5" />
                       </Button>
                       <Button variant="ghost" size="icon-xs" onClick={cancelEdit}>
                         <X className="h-3.5 w-3.5 text-muted-foreground" />
                       </Button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-base">{company.name}</h3>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          company.status === "active"
-                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                            : company.status === "paused"
-                              ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
-                              : "bg-muted text-muted-foreground"
-                        }`}
-                      >
+                    <div className="flex items-center gap-3">
+                      <h3 className="boared-display text-[1.5rem] leading-none text-foreground">
+                        {company.name}
+                      </h3>
+                      <span className="font-mono uppercase tracking-[0.08em] text-[0.6rem] text-muted-foreground border border-[var(--boared-rule)] px-1.5 py-0.5">
                         {company.status}
                       </span>
                       <Button
@@ -192,7 +200,7 @@ export function Companies() {
                     </div>
                   )}
                   {company.description && !isEditing && (
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                    <p className="text-[0.82rem] text-muted-foreground mt-1.5 line-clamp-2">
                       {company.description}
                     </p>
                   )}
@@ -223,7 +231,7 @@ export function Companies() {
                         onClick={() => setConfirmDeleteId(company.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                        Delete Company
+                        Delete organization
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -231,44 +239,48 @@ export function Companies() {
               </div>
 
               {/* Stats row */}
-              <div className="flex items-center gap-3 sm:gap-5 mt-4 text-sm text-muted-foreground flex-wrap">
-                <div className="flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5" />
-                  <span>
-                    {agentCount} {agentCount === 1 ? "agent" : "agents"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CircleDot className="h-3.5 w-3.5" />
-                  <span>
-                    {issueCount} {issueCount === 1 ? "issue" : "issues"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <DollarSign className="h-3.5 w-3.5" />
-                  <span>
+              <div className="flex items-center gap-6 mt-4 font-mono text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground flex-wrap">
+                <span>
+                  <span className="text-foreground tabular-nums">{agentCount}</span>{" "}
+                  {agentCount === 1 ? "agent" : "agents"}
+                </span>
+                <span aria-hidden className="text-[var(--boared-rule)]">·</span>
+                <span>
+                  <span className="text-foreground tabular-nums">{issueCount}</span>{" "}
+                  {issueCount === 1 ? "issue" : "issues"}
+                </span>
+                <span aria-hidden className="text-[var(--boared-rule)]">·</span>
+                <span>
+                  <span className="text-foreground tabular-nums">
                     {formatCents(company.spentMonthlyCents)}
-                    {company.budgetMonthlyCents > 0
-                      ? <> / {formatCents(company.budgetMonthlyCents)} <span className="text-xs">({budgetPct}%)</span></>
-                      : <span className="text-xs ml-1">Unlimited budget</span>}
                   </span>
-                </div>
-                <div className="flex items-center gap-1.5 ml-auto">
-                  <Calendar className="h-3.5 w-3.5" />
-                  <span>Created {relativeTime(company.createdAt)}</span>
-                </div>
+                  {company.budgetMonthlyCents > 0 ? (
+                    <>
+                      {" / "}
+                      <span className="tabular-nums">
+                        {formatCents(company.budgetMonthlyCents)}
+                      </span>{" "}
+                      <span>({budgetPct}%)</span>
+                    </>
+                  ) : (
+                    <span className="ml-1">· unlimited</span>
+                  )}
+                </span>
+                <span className="ml-auto">
+                  Opened {relativeTime(company.createdAt)}
+                </span>
               </div>
 
               {/* Delete confirmation */}
               {isConfirmingDelete && (
                 <div
-                  className="mt-4 flex items-center justify-between bg-destructive/5 border border-destructive/20 rounded-md px-4 py-3"
+                  className="mt-4 flex items-center justify-between gap-4 border border-destructive px-4 py-3"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <p className="text-sm text-destructive font-medium">
-                    Delete this company and all its data? This cannot be undone.
+                  <p className="text-[0.82rem] text-destructive">
+                    Delete this organization and all its data? This cannot be undone.
                   </p>
-                  <div className="flex items-center gap-2 ml-4 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <Button
                       variant="ghost"
                       size="sm"

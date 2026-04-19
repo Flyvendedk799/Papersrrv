@@ -4,10 +4,21 @@ import { useNavigate, useSearchParams } from "@/lib/router";
 import { authApi } from "../api/auth";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
-import { Sparkles } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Wordmark } from "@/components/boared/Wordmark";
 
 type AuthMode = "sign_in" | "sign_up";
+
+function todayDateline(): string {
+  const d = new Date();
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 export function AuthPage() {
   const queryClient = useQueryClient();
@@ -62,100 +73,146 @@ export function AuthPage() {
 
   if (isSessionLoading) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      <div className="fixed inset-0 flex items-center justify-center bg-background">
+        <p className="font-mono text-[0.72rem] text-muted-foreground">Loading…</p>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 flex bg-background">
-      {/* Left half — form */}
-      <div className="w-full md:w-1/2 flex flex-col overflow-y-auto">
-        <div className="w-full max-w-md mx-auto my-auto px-8 py-12">
-          <div className="flex items-center gap-2 mb-8">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Boared</span>
+    <div className="fixed inset-0 overflow-y-auto bg-background text-foreground">
+      <div className="min-h-full mx-auto max-w-[1080px] px-8 py-10 flex flex-col">
+        {/* Masthead row */}
+        <header className="flex items-baseline justify-between gap-6 pb-4 border-b border-[var(--boared-rule)]">
+          <Wordmark size="lg" />
+          <div className="font-mono text-[0.62rem] tracking-[0.08em] uppercase text-muted-foreground">
+            Vol. I · No. 001 · {todayDateline()}
+          </div>
+        </header>
+
+        {/* Edition bar */}
+        <div className="boared-label mt-3 mb-8 text-foreground">
+          §00 · The Front Page
+        </div>
+
+        <div className="boared-reveal grid md:grid-cols-12 gap-10 flex-1">
+          {/* Left: editorial title */}
+          <div className="md:col-span-7 flex flex-col">
+            <h1 className="boared-display text-[clamp(3rem,8vw,6.5rem)] leading-[0.9] text-foreground max-w-[12ch]">
+              Boared<span className="text-[var(--boared-acid)]">.</span>
+            </h1>
+            <p className="font-mono text-[0.72rem] tracking-tight text-muted-foreground mt-5 max-w-[40ch]">
+              A quiet daily paper for the company you run. Sign in to read today's edition, or start a new subscription.
+            </p>
+            <div className="flex-1" />
+            <p className="hidden md:block font-mono text-[0.62rem] uppercase tracking-[0.12em] text-muted-foreground mt-10">
+              Printed in ink · Set in Fraunces &amp; Fragment Mono
+            </p>
           </div>
 
-          <h1 className="text-xl font-semibold">
-            {mode === "sign_in" ? "Sign in to Boared" : "Create your Boared account"}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {mode === "sign_in"
-              ? "Use your email and password to access this instance."
-              : "Create an account for this instance. Email confirmation is not required in v1."}
-          </p>
-
-          <form
-            className="mt-6 space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              mutation.mutate();
-            }}
-          >
-            {mode === "sign_up" && (
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Name</label>
-                <input
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  autoComplete="name"
-                  autoFocus
-                />
+          {/* Right: form */}
+          <div className="md:col-span-5">
+            <div className="border-t border-[var(--boared-rule)] pt-6">
+              <div className="boared-label text-foreground mb-2">
+                {mode === "sign_in" ? "Sign in" : "New subscription"}
               </div>
-            )}
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Email</label>
-              <input
-                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="email"
-                autoFocus={mode === "sign_in"}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Password</label>
-              <input
-                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete={mode === "sign_in" ? "current-password" : "new-password"}
-              />
-            </div>
-            {error && <p className="text-xs text-destructive">{error}</p>}
-            <Button type="submit" disabled={!canSubmit || mutation.isPending} className="w-full">
-              {mutation.isPending
-                ? "Working…"
-                : mode === "sign_in"
-                  ? "Sign In"
-                  : "Create Account"}
-            </Button>
-          </form>
+              <h2 className="boared-display text-[1.75rem] leading-[1.05] text-foreground max-w-[18ch]">
+                {mode === "sign_in" ? (
+                  <>
+                    Welcome <em>back</em> to the desk.
+                  </>
+                ) : (
+                  <>
+                    Start your <em>subscription.</em>
+                  </>
+                )}
+              </h2>
 
-          <div className="mt-5 text-sm text-muted-foreground">
-            {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
-            <button
-              type="button"
-              className="font-medium text-foreground underline underline-offset-2"
-              onClick={() => {
-                setError(null);
-                setMode(mode === "sign_in" ? "sign_up" : "sign_in");
-              }}
-            >
-              {mode === "sign_in" ? "Create one" : "Sign in"}
-            </button>
+              <form
+                className="mt-6 space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  mutation.mutate();
+                }}
+              >
+                {mode === "sign_up" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="auth-name" className="boared-label text-muted-foreground">
+                      Name
+                    </Label>
+                    <Input
+                      id="auth-name"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      autoComplete="name"
+                      autoFocus
+                    />
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="auth-email" className="boared-label text-muted-foreground">
+                    Email
+                  </Label>
+                  <Input
+                    id="auth-email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="email"
+                    autoFocus={mode === "sign_in"}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="auth-password" className="boared-label text-muted-foreground">
+                    Password
+                  </Label>
+                  <Input
+                    id="auth-password"
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete={mode === "sign_in" ? "current-password" : "new-password"}
+                  />
+                </div>
+                {error && (
+                  <p className="font-mono text-[0.7rem] text-destructive border-l-2 border-destructive pl-2">
+                    {error}
+                  </p>
+                )}
+                <Button
+                  type="submit"
+                  disabled={!canSubmit || mutation.isPending}
+                  className="w-full"
+                >
+                  {mutation.isPending
+                    ? "Working…"
+                    : mode === "sign_in"
+                      ? "Sign in"
+                      : "Create account"}
+                </Button>
+              </form>
+
+              <div className="mt-5 font-mono text-[0.72rem] text-muted-foreground">
+                {mode === "sign_in" ? "Need an account?" : "Already subscribed?"}{" "}
+                <button
+                  type="button"
+                  className="text-foreground underline underline-offset-4 hover:[text-decoration-color:var(--boared-acid)]"
+                  onClick={() => {
+                    setError(null);
+                    setMode(mode === "sign_in" ? "sign_up" : "sign_in");
+                  }}
+                >
+                  {mode === "sign_in" ? "Create one" : "Sign in"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Right half — ASCII art animation (hidden on mobile) */}
-      <div className="hidden md:block w-1/2 overflow-hidden">
-        <AsciiArtAnimation />
+        <footer className="mt-10 pt-4 border-t border-[var(--boared-rule)] font-mono text-[0.62rem] uppercase tracking-[0.1em] text-muted-foreground flex items-center justify-between">
+          <span>Est. today</span>
+          <span>All the news fit to run.</span>
+        </footer>
       </div>
     </div>
   );

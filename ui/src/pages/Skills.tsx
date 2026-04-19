@@ -4,6 +4,7 @@ import {
   Puzzle, Plus, Upload, Trash2, ChevronDown, ChevronRight,
   FileText, FolderArchive, Search, Edit3, Save, X, Eye,
 } from "lucide-react";
+import { PageHeader } from "@/components/boared/PageHeader";
 import { skillsApi } from "../api/skills";
 import { queryKeys } from "../lib/queryKeys";
 import { useCompany } from "../context/CompanyContext";
@@ -237,52 +238,51 @@ export function Skills() {
   if (isLoading) return <PageSkeleton variant="list" />;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Skills</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Shared skill library for all agents in your company.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
-                <Upload className="h-3.5 w-3.5 mr-1.5" />
-                Upload SKILL.md
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Upload a single SKILL.md file</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="sm" variant="outline" onClick={() => zipInputRef.current?.click()}>
-                <FolderArchive className="h-3.5 w-3.5 mr-1.5" />
-                Upload Zip
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Upload a zip with SKILL.md and supporting files (assets, scripts, etc.)</TooltipContent>
-          </Tooltip>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            New Skill
-          </Button>
-          <input ref={fileInputRef} type="file" accept=".md,.markdown,.txt" multiple className="hidden" onChange={handleMdUpload} />
-          <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={handleZipUpload} />
-        </div>
-      </div>
+    <div className="boared-reveal max-w-[1400px] mx-auto">
+      <PageHeader
+        kicker={<>§16 · Skills</>}
+        title={<>The shared <em>library.</em></>}
+        dateline="Skill files every agent in the company can load."
+        actions={
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  Upload SKILL.md
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Upload a single SKILL.md file</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="sm" variant="outline" onClick={() => zipInputRef.current?.click()}>
+                  <FolderArchive className="h-3.5 w-3.5 mr-1.5" />
+                  Upload zip
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Upload a zip with SKILL.md and supporting files</TooltipContent>
+            </Tooltip>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              New skill
+            </Button>
+            <input ref={fileInputRef} type="file" accept=".md,.markdown,.txt" multiple className="hidden" onChange={handleMdUpload} />
+            <input ref={zipInputRef} type="file" accept=".zip" className="hidden" onChange={handleZipUpload} />
+          </div>
+        }
+      />
 
       {/* Search */}
       {skills && skills.length > 3 && (
-        <div className="relative">
+        <div className="relative mb-4">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search skills..."
+            placeholder="Search skills"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-8 w-full max-w-xs rounded-md border border-input bg-background pl-8 pr-3 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-8 w-full max-w-xs border border-[var(--boared-rule)] bg-transparent pl-8 pr-3 font-mono text-[0.72rem] placeholder:text-muted-foreground focus:outline-none focus:border-foreground"
           />
         </div>
       )}
@@ -295,35 +295,33 @@ export function Skills() {
             ? "No shared skills yet. Upload a SKILL.md or zip to get started. Once added, these skills can be assigned to any agent."
             : "No skills match your search."
           }
-          action={skills?.length === 0 ? "New Skill" : undefined}
+          action={skills?.length === 0 ? "New skill" : undefined}
           onAction={skills?.length === 0 ? () => setCreateOpen(true) : undefined}
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-0 sm:grid-cols-2 lg:grid-cols-3 border-t border-l border-[var(--boared-rule)]">
           {filteredSkills.map((skill) => {
             const fileCount = Object.keys(skill.files).length;
             return (
               <button
                 key={skill.id}
                 onClick={() => setViewSkill(skill)}
-                className="group flex flex-col gap-2 border border-border rounded-lg bg-card p-4 text-left transition-colors hover:bg-accent/50"
+                className="group flex flex-col gap-2 border-b border-r border-[var(--boared-rule)] p-4 text-left transition-colors hover:bg-foreground/[0.03]"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <Puzzle className="h-4 w-4 shrink-0 text-indigo-500" />
-                    <span className="font-mono text-sm font-medium truncate">{skill.name}</span>
+                    <Puzzle className="h-4 w-4 shrink-0 text-foreground" />
+                    <span className="font-mono text-[0.78rem] truncate">{skill.name}</span>
                   </div>
                   <Eye className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0" />
                 </div>
                 {skill.description && (
-                  <p className="text-xs text-muted-foreground line-clamp-2">{skill.description}</p>
+                  <p className="text-[0.72rem] text-muted-foreground line-clamp-2">{skill.description}</p>
                 )}
-                <div className="flex items-center gap-2 mt-auto">
-                  <Badge variant="secondary" className="text-[10px]">SKILL.md</Badge>
+                <div className="flex items-center gap-3 mt-auto font-mono uppercase tracking-[0.08em] text-[0.58rem] text-muted-foreground">
+                  <span>Skill.md</span>
                   {fileCount > 0 && (
-                    <Badge variant="outline" className="text-[10px]">
-                      +{fileCount} file{fileCount !== 1 ? "s" : ""}
-                    </Badge>
+                    <span>+{fileCount} file{fileCount !== 1 ? "s" : ""}</span>
                   )}
                 </div>
               </button>
@@ -336,7 +334,7 @@ export function Skills() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>New Skill</DialogTitle>
+            <DialogTitle>New skill</DialogTitle>
             <DialogDescription>Create a blank skill with a SKILL.md template.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -440,11 +438,11 @@ function SkillModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <button className="absolute inset-0 bg-black/50" onClick={onClose} aria-label="Close" />
-      <div className="relative z-10 w-full max-w-4xl max-h-[90vh] bg-background rounded-lg border border-border shadow-xl flex flex-col">
+      <div className="relative z-10 w-full max-w-4xl max-h-[90vh] bg-background border border-foreground flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--boared-rule)] shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <Puzzle className="h-4 w-4 text-indigo-500 shrink-0" />
+            <Puzzle className="h-4 w-4 text-foreground shrink-0" />
             <span className="font-mono text-sm font-medium truncate">{skill.name}</span>
             {skill.description && (
               <span className="text-xs text-muted-foreground truncate">- {skill.description}</span>
@@ -461,7 +459,7 @@ function SkillModal({
                 <TooltipTrigger asChild>
                   <button
                     onClick={onStartEdit}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md border border-border hover:bg-accent transition-colors"
+                    className="flex items-center gap-1 px-2.5 py-1 font-mono text-[0.68rem] border border-[var(--boared-rule)] hover:bg-foreground/[0.03] transition-colors"
                   >
                     <Edit3 className="h-3 w-3" />
                     Edit
@@ -501,7 +499,7 @@ function SkillModal({
               </TooltipTrigger>
               <TooltipContent>Delete this skill</TooltipContent>
             </Tooltip>
-            <button onClick={onClose} className="p-1 rounded-sm hover:bg-accent transition-colors">
+            <button onClick={onClose} className="p-1 hover:bg-foreground/[0.03] transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -518,7 +516,7 @@ function SkillModal({
             />
           ) : (
             <div className="p-4">
-              <pre className="text-xs font-mono bg-muted/30 rounded-md p-4 whitespace-pre-wrap break-words leading-relaxed max-h-[50vh] overflow-auto">
+              <pre className="text-[0.72rem] font-mono bg-[var(--boared-paper-2)] p-4 whitespace-pre-wrap break-words leading-relaxed max-h-[50vh] overflow-auto">
                 {skill.content}
               </pre>
             </div>
@@ -526,24 +524,24 @@ function SkillModal({
 
           {/* Additional files */}
           {fileEntries.length > 0 && !isEditing && (
-            <div className="border-t border-border">
-              <div className="px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground">
-                Bundled Files ({fileEntries.length})
+            <div className="border-t border-[var(--boared-rule)]">
+              <div className="px-4 py-2 bg-[var(--boared-paper-2)] boared-label">
+                Bundled files ({fileEntries.length})
               </div>
-              <div className="divide-y divide-border">
+              <div className="divide-y divide-[var(--boared-rule)]">
                 {fileEntries.map(([path, content]) => (
                   <div key={path}>
                     <button
                       onClick={() => toggleFile(path)}
-                      className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-accent/30 transition-colors"
+                      className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-foreground/[0.03] transition-colors"
                     >
                       {expandedFiles.has(path)
                         ? <ChevronDown className="h-3 w-3 text-muted-foreground" />
                         : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
                       <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-xs font-mono">{path}</span>
-                      <span className="text-[10px] text-muted-foreground ml-auto">
-                        {content.startsWith("base64:") ? `${Math.round((content.length - 7) * 0.75 / 1024)}KB binary` : `${content.length} chars`}
+                      <span className="text-[0.72rem] font-mono">{path}</span>
+                      <span className="font-mono uppercase tracking-[0.06em] text-[0.58rem] text-muted-foreground ml-auto">
+                        {content.startsWith("base64:") ? `${Math.round((content.length - 7) * 0.75 / 1024)}kb binary` : `${content.length} chars`}
                       </span>
                     </button>
                     {expandedFiles.has(path) && (
@@ -553,11 +551,11 @@ function SkillModal({
                           const imgExts = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico"];
                           if (imgExts.includes(ext)) {
                             const mime = ext === ".svg" ? "image/svg+xml" : `image/${ext.slice(1).replace("jpg", "jpeg")}`;
-                            return <img src={`data:${mime};base64,${content.slice(7)}`} alt={path} className="max-w-full max-h-48 rounded-md" />;
+                            return <img src={`data:${mime};base64,${content.slice(7)}`} alt={path} className="max-w-full max-h-48" />;
                           }
-                          return <div className="text-xs text-muted-foreground italic p-3 bg-muted/30 rounded-md">Binary file ({Math.round((content.length - 7) * 0.75 / 1024)}KB)</div>;
+                          return <div className="text-[0.7rem] text-muted-foreground italic p-3 bg-[var(--boared-paper-2)]">Binary file ({Math.round((content.length - 7) * 0.75 / 1024)}kb)</div>;
                         })() : (
-                          <pre className="text-[11px] font-mono bg-muted/30 rounded-md p-3 whitespace-pre-wrap break-words max-h-48 overflow-auto">
+                          <pre className="text-[0.68rem] font-mono bg-[var(--boared-paper-2)] p-3 whitespace-pre-wrap break-words max-h-48 overflow-auto">
                             {content}
                           </pre>
                         )}
