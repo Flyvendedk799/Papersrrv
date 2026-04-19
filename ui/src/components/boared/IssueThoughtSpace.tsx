@@ -57,6 +57,14 @@ interface Props {
    * is suppressed — the Dossier owns the selection surface.
    */
   onNodeActivate?: (thoughtId: string) => void;
+  /**
+   * Fired while the auto-tour passes a thought — same intent as
+   * `onNodeActivate` (open the context card, light chain trace) but
+   * WITHOUT the DOM scroll side-effect. Differentiated so the tour
+   * doesn't hijack the page's scroll position while narrating.
+   * Pass `null` when featuring should clear.
+   */
+  onNodeFeature?: (thoughtId: string | null) => void;
 }
 
 export interface IssueThoughtSpaceHandle {
@@ -67,7 +75,7 @@ export interface IssueThoughtSpaceHandle {
 }
 
 export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>(
-  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById, onNodeActivate }, ref) {
+  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById, onNodeActivate, onNodeFeature }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -121,6 +129,11 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
    * inside the render loop; surfaced to React via tourCaption state
    * so the chyron can describe what's in view. */
   const autoTourActiveRef = useRef(false);
+  /** Which node the tour is currently "featuring". Separate from the
+   * pointer selection so the tour doesn't fire focusOn() (camera is
+   * already under tour control). */
+  const tourFeaturedIdxRef = useRef<number>(-1);
+  const tourLastFeatureMsRef = useRef(0);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<{ label: string; kind: ThoughtKind; authorName: string } | null>(null);
@@ -318,29 +331,71 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       }
       // Read the already-projected-in-render auto-tour state.
       if (!autoTourActiveRef.current) return;
-      const maxD = maxDepthRef.current;
-      const ancN = (issue.ancestors ?? []).length;
-      const targetX = cameraRef.current.target.x;
-      const xLeft = -ancN * DAG_DEPTH_STEP;
-      const xRight = (maxD + 1) * DAG_DEPTH_STEP;
-      const norm = xRight > xLeft ? (targetX - xLeft) / (xRight - xLeft) : 0.5;
-      let next: string;
-      if (targetX < -DAG_DEPTH_STEP * 0.5) {
-        next = "Upstream — what led here";
-      } else if (targetX < DAG_DEPTH_STEP * 0.5) {
-        next = "The matter — the anchor of this case";
-      } else if (norm < 0.55) {
-        next = "Early thoughts — first responses";
-      } else if (norm < 0.85) {
-        next = "Recent motion — where the work is";
-      } else {
-        next =
-          issue.status === "done" || issue.status === "cancelled"
-            ? "Resolution — where the journey ends"
-            : issue.status === "blocked"
-              ? "Held — blocked at the desk"
-              : "Heading — where this is going";
+
+      // Prefer a thought-specific caption when a node is featured —
+      // that's the richest narration ("Ada wrote: …" over a generic
+      // chapter label). Fall back to zone-based text only when the
+      // tour is between chapters or on an empty part of the plane.
+      const featIdx = tourFeaturedIdxRef.current;
+      let next: string | null = null;
+      if (featIdx >= 0 && nodesRef.current[featIdx]) {
+        const t = nodesRef.current[featIdx].thought;
+        switch (t.kind) {
+          case "ancestor": {
+            const anc = t.payload as { identifier?: string | null; title: string };
+            next = `Upstream · ${anc.identifier ?? ""} ${shortLabel(anc.title, 40)}`.trim();
+            break;
+          }
+          case "issue": {
+            next = `The matter — ${shortLabel(issue.title ?? "", 52)}`;
+            break;
+          }
+          case "subissue": {
+            const sub = t.payload as Issue;
+            next = `Sub-matter · ${sub.identifier ?? ""} ${shortLabel(sub.title, 40)}`.trim();
+            break;
+          }
+          case "run": {
+            const r = t.payload as RunForIssue;
+            next = r.status === "running" || r.status === "queued" || r.status === "in_progress"
+              ? `${t.authorName} · live run`
+              : `${t.authorName} · run ${r.status}`;
+            break;
+          }
+          case "comment": {
+            const body = (t.payload as { body?: string }).body ?? "";
+            next = `${t.authorName}: ${shortLabel(body, 56)}`;
+            break;
+          }
+        }
       }
+
+      if (!next) {
+        // Zone-based fallback (empty stretch between chapters).
+        const maxD = maxDepthRef.current;
+        const ancN = (issue.ancestors ?? []).length;
+        const targetX = cameraRef.current.target.x;
+        const xLeft = -ancN * DAG_DEPTH_STEP;
+        const xRight = (maxD + 1) * DAG_DEPTH_STEP;
+        const norm = xRight > xLeft ? (targetX - xLeft) / (xRight - xLeft) : 0.5;
+        if (targetX < -DAG_DEPTH_STEP * 0.5) {
+          next = "Upstream — what led here";
+        } else if (targetX < DAG_DEPTH_STEP * 0.5) {
+          next = "The matter";
+        } else if (norm < 0.55) {
+          next = "Early thoughts";
+        } else if (norm < 0.85) {
+          next = "Recent motion";
+        } else {
+          next =
+            issue.status === "done" || issue.status === "cancelled"
+              ? "Resolution — where the journey ends"
+              : issue.status === "blocked"
+                ? "Held — blocked at the desk"
+                : "Heading — where this is going";
+        }
+      }
+
       if (next !== tourCaption) setTourCaption(next);
     }, 500);
     return () => window.clearInterval(id);
@@ -454,10 +509,49 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         cam.tTarget.y = 0;
         cam.tTarget.z = 0;
         cam.tZoom = 0.82;
+
+        // Featured-thought tracking. Every ~400 ms while touring,
+        // find the closest non-activity thought to the camera's
+        // current X and light it up — chain trace + Dossier
+        // context card. Activity nodes are skipped (noise); a
+        // hysteresis threshold (< 0.75 × DEPTH_STEP world units)
+        // prevents flicker between columns.
+        if (now - tourLastFeatureMsRef.current > 400) {
+          tourLastFeatureMsRef.current = now;
+          const tx = cam.target.x;
+          let bestIdx = -1;
+          let bestDist = Infinity;
+          const hysteresis = DAG_DEPTH_STEP * 0.75;
+          const nodesArr = nodesRef.current;
+          for (let i = 0; i < nodesArr.length; i++) {
+            const k = nodesArr[i].thought.kind;
+            if (k === "activity") continue;
+            const d = Math.abs(nodesArr[i].pos.x - tx);
+            if (d < bestDist && d < hysteresis) { bestDist = d; bestIdx = i; }
+          }
+          if (bestIdx !== tourFeaturedIdxRef.current) {
+            tourFeaturedIdxRef.current = bestIdx;
+            // Drive the chain trace via selectedIdxRef — but skip
+            // the `selectedId` React state so the selection effect
+            // doesn't fire focusOn() and fight the tour camera.
+            selectedIdxRef.current = bestIdx;
+            const id = bestIdx >= 0 ? nodesArr[bestIdx].thought.id : null;
+            onNodeFeature?.(id);
+          }
+        }
       } else {
-        autoTourActiveRef.current = false;
-        // Non-tour idle — let the selection path / default keep
-        // driving tTarget. Nothing to do here.
+        if (autoTourActiveRef.current) {
+          // Tour just ended — clear featured so chain-trace resets
+          // and the Dossier's context card returns to idle.
+          autoTourActiveRef.current = false;
+          if (tourFeaturedIdxRef.current !== -1) {
+            tourFeaturedIdxRef.current = -1;
+            if (selectedIdxRef.current !== -1 && !selectedId) {
+              selectedIdxRef.current = -1;
+            }
+            onNodeFeature?.(null);
+          }
+        }
       }
 
       updateCamera(cam, dt);
@@ -1052,6 +1146,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     (prev.linkedRuns?.length ?? 0) === (next.linkedRuns?.length ?? 0) &&
     prev.agentMap === next.agentMap &&
     prev.gateById === next.gateById &&
-    prev.onNodeActivate === next.onNodeActivate
+    prev.onNodeActivate === next.onNodeActivate &&
+    prev.onNodeFeature === next.onNodeFeature
   );
 });

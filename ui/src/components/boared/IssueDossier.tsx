@@ -195,6 +195,13 @@ export function IssueDossier({
     window.setTimeout(() => el.removeAttribute("data-pulse"), 1200);
   }, []);
 
+  /* Auto-tour featuring → update the context card WITHOUT scrolling
+   * the page. The scene is moving itself; hijacking page scroll too
+   * would be too much. */
+  const onNodeFeature = useCallback((thoughtId: string | null) => {
+    setSelectedId(thoughtId);
+  }, []);
+
   const tourRunning = tour?.status === "running";
   const canTour = !!tour && !!narrative;
 
@@ -259,6 +266,7 @@ export function IssueDossier({
             linkedRuns={linkedRuns}
             agentMap={agentMap}
             onNodeActivate={onNodeActivate}
+            onNodeFeature={onNodeFeature}
             className="absolute inset-0"
           />
           {/* Tour caption chyron — bottom-centre of the canvas when
