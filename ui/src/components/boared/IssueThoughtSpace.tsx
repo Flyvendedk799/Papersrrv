@@ -271,7 +271,16 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   /* ── Selection ── */
   useEffect(() => {
     const cam = cameraRef.current;
-    if (!selectedId) { selectedIdxRef.current = -1; cam.tTarget.x = 0; cam.tTarget.y = 0; cam.tTarget.z = 0; cam.tZoom = 1; cam.userControlled = 0; return; }
+    if (!selectedId) {
+      // On deselect: clear the selection ref and drop the
+      // userControlled lock. DON'T reset tTarget / tZoom here —
+      // during chronicle replay the render loop drives those to
+      // the time-front each frame, and zeroing them in this
+      // effect would cause a 1-frame wobble before it's corrected.
+      selectedIdxRef.current = -1;
+      cam.userControlled = 0;
+      return;
+    }
     const idx = nodesRef.current.findIndex(n => n.thought.id === selectedId);
     selectedIdxRef.current = idx;
     if (idx >= 0) focusOn(cam, nodesRef.current[idx].pos, 1.7);
@@ -411,12 +420,14 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
 
       // ── Chronicle replay camera ── when `currentTime` is set
       // (Dossier owns the clock), the camera tracks the time front
-      // so the viewer always sees "where we are in the story".
-      // Featured-thought tracking picks the most recent arrival
-      // so the context card + chain trace follow the narration.
+      // so every scrub / chapter-pin click moves the view. The
+      // gate is `cam.userControlled`, NOT `!selectedId` — users
+      // expect ribbon scrub to always override a previous click,
+      // but drag/wheel should hold the camera for the userControlled
+      // window so the user isn't yanked mid-pan.
       if (
         currentTime !== null && currentTime !== undefined &&
-        timeMap && !selectedId && nodesRef.current.length > 1
+        timeMap && cam.userControlled <= 0 && nodesRef.current.length > 1
       ) {
         const frontX01 = timeMap.toX(currentTime);
         cam.tTarget.x = (frontX01 - 0.5) * CHRONICLE_WORLD_WIDTH;
@@ -430,8 +441,10 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         // Feature the most-recent arrival (≤ 1.5 s old relative
         // to the clock) so the context card + chain trace track
         // the narration. Refresh at 400 ms so it announces at a
-        // reading pace rather than chasing every frame.
-        if (now - tourLastFeatureMsRef.current > 400) {
+        // reading pace rather than chasing every frame. Skipped
+        // while the user has an explicit in-scene selection — we
+        // don't want the feature to yank their focused thought away.
+        if (!selectedId && now - tourLastFeatureMsRef.current > 400) {
           tourLastFeatureMsRef.current = now;
           const nodesArr = nodesRef.current;
           let bestIdx = -1;
@@ -449,14 +462,6 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
             const id = bestIdx >= 0 ? nodesArr[bestIdx].thought.id : null;
             onNodeFeature?.(id);
           }
-        }
-      } else {
-        if (tourFeaturedIdxRef.current !== -1) {
-          tourFeaturedIdxRef.current = -1;
-          if (selectedIdxRef.current !== -1 && !selectedId) {
-            selectedIdxRef.current = -1;
-          }
-          onNodeFeature?.(null);
         }
       }
 

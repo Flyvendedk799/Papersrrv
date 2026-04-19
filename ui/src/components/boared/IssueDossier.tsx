@@ -188,6 +188,13 @@ export function IssueDossier({
     (ts: number) => {
       setIsPlaying(false);
       setCurrentTime(Math.max(timeMap.minTs, Math.min(timeMap.maxTs, ts)));
+      // Clear any lingering in-scene selection so the context card
+      // and chain trace follow the new time-front instead of
+      // sticking on the previously-clicked thought. Also nudges
+      // ThoughtSpace's selectedId to null so cam.userControlled
+      // resets and the time-follow gate re-opens.
+      setSelectedId(null);
+      tsRef.current?.focusNodeId(null);
     },
     [timeMap.minTs, timeMap.maxTs],
   );
