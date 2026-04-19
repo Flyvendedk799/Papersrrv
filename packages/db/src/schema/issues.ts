@@ -31,6 +31,14 @@ export const issues = pgTable(
     assigneeUserId: text("assignee_user_id"),
     checkoutRunId: uuid("checkout_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
     executionRunId: uuid("execution_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
+    // Causal linkage (Dossier DAG). Set when a sub-issue is spawned
+    // from an explicit source. No FK on createdFromCommentId because
+    // issue_comments already imports issues (would create a cycle);
+    // writer is responsible for integrity.
+    createdFromCommentId: uuid("created_from_comment_id"),
+    createdFromRunId: uuid("created_from_run_id").references(() => heartbeatRuns.id, {
+      onDelete: "set null",
+    }),
     executionAgentNameKey: text("execution_agent_name_key"),
     executionLockedAt: timestamp("execution_locked_at", { withTimezone: true }),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id),

@@ -16,6 +16,13 @@ export const heartbeatRuns = pgTable(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     error: text("error"),
     wakeupRequestId: uuid("wakeup_request_id").references(() => agentWakeupRequests.id),
+    // Causal linkage (Dossier DAG). When a run was triggered in
+    // response to a specific comment or activity, the writer sets
+    // these so the graph can draw the causal edge directly. No FK
+    // constraints — issue_comments and activity_log are in import
+    // cycles with this table. Writer is responsible for integrity.
+    triggeredByCommentId: uuid("triggered_by_comment_id"),
+    triggeredByActivityId: uuid("triggered_by_activity_id"),
     exitCode: integer("exit_code"),
     signal: text("signal"),
     usageJson: jsonb("usage_json").$type<Record<string, unknown>>(),
