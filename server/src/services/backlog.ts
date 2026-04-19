@@ -300,6 +300,24 @@ export function backlogService(db: Db) {
       } else if (filters.planId) {
         conds.push(eq(backlogItems.planId, filters.planId));
       }
+      // Ownership filters (backlog3.0 D4). `"none"` / null matches the
+      // unowned bucket; any other value is a direct id match. Callers
+      // resolve `"me"` to the current actor before calling the service
+      // so we keep this layer dumb and predictable.
+      if (filters.ownerUserId !== undefined) {
+        if (filters.ownerUserId === null || filters.ownerUserId === "none") {
+          conds.push(sql`${backlogItems.ownerUserId} is null`);
+        } else if (filters.ownerUserId !== "me") {
+          conds.push(eq(backlogItems.ownerUserId, filters.ownerUserId));
+        }
+      }
+      if (filters.ownerAgentId !== undefined) {
+        if (filters.ownerAgentId === null || filters.ownerAgentId === "none") {
+          conds.push(sql`${backlogItems.ownerAgentId} is null`);
+        } else if (filters.ownerAgentId !== "me") {
+          conds.push(eq(backlogItems.ownerAgentId, filters.ownerAgentId));
+        }
+      }
       if (filters.q) {
         const needle = `%${filters.q.trim()}%`;
         const search = or(ilike(backlogItems.title, needle), ilike(backlogItems.body, needle));

@@ -29,6 +29,10 @@ function buildItemQuery(filters?: BacklogItemFilters): string {
   if (filters.goalId) params.set("goalId", filters.goalId);
   if (filters.planId === null) params.set("planId", "none");
   else if (filters.planId) params.set("planId", filters.planId);
+  if (filters.ownerUserId === null) params.set("ownerUserId", "none");
+  else if (filters.ownerUserId) params.set("ownerUserId", filters.ownerUserId);
+  if (filters.ownerAgentId === null) params.set("ownerAgentId", "none");
+  else if (filters.ownerAgentId) params.set("ownerAgentId", filters.ownerAgentId);
   if (filters.q) params.set("q", filters.q);
   if (filters.includeArchived) params.set("includeArchived", "1");
   const qs = params.toString();

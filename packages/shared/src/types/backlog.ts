@@ -141,6 +141,13 @@ export interface BacklogItemFilters {
   planId?: string | null;
   projectId?: string;
   goalId?: string;
+  /**
+   * Filter by soft ownership (backlog3.0 D4).
+   * `"me"` resolves server-side to the current user or agent actor.
+   * `"none"` matches items with no owner. `null` matches "none" too.
+   */
+  ownerUserId?: string | "me" | "none" | null;
+  ownerAgentId?: string | "me" | "none" | null;
   includeArchived?: boolean;
   q?: string;
 }

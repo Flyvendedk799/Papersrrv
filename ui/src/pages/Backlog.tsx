@@ -138,6 +138,9 @@ export function Backlog() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [planFilter, setPlanFilter] = useState<string | null | "all">("all");
+  const [ownerFilter, setOwnerFilter] = useState<"all" | "me" | "unowned">(
+    "all",
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   // Plans management (D1). `planEditorPlan === null` while creating;
   // set to the plan being edited when opening from the plan manager.
@@ -184,7 +187,7 @@ export function Backlog() {
     return () => window.clearTimeout(id);
   }, [search]);
 
-  const filtersKey = `${statusFilter}:${sourceFilter}:${planFilter ?? "null"}:${debouncedSearch}`;
+  const filtersKey = `${statusFilter}:${sourceFilter}:${planFilter ?? "null"}:${ownerFilter}:${debouncedSearch}`;
 
   const { data: items, isLoading, error } = useQuery({
     queryKey: queryKeys.backlog.items(selectedCompanyId ?? "", filtersKey),
@@ -198,6 +201,21 @@ export function Backlog() {
             : planFilter === null
               ? null
               : planFilter,
+        // Ownership (backlog3.0 D4). "me" resolves server-side to the
+        // current actor (user → ownerUserId, agent → ownerAgentId).
+        // "unowned" matches items with no user AND no agent owner.
+        ownerUserId:
+          ownerFilter === "me"
+            ? "me"
+            : ownerFilter === "unowned"
+              ? "none"
+              : undefined,
+        ownerAgentId:
+          ownerFilter === "me"
+            ? "me"
+            : ownerFilter === "unowned"
+              ? "none"
+              : undefined,
         q: debouncedSearch || undefined,
       }),
     enabled: !!selectedCompanyId,
@@ -678,6 +696,22 @@ export function Backlog() {
                 onClick={() => setSourceFilter(s)}
               >
                 {s}
+              </Chip>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-[0.65rem] font-mono uppercase tracking-wide text-muted-foreground">
+            Owner
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(["all", "me", "unowned"] as const).map((o) => (
+              <Chip
+                key={`owner-${o}`}
+                active={ownerFilter === o}
+                onClick={() => setOwnerFilter(o)}
+              >
+                {o}
               </Chip>
             ))}
           </div>

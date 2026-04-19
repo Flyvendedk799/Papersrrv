@@ -30,6 +30,28 @@ export function backlogRoutes(db: Db) {
   router.get("/companies/:companyId/backlog/items", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+
+    // Ownership filters (backlog3.0 D4). Resolve the sentinel "me" to the
+    // current actor at the edge so the service layer stays dumb: a user
+    // actor resolves to their userId, an agent actor resolves to their
+    // agentId. "none"/null flows through untouched and matches the
+    // unowned bucket in-service.
+    const actor = getActorInfo(req);
+    const rawOwnerUser = req.query.ownerUserId as string | undefined;
+    const rawOwnerAgent = req.query.ownerAgentId as string | undefined;
+    const ownerUserId =
+      rawOwnerUser === "me"
+        ? actor.actorType === "user"
+          ? actor.actorId
+          : "none"
+        : rawOwnerUser;
+    const ownerAgentId =
+      rawOwnerAgent === "me"
+        ? actor.actorType === "agent"
+          ? actor.actorId
+          : "none"
+        : rawOwnerAgent;
+
     const items = await svc.listItems(companyId, {
       status: req.query.status as never,
       source: req.query.source as never,
@@ -39,6 +61,8 @@ export function backlogRoutes(db: Db) {
         req.query.planId === "none"
           ? null
           : ((req.query.planId as string | undefined) || undefined),
+      ownerUserId: ownerUserId as never,
+      ownerAgentId: ownerAgentId as never,
       q: (req.query.q as string | undefined) || undefined,
       includeArchived:
         req.query.includeArchived === "true" || req.query.includeArchived === "1",
