@@ -13,6 +13,7 @@ import { ToastProvider } from "./context/ToastContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PapeeProvider } from "./context/PapeeContext";
+import { PapeeTargetRegistryProvider } from "./context/PapeeTargetRegistry";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
 
@@ -41,6 +42,7 @@ createRoot(document.getElementById("root")!).render(
             <LiveUpdatesProvider>
               <BrowserRouter>
                 <PapeeProvider>
+                <PapeeTargetRegistryProvider>
                 <TooltipProvider>
                   <BreadcrumbProvider>
                     <SidebarProvider>
@@ -52,6 +54,7 @@ createRoot(document.getElementById("root")!).render(
                     </SidebarProvider>
                   </BreadcrumbProvider>
                 </TooltipProvider>
+                </PapeeTargetRegistryProvider>
                 </PapeeProvider>
               </BrowserRouter>
             </LiveUpdatesProvider>

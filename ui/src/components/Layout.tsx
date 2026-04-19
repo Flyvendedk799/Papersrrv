@@ -11,6 +11,9 @@ import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { ToastViewport } from "./ToastViewport";
 import { PapeeOverlay } from "./papee/PapeeOverlay";
+import { PapeeHighlightOverlay } from "./papee/PapeeHighlightOverlay";
+import { PapeeUndoToast } from "./papee/PapeeUndoToast";
+import { usePapeeOptional } from "../context/PapeeContext";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
@@ -240,7 +243,39 @@ export function Layout() {
       <NewGoalDialog />
       <NewAgentDialog />
       <PapeeOverlay />
+      <PapeeHighlightOverlay />
+      <PapeeUndoToastMount />
       <ToastViewport />
     </div>
+  );
+}
+
+/**
+ * Wire the PapeeContext's undo toast state to the PapeeUndoToast
+ * component. Kept as a tiny internal shim so Layout itself doesn't
+ * need to know Papee's undo-toast shape.
+ */
+function PapeeUndoToastMount() {
+  const papee = usePapeeOptional();
+  const toast = papee?.activeUndoToast ?? null;
+  if (!toast) return null;
+  return (
+    <PapeeUndoToast
+      key={toast.id}
+      message={toast.message}
+      durationMs={toast.durationMs}
+      onUndo={async () => {
+        if (toast.onUndo) {
+          try {
+            await toast.onUndo();
+          } finally {
+            papee?.dismissUndoToast();
+          }
+        } else {
+          papee?.dismissUndoToast();
+        }
+      }}
+      onDismiss={() => papee?.dismissUndoToast()}
+    />
   );
 }

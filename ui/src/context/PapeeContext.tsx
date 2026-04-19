@@ -180,6 +180,15 @@ interface PapeeContextValue {
     timeoutMs?: number,
   ) => void;
   dismissUndoToast: () => void;
+  /** Current undo toast to render (null when no toast is active). */
+  activeUndoToast: ActiveUndoToast | null;
+}
+
+export interface ActiveUndoToast {
+  id: number;
+  message: string;
+  durationMs: number;
+  onUndo: (() => void | Promise<void>) | null;
 }
 
 export interface ChatMessage {
@@ -310,16 +319,22 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
       return [topic, ...withoutDup].slice(0, 3);
     });
   }, []);
-  // Undo-toast behavior isn't fully re-wired yet; keep a no-op pair so
-  // the tool enact flow can compile and dispatch without crashing.
+  const [activeUndoToast, setActiveUndoToast] = useState<ActiveUndoToast | null>(
+    null,
+  );
   const showUndoToast = useCallback<PapeeContextValue["showUndoToast"]>(
-    () => {
-      /* boared stub — real toast surface to be restored */
+    (message, onUndo, timeoutMs) => {
+      setActiveUndoToast({
+        id: Date.now(),
+        message,
+        durationMs: timeoutMs ?? 3000,
+        onUndo: onUndo ?? null,
+      });
     },
     [],
   );
   const dismissUndoToast = useCallback(() => {
-    /* boared stub */
+    setActiveUndoToast(null);
   }, []);
   // Mood is read from the personality hook elsewhere; we store the
   // last-known string here so consumers can read it synchronously.
@@ -474,6 +489,7 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
       setHighlightTarget,
       showUndoToast,
       dismissUndoToast,
+      activeUndoToast,
     }),
     [
       prefs,
@@ -489,6 +505,7 @@ export function PapeeProvider({ children }: { children: ReactNode }) {
       setHighlightTarget,
       showUndoToast,
       dismissUndoToast,
+      activeUndoToast,
       chatOpen,
       toggleChat,
       chatMessages,
