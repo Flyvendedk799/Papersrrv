@@ -4,6 +4,10 @@ import { APPROVAL_TYPES } from "../constants.js";
 export const createApprovalSchema = z.object({
   type: z.enum(APPROVAL_TYPES),
   requestedByAgentId: z.string().uuid().optional().nullable(),
+  // Dossier causal linkage: the comment or run that raised this
+  // approval. Populated when the caller has context.
+  requestedByCommentId: z.string().uuid().optional().nullable(),
+  requestedByRunId: z.string().uuid().optional().nullable(),
   payload: z.record(z.unknown()),
   issueIds: z.array(z.string().uuid()).optional(),
 });

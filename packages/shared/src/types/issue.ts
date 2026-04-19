@@ -77,6 +77,11 @@ export interface Issue {
   completedAt: Date | null;
   cancelledAt: Date | null;
   hiddenAt: Date | null;
+  // Causal linkage for the Dossier DAG. Set when a sub-issue is
+  // spawned from a specific comment or run. Null for issues created
+  // through normal flows or pre-dating the column.
+  createdFromCommentId?: string | null;
+  createdFromRunId?: string | null;
   labelIds?: string[];
   labels?: IssueLabel[];
   project?: Project | null;
@@ -96,6 +101,9 @@ export interface IssueComment {
   authorAgentId: string | null;
   authorUserId: string | null;
   body: string;
+  // Explicit reply target for the Dossier causal chain. Null for
+  // top-level comments.
+  replyToCommentId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

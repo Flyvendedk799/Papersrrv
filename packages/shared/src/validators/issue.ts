@@ -22,6 +22,10 @@ export const createIssueSchema = z.object({
   billingCode: z.string().optional().nullable(),
   assigneeAdapterOverrides: issueAssigneeAdapterOverridesSchema.optional().nullable(),
   labelIds: z.array(z.string().uuid()).optional(),
+  // Dossier causal linkage. Optional + nullable; writers set them
+  // when the caller knows the source.
+  createdFromCommentId: z.string().uuid().optional().nullable(),
+  createdFromRunId: z.string().uuid().optional().nullable(),
 });
 
 export type CreateIssue = z.infer<typeof createIssueSchema>;
@@ -51,6 +55,9 @@ export const addIssueCommentSchema = z.object({
   body: z.string().min(1),
   reopen: z.boolean().optional(),
   interrupt: z.boolean().optional(),
+  // Dossier causal linkage: this comment is a direct reply to an
+  // earlier comment on the same issue.
+  replyToCommentId: z.string().uuid().optional().nullable(),
 });
 
 export type AddIssueComment = z.infer<typeof addIssueCommentSchema>;

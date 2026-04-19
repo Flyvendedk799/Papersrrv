@@ -32,6 +32,12 @@ export interface HeartbeatRun {
   errorCode: string | null;
   externalRunId: string | null;
   contextSnapshot: Record<string, unknown> | null;
+  // Causal linkage for the Dossier DAG. Set when a run was spawned
+  // in response to a specific comment or activity. Null for runs
+  // started by timers, assignment flows, or anything without a
+  // single identifiable trigger.
+  triggeredByCommentId?: string | null;
+  triggeredByActivityId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

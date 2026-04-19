@@ -6,6 +6,10 @@ export interface Approval {
   type: ApprovalType;
   requestedByAgentId: string | null;
   requestedByUserId: string | null;
+  // Causal linkage for the Dossier DAG. Set when an approval was
+  // raised in response to a specific comment or run.
+  requestedByCommentId?: string | null;
+  requestedByRunId?: string | null;
   status: ApprovalStatus;
   payload: Record<string, unknown>;
   decisionNote: string | null;
