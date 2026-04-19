@@ -322,6 +322,14 @@ export {
   type PullCommentInput,
   type PullReviewInput,
   type PullMergeInput,
+  planOutputSchema,
+  planOutputStepSchema,
+  issueKindSchema,
+  transferToBacklogSchema,
+  type PlanOutput,
+  type PlanOutputStep,
+  type IssueKind,
+  type TransferToBacklogInput,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";

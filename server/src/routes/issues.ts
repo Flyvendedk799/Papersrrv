@@ -8,6 +8,7 @@ import {
   checkoutIssueSchema,
   createIssueSchema,
   linkIssueApprovalSchema,
+  transferToBacklogSchema,
   updateIssueSchema,
 } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
@@ -15,6 +16,7 @@ import { validate } from "../middleware/validate.js";
 import {
   accessService,
   agentService,
+  backlogService,
   caseSynthesisService,
   goalService,
   heartbeatService,
@@ -23,6 +25,7 @@ import {
   logActivity,
   projectService,
 } from "../services/index.js";
+import { formatPlanOutput } from "../services/plan-output-formatter.js";
 import { logger } from "../middleware/logger.js";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -48,6 +51,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const synthSvc = caseSynthesisService(db);
+  const backlogSvc = backlogService(db);
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
@@ -345,6 +349,87 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
     res.json(payload);
   });
+
+  /* Planning-issue foundation (migration 0041). Transfers a
+   * completed planning issue into a backlog plan:
+   *
+   *   1. POST planOutputJson on the issue if a body is supplied
+   *      (accepts raw markdown or the structured schema; the
+   *      plan-output-formatter reshapes it before persist).
+   *   2. Call backlog service's transferIssueToBacklog, which
+   *      creates the plan + marks the issue done + stamps
+   *      transferred_to_backlog_at. Idempotent — retries return
+   *      the existing plan without creating duplicates.
+   *   3. Return { plan, alreadyExisted }. */
+  router.post(
+    "/issues/:id/transfer-to-backlog",
+    validate(transferToBacklogSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const issue = await svc.getById(id);
+      if (!issue) {
+        res.status(404).json({ error: "Issue not found" });
+        return;
+      }
+      assertCompanyAccess(req, issue.companyId);
+      if (issue.kind !== "planning") {
+        res.status(422).json({
+          error: "Only planning-kind issues can be transferred to the backlog",
+        });
+        return;
+      }
+
+      // Accept an optional `planOutput` in the body — allows the UI
+      // to push a finalised plan and transfer in one call. If
+      // present, we format + persist it onto the issue before the
+      // transfer service reads it.
+      const rawPlan = (req.body as { planOutput?: unknown })?.planOutput;
+      if (rawPlan !== undefined && rawPlan !== null) {
+        const formatted = formatPlanOutput(rawPlan);
+        if (!formatted) {
+          res.status(422).json({
+            error: "planOutput did not parse into the enforced PlanOutput schema",
+          });
+          return;
+        }
+        await svc.update(id, { planOutputJson: formatted });
+      } else if (!issue.planOutputJson) {
+        res.status(422).json({
+          error: "Planning issue has no finalised plan output yet. Attach one in the body as `planOutput`.",
+        });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      const result = await backlogSvc.transferIssueToBacklog(
+        issue.companyId,
+        issue.id,
+        {
+          title: req.body.title,
+          planKind: req.body.planKind,
+          seedItems: req.body.seedItems === true,
+        },
+        {
+          userId: actor.actorType === "user" ? actor.actorId : null,
+          agentId: actor.agentId,
+        },
+      );
+      if (!result.alreadyExisted) {
+        await logActivity(db, {
+          companyId: issue.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "issue.transferred_to_backlog",
+          entityType: "issue",
+          entityId: issue.id,
+          details: { backlogPlanId: result.plan.id },
+        });
+      }
+      res.status(result.alreadyExisted ? 200 : 201).json(result);
+    },
+  );
 
   router.post("/issues/:id/read", async (req, res) => {
     const id = req.params.id as string;

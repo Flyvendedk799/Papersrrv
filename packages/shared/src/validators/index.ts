@@ -153,3 +153,13 @@ export {
   type PullReviewInput,
   type PullMergeInput,
 } from "./github.js";
+export {
+  planOutputSchema,
+  planOutputStepSchema,
+  issueKindSchema,
+  transferToBacklogSchema,
+  type PlanOutput,
+  type PlanOutputStep,
+  type IssueKind,
+  type TransferToBacklogInput,
+} from "./planning.js";

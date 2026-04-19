@@ -78,6 +78,10 @@ export interface BacklogPlan {
   rank: string;
   createdByUserId: string | null;
   createdByAgentId: string | null;
+  /** Back-reference to a planning-kind issue when this plan was
+   * created via POST /issues/:id/transfer-to-backlog. Null for
+   * hand-authored plans. Migration 0041. */
+  sourceIssueId: string | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;

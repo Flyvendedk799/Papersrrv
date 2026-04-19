@@ -174,6 +174,13 @@ export function NewIssueDialog() {
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("");
+  /* Planning-issue foundation (migration 0041). Two modes:
+   *   "issue"    — normal task. Agents do the work, case resolves
+   *               via delivery.
+   *   "planning" — investigation. Agents research + delegate, then
+   *               converge on a structured plan that can be
+   *               transferred into the backlog. */
+  const [kind, setKind] = useState<"issue" | "planning">("issue");
   const [assigneeId, setAssigneeId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [assigneeOptionsOpen, setAssigneeOptionsOpen] = useState(false);
@@ -434,6 +441,7 @@ export function NewIssueDialog() {
       description: description.trim() || undefined,
       status,
       priority: priority || "medium",
+      kind,
       ...(assigneeId ? { assigneeAgentId: assigneeId } : {}),
       ...(projectId ? { projectId } : {}),
       ...(assigneeAdapterOverrides ? { assigneeAdapterOverrides } : {}),
@@ -631,11 +639,68 @@ export function NewIssueDialog() {
           </div>
         </div>
 
+        {/* Mode selector — Task vs Plan. Planning-kind issues
+         * intentionally read differently across the app (PLAN stamp,
+         * plan-document rendering, transfer-to-backlog). Chosen at
+         * creation; can't be changed after the fact in this pass. */}
+        <div className="px-4 pt-4 pb-2 shrink-0">
+          <div
+            role="radiogroup"
+            aria-label="Issue mode"
+            className="grid grid-cols-2 gap-2"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={kind === "issue"}
+              onClick={() => setKind("issue")}
+              className={`text-left px-3 py-2 border transition-colors ${
+                kind === "issue"
+                  ? "border-[var(--boared-ink)] bg-[var(--boared-paper-2)]"
+                  : "border-[var(--boared-rule)] hover:border-[var(--boared-ink-soft)]"
+              }`}
+            >
+              <div className="font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)]">
+                Task
+              </div>
+              <div className="font-serif italic text-[0.88rem] text-[var(--boared-ink)]">
+                Do the work
+              </div>
+              <div className="mt-0.5 text-[0.72rem] text-[var(--boared-ink-soft)]">
+                Normal issue. Agents execute and deliver.
+              </div>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={kind === "planning"}
+              onClick={() => setKind("planning")}
+              className={`text-left px-3 py-2 border transition-colors ${
+                kind === "planning"
+                  ? "border-[var(--boared-acid)] bg-[var(--boared-acid)]/[0.04]"
+                  : "border-[var(--boared-rule)] hover:border-[var(--boared-ink-soft)]"
+              }`}
+            >
+              <div className="font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-acid)]">
+                Plan
+              </div>
+              <div className="font-serif italic text-[0.88rem] text-[var(--boared-ink)]">
+                Investigate first
+              </div>
+              <div className="mt-0.5 text-[0.72rem] text-[var(--boared-ink-soft)]">
+                Agents research + delegate, then converge on a plan you can transfer to Backlog.
+              </div>
+            </button>
+          </div>
+        </div>
+
         {/* Title */}
         <div className="px-4 pt-4 pb-2 shrink-0">
           <textarea
             className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50"
-            placeholder="Issue title"
+            placeholder={
+              kind === "planning" ? "What should we figure out?" : "Issue title"
+            }
             rows={1}
             value={title}
             onChange={(e) => {

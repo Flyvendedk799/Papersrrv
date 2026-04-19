@@ -37,6 +37,13 @@ export const backlogPlans = pgTable(
     rank: text("rank").notNull().default(""),
     createdByUserId: text("created_by_user_id"),
     createdByAgentId: uuid("created_by_agent_id"),
+    /* Migration 0041 — planning-issue foundation. When a backlog plan
+     * is created via "Save as Backlog Plan" from a completed
+     * planning issue, this stores the source issue id. Lets the
+     * Backlog page surface plans-from-issues distinctly, and blocks
+     * duplicate creation on retry. No-FK on write side because
+     * issues may be deleted independently; readers tolerate null. */
+    sourceIssueId: uuid("source_issue_id"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -45,6 +52,7 @@ export const backlogPlans = pgTable(
     companyIdx: index("backlog_plans_company_idx").on(table.companyId),
     companyStatusIdx: index("backlog_plans_company_status_idx").on(table.companyId, table.status),
     companyTitleUq: unique("backlog_plans_company_title_uq").on(table.companyId, table.title),
+    sourceIssueIdx: index("backlog_plans_source_issue_idx").on(table.sourceIssueId),
   }),
 );
 

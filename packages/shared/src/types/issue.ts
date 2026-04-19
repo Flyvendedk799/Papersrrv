@@ -1,6 +1,7 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
 import type { Goal } from "./goal.js";
 import type { Project, ProjectWorkspace } from "./project.js";
+import type { IssueKind, PlanOutput } from "../validators/planning.js";
 
 export interface IssueAncestorProject {
   id: string;
@@ -77,6 +78,15 @@ export interface Issue {
   completedAt: Date | null;
   cancelledAt: Date | null;
   hiddenAt: Date | null;
+  // Planning-issue foundation (migration 0041). `kind="planning"`
+  // marks an investigation-produces-a-plan issue; such issues
+  // converge to a structured `planOutputJson` payload (validated
+  // by the PlanOutput Zod schema) and can be transferred into
+  // backlog_plans via POST /issues/:id/transfer-to-backlog — which
+  // stamps transferredToBacklogAt so retries are idempotent.
+  kind: IssueKind;
+  planOutputJson?: PlanOutput | null;
+  transferredToBacklogAt?: Date | null;
   // Causal linkage for the Dossier DAG. Set when a sub-issue is
   // spawned from a specific comment or run. Null for issues created
   // through normal flows or pre-dating the column.

@@ -19,10 +19,12 @@ import {
   backlogItems,
   backlogPlans,
   issueComments,
+  issues,
   type BacklogItemCommentRow,
   type BacklogItemRow,
   type BacklogPlanRow,
 } from "@paperclipai/db";
+import { planOutputSchema, type PlanOutput } from "@paperclipai/shared";
 import { issueService } from "./issues.js";
 import type {
   BacklogBulkAction,
@@ -116,6 +118,33 @@ function itemToApi(row: BacklogItemRow): BacklogItem {
   };
 }
 
+/** Render a planning-issue's `PlanOutput` into a markdown-ish
+ * description body for `backlog_plans.description`. Human-readable,
+ * renders cleanly in the plan detail UI. */
+function renderPlanDescription(plan: PlanOutput): string {
+  const lines: string[] = [];
+  lines.push(`## Summary\n${plan.summary}`);
+  lines.push(`\n## Context\n${plan.context}`);
+  lines.push(`\n## Proposed steps`);
+  plan.proposedSteps.forEach((step, i) => {
+    const owner = step.owner ? ` — _${step.owner}_` : "";
+    lines.push(`\n**${i + 1}. ${step.title}**${owner}\n${step.detail}`);
+  });
+  if (plan.risks && plan.risks.length > 0) {
+    lines.push(`\n## Risks`);
+    for (const r of plan.risks) lines.push(`- ${r}`);
+  }
+  if (plan.openQuestions && plan.openQuestions.length > 0) {
+    lines.push(`\n## Open questions`);
+    for (const q of plan.openQuestions) lines.push(`- [ ] ${q}`);
+  }
+  if (plan.delegations && plan.delegations.length > 0) {
+    lines.push(`\n## Suggested owners`);
+    for (const d of plan.delegations) lines.push(`- **${d.agent}** — ${d.task}`);
+  }
+  return lines.join("\n");
+}
+
 function planToApi(row: BacklogPlanRow): BacklogPlan {
   return {
     id: row.id,
@@ -131,6 +160,7 @@ function planToApi(row: BacklogPlanRow): BacklogPlan {
     rank: row.rank,
     createdByUserId: row.createdByUserId,
     createdByAgentId: row.createdByAgentId,
+    sourceIssueId: row.sourceIssueId ?? null,
     archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -1322,6 +1352,141 @@ export function backlogService(db: Db) {
         .returning()
         .then((rs) => rs[0]);
       return planToApi(inserted);
+    },
+
+    /** Create a backlog plan from a completed planning-kind issue.
+     * Idempotent: a second call for the same source issue returns
+     * the existing plan rather than creating a duplicate.
+     *
+     * Side effects on the issue (when a new plan is created):
+     *   · issues.transferred_to_backlog_at ← now
+     *   · issues.status → done (if not already done/cancelled)
+     *   · issues.completedAt ← now (if not already set)
+     *
+     * Caller is responsible for ensuring the issue has a validated
+     * planOutputJson before invoking this method. */
+    async transferIssueToBacklog(
+      companyId: string,
+      issueId: string,
+      opts: {
+        title?: string;
+        planKind?: BacklogPlanKind;
+        seedItems?: boolean;
+      },
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<{ plan: BacklogPlan; alreadyExisted: boolean }> {
+      // Idempotency — if a plan already points at this issue, return
+      // it untouched. Guarantees the "Save as Backlog Plan" button
+      // can be retried safely.
+      const existing = await db
+        .select()
+        .from(backlogPlans)
+        .where(
+          and(
+            eq(backlogPlans.companyId, companyId),
+            eq(backlogPlans.sourceIssueId, issueId),
+          ),
+        )
+        .then((rs) => rs[0]);
+      if (existing) {
+        return { plan: planToApi(existing), alreadyExisted: true };
+      }
+
+      // Read the source issue and its stored plan output.
+      const [issueRow] = await db
+        .select({
+          id: issues.id,
+          companyId: issues.companyId,
+          title: issues.title,
+          description: issues.description,
+          status: issues.status,
+          kind: issues.kind,
+          projectId: issues.projectId,
+          goalId: issues.goalId,
+          planOutputJson: issues.planOutputJson,
+          completedAt: issues.completedAt,
+          transferredToBacklogAt: issues.transferredToBacklogAt,
+        })
+        .from(issues)
+        .where(eq(issues.id, issueId))
+        .limit(1);
+      if (!issueRow) throw notFound("Issue not found");
+      if (issueRow.companyId !== companyId) throw notFound("Issue not found");
+      if (issueRow.kind !== "planning") {
+        throw unprocessable("Only planning-kind issues can be transferred to the backlog");
+      }
+      if (!issueRow.planOutputJson) {
+        throw unprocessable("Planning issue has no finalised plan output yet");
+      }
+      const validated = planOutputSchema.safeParse(issueRow.planOutputJson);
+      if (!validated.success) {
+        throw unprocessable("Stored plan output does not match the enforced PlanOutput schema");
+      }
+      const plan = validated.data;
+
+      const now = new Date();
+      const planTitle = normalizeTitle(opts.title ?? issueRow.title ?? "Untitled plan");
+      const kind = assertPlanKind(opts.planKind) ?? "custom";
+      const description = renderPlanDescription(plan);
+
+      // Insert the backlog plan with the back-reference.
+      const [inserted] = await db
+        .insert(backlogPlans)
+        .values({
+          companyId,
+          title: planTitle,
+          description,
+          kind,
+          status: "active",
+          projectId: issueRow.projectId ?? null,
+          goalId: issueRow.goalId ?? null,
+          rank: "",
+          createdByUserId: actor.userId,
+          createdByAgentId: actor.agentId,
+          sourceIssueId: issueId,
+        })
+        .returning();
+
+      // Optional: seed backlog items from the plan's proposed steps.
+      // Uses the issue as the source-ref so each item links back to
+      // the planning case that authored it.
+      if (opts.seedItems) {
+        const steps: PlanOutput["proposedSteps"] = plan.proposedSteps;
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          await db.insert(backlogItems).values({
+            companyId,
+            planId: inserted.id,
+            title: step.title.slice(0, 120),
+            body: step.detail,
+            rank: String(i).padStart(5, "0"),
+            status: "idea",
+            source: "issue",
+            sourceRef: {
+              type: "issue",
+              id: issueId,
+              identifier: issueRow.title,
+              origin: "plan-transfer",
+            },
+            authorUserId: actor.userId,
+            authorAgentId: actor.agentId,
+          });
+        }
+      }
+
+      // Mark the source issue: done + transferred. Idempotent — if
+      // already done/cancelled we only stamp transferredToBacklogAt.
+      const issuePatch: Partial<typeof issues.$inferInsert> = {
+        transferredToBacklogAt: now,
+        updatedAt: now,
+      };
+      if (issueRow.status !== "done" && issueRow.status !== "cancelled") {
+        issuePatch.status = "done";
+        if (!issueRow.completedAt) issuePatch.completedAt = now;
+      }
+      await db.update(issues).set(issuePatch).where(eq(issues.id, issueId));
+
+      return { plan: planToApi(inserted), alreadyExisted: false };
     },
 
     async updatePlan(

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from "../constants.js";
+import { issueKindSchema, planOutputSchema } from "./planning.js";
 
 export const issueAssigneeAdapterOverridesSchema = z
   .object({
@@ -26,6 +27,12 @@ export const createIssueSchema = z.object({
   // when the caller knows the source.
   createdFromCommentId: z.string().uuid().optional().nullable(),
   createdFromRunId: z.string().uuid().optional().nullable(),
+  // Planning-issue foundation (migration 0041). kind is chosen at
+  // creation via the create-issue dialog's mode selector; defaults
+  // to "issue". planOutputJson / transferredToBacklogAt are set by
+  // the transfer endpoint, not by the creator.
+  kind: issueKindSchema.optional().default("issue"),
+  planOutputJson: planOutputSchema.optional().nullable(),
 });
 
 export type CreateIssue = z.infer<typeof createIssueSchema>;

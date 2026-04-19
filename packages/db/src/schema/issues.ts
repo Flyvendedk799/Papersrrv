@@ -52,6 +52,16 @@ export const issues = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    /* Planning-issue foundation (migration 0041). kind='planning'
+     * issues are investigations that produce a structured plan
+     * rather than doing work directly. Shape of planOutputJson is
+     * enforced by the PlanOutput Zod schema in @paperclipai/shared;
+     * kept `unknown` at the db layer to keep shared types decoupled.
+     * transferredToBacklogAt is set by the "Save as Backlog Plan"
+     * endpoint and also gates duplicate backlog_plan creation. */
+    kind: text("kind").notNull().default("issue"),
+    planOutputJson: jsonb("plan_output_json").$type<unknown>(),
+    transferredToBacklogAt: timestamp("transferred_to_backlog_at", { withTimezone: true }),
     /* Case-file synthesis cache. Populated by the synthesis endpoint
      * on demand and invalidated by a hash mismatch on inputs. Shape
      * is `SynthesisPayload` from server/src/services/case-synthesis
@@ -79,5 +89,6 @@ export const issues = pgTable(
     projectIdx: index("issues_company_project_idx").on(table.companyId, table.projectId),
     projectStatusIdx: index("issues_company_project_status_idx").on(table.companyId, table.projectId, table.status),
     identifierIdx: uniqueIndex("issues_identifier_idx").on(table.identifier),
+    companyKindIdx: index("issues_company_kind_idx").on(table.companyId, table.kind),
   }),
 );

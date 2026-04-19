@@ -288,6 +288,13 @@
       "when": 1776597766268,
       "tag": "0040_case_synthesis_cache",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1776597766269,
+      "tag": "0041_planning_issues",
+      "breakpoints": true
     }
   ]
 }

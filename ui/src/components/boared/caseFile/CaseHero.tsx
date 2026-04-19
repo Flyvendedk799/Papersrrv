@@ -78,14 +78,31 @@ export function CaseHero({ issue, hasLiveRuns, onUpdate, className }: Props) {
             </span>
           </div>
           <div className="font-mono text-[0.52rem] uppercase tracking-[0.22em] text-[var(--boared-ink-faint)]">
-            Case file · Paperclip register
+            {issue.kind === "planning" ? "Planning case · Paperclip register" : "Case file · Paperclip register"}
           </div>
         </div>
-        <CaseStamp
-          status={issue.status}
-          liveNow={hasLiveRuns}
-          className="shrink-0 mt-1"
-        />
+        <div className="flex items-start gap-2 shrink-0">
+          {/* PLAN ribbon — appears ONLY for planning-kind issues.
+           * Sits next to the status stamp so the reader sees both
+           * "this is a plan" AND "here's its state" at a glance. */}
+          {issue.kind === "planning" && (
+            <div
+              aria-hidden="true"
+              className="inline-flex items-center justify-center select-none pointer-events-none rotate-[-4deg] origin-center border-[3px] px-3 py-1 font-serif italic uppercase tracking-[0.22em] text-[1rem] leading-none opacity-80 border-[var(--boared-acid)] text-[var(--boared-acid)] mt-1"
+              style={{
+                borderStyle: "double",
+                boxShadow: "inset 0 0 0 1px currentColor",
+              }}
+            >
+              Plan
+            </div>
+          )}
+          <CaseStamp
+            status={issue.status}
+            liveNow={hasLiveRuns}
+            className="mt-1"
+          />
+        </div>
       </div>
 
       {/* Title — the statement */}

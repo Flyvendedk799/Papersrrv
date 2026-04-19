@@ -702,6 +702,40 @@ export function IssueDetail() {
     },
   });
 
+  /* Planning-issue foundation. When a planning-kind issue has
+   * converged on a plan, the user presses "Save as Backlog Plan" —
+   * the server reformats the plan output against the enforced
+   * PlanOutput schema, creates a backlog_plan row linked back to
+   * this issue, and marks the issue done + transferred. Idempotent
+   * on the server; retries are safe. */
+  const transferToBacklog = useMutation({
+    mutationFn: () => issuesApi.transferToBacklog(issueId!),
+    onSuccess: (result) => {
+      pushToast({
+        tone: result.alreadyExisted ? "info" : "success",
+        title: result.alreadyExisted
+          ? "This plan was already in the backlog"
+          : "Plan saved to Backlog",
+      });
+      invalidateIssue();
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.backlog.plans(selectedCompanyId),
+        });
+      }
+      navigate(`/backlog?plan=${result.plan.id}`);
+    },
+    onError: (err) => {
+      pushToast({
+        tone: "error",
+        title:
+          err instanceof Error && err.message
+            ? `Couldn't save plan — ${err.message}`
+            : "Couldn't save plan to Backlog",
+      });
+    },
+  });
+
   const moveToBacklog = useMutation({
     mutationFn: () => backlogApi.fromIssue(selectedCompanyId!, issueId!),
     onSuccess: (result) => {
@@ -1406,6 +1440,30 @@ export function IssueDetail() {
             onOpenProperties={() => setMobilePropsOpen(true)}
             primaryActions={
               <>
+                {/* Planning-kind primary action: prominent CTA to
+                 * finalise the plan into the backlog. Only shown
+                 * when the plan hasn't already been transferred. */}
+                {issue.kind === "planning" && !issue.transferredToBacklogAt && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={transferToBacklog.isPending}
+                    onClick={() => transferToBacklog.mutate()}
+                    className="w-full justify-start font-mono text-[0.66rem] uppercase tracking-[0.1em] border-[var(--boared-acid)]/70 text-[var(--boared-acid)] hover:bg-[var(--boared-acid)]/[0.08]"
+                  >
+                    <Inbox className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                    {transferToBacklog.isPending
+                      ? "Saving…"
+                      : "Save plan to Backlog"}
+                  </Button>
+                )}
+                {issue.kind === "planning" && issue.transferredToBacklogAt && (
+                  <div className="w-full inline-flex items-center gap-1.5 px-2 py-1.5 font-mono text-[0.56rem] uppercase tracking-[0.16em] text-[var(--boared-success)] border border-[var(--boared-success)]/40 bg-[var(--boared-success)]/[0.04]">
+                    <Inbox className="h-3.5 w-3.5" aria-hidden="true" />
+                    Plan in Backlog ·{" "}
+                    {relativeTime(issue.transferredToBacklogAt as unknown as string)}
+                  </div>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

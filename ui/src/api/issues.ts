@@ -118,6 +118,22 @@ export const issuesApi = {
     return api.postForm<IssueAttachment>(`/companies/${companyId}/issues/${issueId}/attachments`, form);
   },
   deleteAttachment: (id: string) => api.delete<{ ok: true }>(`/attachments/${id}`),
+  /** Planning-issue foundation (migration 0041). Transfers a completed
+   * planning-kind issue into a backlog plan. Idempotent — a second
+   * call returns the existing plan. */
+  transferToBacklog: (
+    id: string,
+    body: {
+      title?: string;
+      planKind?: "sprint" | "milestone" | "roadmap" | "custom";
+      seedItems?: boolean;
+      planOutput?: unknown;
+    } = {},
+  ) =>
+    api.post<{
+      plan: { id: string; title: string; sourceIssueId: string | null };
+      alreadyExisted: boolean;
+    }>(`/issues/${id}/transfer-to-backlog`, body),
   listApprovals: (id: string) => api.get<Approval[]>(`/issues/${id}/approvals`),
   linkApproval: (id: string, approvalId: string) =>
     api.post<Approval[]>(`/issues/${id}/approvals`, { approvalId }),
