@@ -833,9 +833,31 @@ export function IssueDetail() {
           dateline={relativeTime(issue.updatedAt) + (hasLiveRuns ? " · live" : "")}
         />
 
-        {/* Hero: 3D scene + Case Companion. IssueSceneBlock reads graph/
-            narrative/chapters/tour from the IssueDetailShell provider. */}
-        <IssueSceneBlockHost />
+        {/* Optional 3D case view. The 2D IssueCaseMap below is the
+            canonical structure; the scene is an immersive read of the
+            same graph, kept collapsed by default so the page makes
+            sense at a glance. */}
+        <Collapsible defaultOpen={false} className="group space-y-2">
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-2 rounded-md border border-dashed border-border bg-muted/25 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+            >
+              <div className="min-w-0">
+                <div className="boared-label text-[0.58rem] uppercase tracking-[0.18em] text-muted-foreground">
+                  3D case view
+                </div>
+                <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
+                  Optional. Orbit, particles, and lenses — use when you want an immersive read of the same graph.
+                </p>
+              </div>
+              <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <IssueSceneBlockHost />
+          </CollapsibleContent>
+        </Collapsible>
       </div>
 
       {/* ── Case-file stack ── keeps the original narrow column width ── */}
@@ -1076,6 +1098,17 @@ export function IssueDetail() {
           comments={comments}
           linkedRuns={linkedRuns}
           agentMap={agentMap}
+          onFocusTab={(tab) => {
+            const anchor =
+              tab === "comments"
+                ? "chapter-correspondence"
+                : tab === "subissues"
+                  ? "chapter-subtasks"
+                  : "chapter-work";
+            document
+              .getElementById(anchor)
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
         />
 
         <InlineEditor
