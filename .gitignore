@@ -40,6 +40,8 @@ tmp/
 
 # Log files
 *.log
+logs/*.err
+logs/*.out
 
 # Workspace config (generated in Dockerfile, keeps Railway from detecting monorepo)
 pnpm-workspace.yaml
