@@ -54,6 +54,9 @@ type Phase = "ancestors" | "anchor" | "subissues" | "motion";
 /** Narrow slice of the `narrativeFor` return that the Dossier uses.
  * Keeps the Dossier decoupled from the full scene-narrative types. */
 export interface DossierNarrative {
+  /** One-line headline (narrative.lede) — rendered as the
+   * title-card text during the auto-tour opening. */
+  lede?: string | null;
   nextAction?: {
     kind: string;
     label: string;
@@ -267,6 +270,7 @@ export function IssueDossier({
             agentMap={agentMap}
             onNodeActivate={onNodeActivate}
             onNodeFeature={onNodeFeature}
+            leadHeadline={narrative?.lede ?? null}
             className="absolute inset-0"
           />
           {/* Tour caption chyron — bottom-centre of the canvas when

@@ -1572,16 +1572,15 @@ function DossierMount(props: {
       childIssues={props.childIssues}
       linkedRuns={props.linkedRuns}
       agentMap={props.agentMap}
-      narrative={
-        data.narrative.nextAction
+      narrative={{
+        lede: data.narrative.lede ?? null,
+        nextAction: data.narrative.nextAction
           ? {
-              nextAction: {
-                kind: String(data.narrative.nextAction.kind),
-                label: data.narrative.nextAction.label,
-              },
+              kind: String(data.narrative.nextAction.kind),
+              label: data.narrative.nextAction.label,
             }
-          : null
-      }
+          : null,
+      }}
       tour={{
         status: tour.status,
         caption: tour.caption ?? null,

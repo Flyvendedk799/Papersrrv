@@ -65,6 +65,12 @@ interface Props {
    * Pass `null` when featuring should clear.
    */
   onNodeFeature?: (thoughtId: string | null) => void;
+  /**
+   * One-line headline rendered as a big title card for the first
+   * ~3 s of each auto-tour cycle ("the chapter opening"). Falls
+   * back to the issue title when null/empty.
+   */
+  leadHeadline?: string | null;
 }
 
 export interface IssueThoughtSpaceHandle {
@@ -75,7 +81,7 @@ export interface IssueThoughtSpaceHandle {
 }
 
 export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>(
-  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById, onNodeActivate, onNodeFeature }, ref) {
+  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById, onNodeActivate, onNodeFeature, leadHeadline }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -129,6 +135,12 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
    * inside the render loop; surfaced to React via tourCaption state
    * so the chyron can describe what's in view. */
   const autoTourActiveRef = useRef(false);
+  /** When did the current tour cycle start (used for title card
+   * visibility). Reset on each idle→tour transition. */
+  const tourCycleStartMsRef = useRef<number>(0);
+  /** Current ping-pong phase (0..1 always forward for display).
+   * Surfaced to React at 2 Hz so the progress bar can animate. */
+  const tourPhaseRef = useRef<number>(0);
   /** Which node the tour is currently "featuring". Separate from the
    * pointer selection so the tour doesn't fire focusOn() (camera is
    * already under tour control). */
@@ -140,6 +152,10 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
   const [hintVisible, setHintVisible] = useState(true);
   /** What the auto-tour is currently showing. Null when not touring. */
   const [tourCaption, setTourCaption] = useState<string | null>(null);
+  /** Null when not touring. 0..1 while touring (ping-pong phase). */
+  const [tourProgress, setTourProgress] = useState<number | null>(null);
+  /** True for the opening ~3 s of each tour cycle (title card). */
+  const [titleCardVisible, setTitleCardVisible] = useState(false);
 
   /* ── Thoughts memo ── */
   const thoughts = useMemo(() => {
@@ -318,19 +334,35 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
    * happens inside the render loop so it stays in sync with the
    * visible frame rate. */
   useEffect(() => {
+    const TITLE_CARD_MS = 3000;
     const id = window.setInterval(() => {
       if (selectedId) {
         if (tourCaption !== null) setTourCaption(null);
+        if (tourProgress !== null) setTourProgress(null);
+        if (titleCardVisible) setTitleCardVisible(false);
         return;
       }
       const idleMs = performance.now() - lastInteractionRef.current;
       const TOUR_IDLE_MS = 15_000;
       if (idleMs < TOUR_IDLE_MS) {
         if (tourCaption !== null) setTourCaption(null);
+        if (tourProgress !== null) setTourProgress(null);
+        if (titleCardVisible) setTitleCardVisible(false);
         return;
       }
       // Read the already-projected-in-render auto-tour state.
       if (!autoTourActiveRef.current) return;
+
+      // Title card — on for the first ~3 s of this cycle.
+      const cycleAgeMs = performance.now() - tourCycleStartMsRef.current;
+      const shouldShowTitle = cycleAgeMs < TITLE_CARD_MS;
+      if (shouldShowTitle !== titleCardVisible) setTitleCardVisible(shouldShowTitle);
+
+      // Progress bar — follows the ping-pong phase.
+      const nextProgress = tourPhaseRef.current;
+      if (tourProgress === null || Math.abs(nextProgress - tourProgress) > 0.01) {
+        setTourProgress(nextProgress);
+      }
 
       // Prefer a thought-specific caption when a node is featured —
       // that's the richest narration ("Ada wrote: …" over a generic
@@ -399,7 +431,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       if (next !== tourCaption) setTourCaption(next);
     }, 500);
     return () => window.clearInterval(id);
-  }, [selectedId, tourCaption, issue.ancestors, issue.status]);
+  }, [selectedId, tourCaption, tourProgress, titleCardVisible, issue.ancestors, issue.status]);
 
   /* ── Pointer handlers ── */
   const hitTest = useCallback((px: number, py: number) => {
@@ -497,10 +529,16 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
       const maxD = maxDepthRef.current;
       const ancN = (issue.ancestors ?? []).length;
       if (!selectedId && idleMs > TOUR_IDLE_MS && maxD >= 0 && nodesRef.current.length > 1) {
+        if (!autoTourActiveRef.current) {
+          // Transition idle → tour. Start a new cycle clock so the
+          // title card fires its opening at *this* moment.
+          tourCycleStartMsRef.current = now;
+        }
         autoTourActiveRef.current = true;
         const elapsed = idleMs - TOUR_IDLE_MS;
         const cycle = elapsed % (TOUR_SPAN_MS * 2);
         const phase = cycle < TOUR_SPAN_MS ? cycle / TOUR_SPAN_MS : 2 - cycle / TOUR_SPAN_MS;
+        tourPhaseRef.current = phase;
         // Smoothstep for gentler arrivals at each end.
         const eased = phase * phase * (3 - 2 * phase);
         const xLeft = -ancN * DAG_DEPTH_STEP - 60;
@@ -884,6 +922,34 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
           ctx.fillStyle = "#FFFFFF";
           ctx.beginPath(); ctx.arc(sx[i], sy[i], coreR * 0.35, 0, Math.PI * 2); ctx.fill();
         }
+        // 4. Convergence glyph — when multiple upstream thoughts
+        // combine into this one, render a ring with inward ticks
+        // (one per parent). Makes "thoughts joining" legible at a
+        // glance beyond the edge-brightness lift.
+        if (!isAnchor && graph) {
+          const parentCount = graph.parents.get(t.id)?.length ?? 0;
+          if (parentCount >= 2) {
+            const ringR = Math.max(8, haloR * 0.45);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.globalAlpha = alpha * 0.5 * intro * g;
+            ctx.beginPath();
+            ctx.arc(sx[i], sy[i], ringR, 0, Math.PI * 2);
+            ctx.stroke();
+            // Inward tick marks — one per parent, spaced evenly.
+            const maxTicks = Math.min(parentCount, 6);
+            for (let pn = 0; pn < maxTicks; pn++) {
+              const ang = (pn / maxTicks) * Math.PI * 2 - Math.PI / 2;
+              const cos = Math.cos(ang), sin = Math.sin(ang);
+              const r1 = ringR + 4;
+              const r2 = ringR - 1.5;
+              ctx.beginPath();
+              ctx.moveTo(sx[i] + cos * r1, sy[i] + sin * r1);
+              ctx.lineTo(sx[i] + cos * r2, sy[i] + sin * r2);
+              ctx.stroke();
+            }
+          }
+        }
       }
       ctx.globalAlpha = 1;
 
@@ -1079,14 +1145,38 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         <div className="font-mono text-[0.52rem] uppercase tracking-[0.24em] text-center">drag · scroll · click</div>
       </div>
 
+      {/* Title card — the "chapter opening" that fires at the start
+          of each auto-tour cycle. Big serif italic, holds ~3 s, then
+          fades out into the chyron below. */}
+      <div
+        className="absolute top-[18%] left-1/2 -translate-x-1/2 z-10 pointer-events-none max-w-[80%] text-center"
+        style={{
+          color: WARM,
+          opacity: titleCardVisible && !selectedId ? 1 : 0,
+          transition: "opacity 900ms ease-out",
+        }}
+      >
+        <div className="font-mono text-[0.55rem] uppercase tracking-[0.22em] mb-2" style={{ color: WARM_DIM }}>
+          {issue.identifier ?? "the matter"} · dossier
+        </div>
+        <div
+          className="font-serif italic leading-[1.1]"
+          style={{ fontSize: "clamp(1.4rem, 3.6vw, 2.4rem)" }}
+        >
+          {leadHeadline && leadHeadline.trim().length > 0
+            ? leadHeadline
+            : shortLabel(issue.title ?? "", 80)}
+        </div>
+      </div>
+
       {/* Auto-tour chyron — surfaces when the scene is self-narrating.
           Pulsing acid dot signals "camera is moving automatically,
           you can still interrupt by dragging or clicking". */}
       <div
-        className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 pointer-events-none"
+        className="absolute bottom-9 left-1/2 -translate-x-1/2 z-10 pointer-events-none"
         style={{
           color: WARM,
-          opacity: tourCaption && !selectedId ? 0.9 : 0,
+          opacity: tourCaption && !titleCardVisible && !selectedId ? 0.9 : 0,
           transition: "opacity 700ms ease-out",
         }}
       >
@@ -1102,6 +1192,28 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
             tap to stop
           </span>
         </div>
+      </div>
+
+      {/* Tour progress bar — thin line along the bottom so the
+          viewer knows the journey has a length and where they are.
+          Fills forward through the ping-pong phase; direction dot
+          on the right signals which way the camera is sweeping. */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-[3px] z-10 pointer-events-none"
+        style={{
+          opacity: tourProgress !== null && !selectedId ? 1 : 0,
+          transition: "opacity 700ms ease-out",
+          background: `linear-gradient(90deg, transparent 0%, rgba(242,230,196,0.08) 50%, transparent 100%)`,
+        }}
+      >
+        <div
+          className="h-full"
+          style={{
+            width: `${Math.max(0, Math.min(1, tourProgress ?? 0)) * 100}%`,
+            background: "linear-gradient(90deg, rgba(242,230,196,0) 0%, var(--boared-acid) 100%)",
+            transition: "width 400ms linear",
+          }}
+        />
       </div>
 
       {!selectedId && hoverInfo && (
@@ -1147,6 +1259,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     prev.agentMap === next.agentMap &&
     prev.gateById === next.gateById &&
     prev.onNodeActivate === next.onNodeActivate &&
-    prev.onNodeFeature === next.onNodeFeature
+    prev.onNodeFeature === next.onNodeFeature &&
+    prev.leadHeadline === next.leadHeadline
   );
 });
