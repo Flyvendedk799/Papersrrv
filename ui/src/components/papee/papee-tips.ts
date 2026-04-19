@@ -66,3 +66,10 @@ export function markTipShown(tipId: string): void {
     /* ignore */
   }
 }
+
+export const ISSUE_SCENE_LINES = {
+  awaitingApproval: "Waiting on you to approve this.",
+  blocked: "This issue is blocked. Someone should look.",
+  staleRun: (days: number) =>
+    `No movement in ${days} day${days === 1 ? "" : "s"}.`,
+} as const;

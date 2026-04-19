@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
@@ -26,25 +26,46 @@ import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { StatusBadge } from "../components/StatusBadge";
 import { Identity } from "../components/Identity";
-import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { IssueCaseMap } from "../components/boared/IssueCaseMap";
+import { usePapeeEnact } from "../hooks/usePapeeEnact";
+import { isFeatureEnabled } from "../lib/featureFlags";
+import { SentToBacklogIndicator } from "../components/backlog/SentToBacklogIndicator";
+import { PageHeader } from "../components/boared/PageHeader";
+import { SectionRule } from "../components/boared/Kicker";
 import { IssueScene } from "../components/issueScene/IssueScene";
-import { SceneErrorBoundary } from "../components/issueScene/SceneErrorBoundary";
+import { CaseCompanion } from "../components/issueScene/overlays/CaseCompanion";
+import { TourPlayer } from "../components/issueScene/overlays/TourPlayer";
+import { StickyMiniScene } from "../components/issueScene/overlays/StickyMiniScene";
+import { useIssueGraph } from "../components/issueScene/data/useIssueGraph";
+import { narrativeFor } from "../components/issueScene/scene/narrative";
+import { chaptersFor, type Chapter } from "../components/issueScene/data/chapters";
+import { useScrollChoreography } from "../components/issueScene/hooks/useScrollChoreography";
+import { useGuidedTour } from "../components/issueScene/hooks/useGuidedTour";
+import { ISSUE_SCENE_LINES } from "../components/papee/papee-tips";
+import { usePapeeOptional } from "../context/PapeeContext";
 import {
-  Activity as ActivityIcon,
+  SceneStateProvider,
+  useSceneActions,
+  useSceneState,
+} from "../components/issueScene/state/SceneStateContext";
+import { SubmatterRow } from "./issueDetail/rows/SubmatterRow";
+import { ActivityRow } from "./issueDetail/rows/ActivityRow";
+import { FileRow } from "./issueDetail/rows/FileRow";
+import { ApprovalRow } from "./issueDetail/rows/ApprovalRow";
+import { SceneAwareCommentThread } from "./issueDetail/rows/SceneAwareCommentThread";
+import type { MarkdownEditorRef } from "../components/MarkdownEditor";
+import {
   ChevronDown,
   ChevronRight,
   EyeOff,
   FileText,
   Hexagon,
   Inbox,
-  ListTree,
-  MessageSquare,
   MoreHorizontal,
   Paperclip,
   SlidersHorizontal,
@@ -52,12 +73,10 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { usePapeeEnact } from "../hooks/usePapeeEnact";
-import { isFeatureEnabled } from "../lib/featureFlags";
-import { SentToBacklogIndicator } from "../components/backlog/SentToBacklogIndicator";
 import { MarkdownBody } from "../components/MarkdownBody";
-import type { ActivityEvent } from "@paperclipai/shared";
+import type { ActivityEvent, Issue, IssueComment } from "@paperclipai/shared";
 import type { Agent, IssueAttachment, FileSnapshot } from "@paperclipai/shared";
+import type { RunForIssue } from "../api/activity";
 
 type CommentReassignment = {
   assigneeAgentId: string | null;
@@ -187,22 +206,22 @@ function InlineFilePreview({
   const isLoading = contentLoading || (needsRawFallback && rawLoading);
 
   return (
-    <div className="mt-2 border border-border rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border">
+    <div className="mt-2 border border-[var(--boared-rule)] overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-[var(--boared-paper-2)] border-b border-[var(--boared-rule)]">
         <div className="flex items-center gap-2 min-w-0">
           <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="text-xs font-medium truncate font-mono">{filePath}</span>
+          <span className="text-xs truncate font-mono">{filePath}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <Link
             to={`/files?file=${encodeURIComponent(filePath)}`}
-            className="text-[10px] text-blue-500 hover:text-blue-400 transition-colors px-1.5 py-0.5 rounded hover:bg-accent/20"
+            className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5"
           >
-            Open in Files
+            Open in files
           </Link>
           <button
             onClick={onClose}
-            className="p-0.5 rounded-sm hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+            className="p-0.5 hover:bg-foreground/[0.05] transition-colors text-muted-foreground hover:text-foreground"
             aria-label="Close preview"
           >
             <X className="h-3.5 w-3.5" />
@@ -240,17 +259,45 @@ export function IssueDetail() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [moreOpen, setMoreOpen] = useState(false);
   const { enact: enactPapeeTool } = usePapeeEnact();
+  const { pushToast } = useToast();
   const backlogEnabled = isFeatureEnabled("backlog_tab_enabled");
+  const [moreOpen, setMoreOpen] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
-  const [detailTab, setDetailTab] = useState("comments");
   const [secondaryOpen, setSecondaryOpen] = useState({
     approvals: false,
     cost: false,
   });
+
+  // Listen for Companion-dispatched events so the Next-Action CTA can
+  // open the approvals collapsible and focus the comment composer.
+  const composerEditorRef = useRef<MarkdownEditorRef | null>(null);
+  useEffect(() => {
+    const expand = () =>
+      setSecondaryOpen((prev) => ({ ...prev, approvals: true }));
+    const focusComposer = () => composerEditorRef.current?.focus();
+    window.addEventListener("paperclip:expand-approvals", expand);
+    window.addEventListener("paperclip:focus-composer", focusComposer);
+    return () => {
+      window.removeEventListener("paperclip:expand-approvals", expand);
+      window.removeEventListener("paperclip:focus-composer", focusComposer);
+    };
+  }, []);
+
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [viewingFile, setViewingFile] = useState<{path: string; hash: string | null} | null>(null);
+  // Cap how many comments mount to the DOM at once so giant issues
+  // (hundreds of comments, each with a markdown body) stop choking
+  // React's reconciliation loop. Default to the most recent 50 with
+  // a "load older" button to opt into the rest.
+  const COMMENTS_INITIAL_LIMIT = 50;
+  const [commentLimit, setCommentLimit] = useState<number>(COMMENTS_INITIAL_LIMIT);
+  // Reset the visible window when navigating between issues so a
+  // new issue starts at the most-recent slice instead of inheriting
+  // the previous issue's expanded state.
+  useEffect(() => {
+    setCommentLimit(COMMENTS_INITIAL_LIMIT);
+  }, [issueId]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastMarkedReadIssueIdRef = useRef<string | null>(null);
 
@@ -462,6 +509,65 @@ export function IssueDetail() {
     });
   }, [activity, comments, linkedRuns]);
 
+  // Total comments and the visible window (most recent N).
+  const commentsTotal = commentsWithRunMeta.length;
+  const visibleComments = useMemo(() => {
+    if (commentsTotal <= commentLimit) return commentsWithRunMeta;
+    return commentsWithRunMeta.slice(commentsTotal - commentLimit);
+  }, [commentsWithRunMeta, commentsTotal, commentLimit]);
+  const hiddenCommentCount = commentsTotal - visibleComments.length;
+
+  /* Scene graph — same memoised instance the IssueDetailShell and
+   * IssueScene use. We call it here so the below-fold row components
+   * can match their items to the corresponding 3D nodes (colored dot,
+   * hover halo, camera fly on click). useIssueGraph is content-sig
+   * memoised; calling it multiple times with identical inputs returns
+   * the same object. */
+  const sceneGraphForRows = useIssueGraph({
+    issue: issue ?? ({} as Issue),
+    comments,
+    activity,
+    childIssues,
+    linkedRuns,
+    agentMap,
+    linkedApprovals,
+  });
+
+  /* Lookup maps used by SubmatterRow / ActivityRow / FileRow /
+   * ApprovalRow / CommentThread adornment to find the matching scene
+   * node for a below-fold row's id. */
+  const rowLookups = useMemo(() => {
+    const descByIssueId = new Map<string, (typeof sceneGraphForRows.descendants)[number]>();
+    for (const d of sceneGraphForRows.descendants) {
+      // DescendantNode.id is the child issue id for direct children;
+      // for mention-derived descendants it's `mention:XXX-NN` which
+      // wouldn't match a real child issue, so those rows just fall
+      // back to the un-adorned view.
+      descByIssueId.set(d.id, d);
+    }
+    const runByRunId = new Map<string, (typeof sceneGraphForRows.runs)[number]>();
+    for (const r of sceneGraphForRows.runs) runByRunId.set(r.runId, r);
+    const eventByEventId = new Map<string, (typeof sceneGraphForRows.events)[number]>();
+    for (const e of sceneGraphForRows.events) eventByEventId.set(e.id, e);
+    const approvalByApprovalId = new Map<
+      string,
+      (typeof sceneGraphForRows.approvals)[number]
+    >();
+    for (const a of sceneGraphForRows.approvals) approvalByApprovalId.set(a.id, a);
+    const commentByCommentId = new Map<
+      string,
+      (typeof sceneGraphForRows.comments)[number]
+    >();
+    for (const c of sceneGraphForRows.comments) commentByCommentId.set(c.id, c);
+    return {
+      descByIssueId,
+      runByRunId,
+      eventByEventId,
+      approvalByApprovalId,
+      commentByCommentId,
+    };
+  }, [sceneGraphForRows]);
+
   const issueCostSummary = useMemo(() => {
     let input = 0;
     let output = 0;
@@ -548,14 +654,6 @@ export function IssueDetail() {
     },
   });
 
-  const { pushToast } = useToast();
-
-  /**
-   * Reverse flow: move this Issue into the Backlog (backlog3.0 C4).
-   * The Issue is preserved and status is flipped to `backlog`; a
-   * linked backlog item is created/reused so lineage survives the
-   * round-trip.
-   */
   const moveToBacklog = useMutation({
     mutationFn: () => backlogApi.fromIssue(selectedCompanyId!, issueId!),
     onSuccess: (result) => {
@@ -692,8 +790,8 @@ export function IssueDetail() {
     return () => closePanel();
   }, [issue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (isLoading) return <p className="font-mono text-[0.72rem] text-muted-foreground">Loading...</p>;
+  if (error) return <p className="font-mono text-[0.72rem] text-destructive">{error.message}</p>;
   if (!issue) return null;
 
   // Ancestors are returned oldest-first from the server (root at end, immediate parent at start)
@@ -711,16 +809,50 @@ export function IssueDetail() {
   const isImageAttachment = (attachment: IssueAttachment) => attachment.contentType.startsWith("image/");
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <IssueDetailShell
+      issue={issue}
+      comments={comments}
+      activity={activity}
+      childIssues={childIssues}
+      linkedRuns={linkedRuns}
+      agentMap={agentMap}
+      linkedApprovals={linkedApprovals}
+    >
+      {/* ── Hero row ── wider column for scene + Companion side-by-side ── */}
+      <div id="chapter-overview" className="max-w-6xl scroll-mt-8">
+        <PageHeader
+          kicker={<>§ {issue.identifier ?? issue.id.slice(0, 8)}</>}
+          title={
+            <InlineEditor
+              value={issue.title}
+              onSave={(title) => updateIssue.mutate({ title })}
+              as="span"
+              className="boared-display text-[clamp(2.25rem,5vw,3.75rem)] leading-[0.95] text-foreground"
+            />
+          }
+          dateline={relativeTime(issue.updatedAt) + (hasLiveRuns ? " · live" : "")}
+        />
+
+        {/* Hero: 3D scene + Case Companion. IssueSceneBlock reads graph/
+            narrative/chapters/tour from the IssueDetailShell provider. */}
+        <IssueSceneBlockHost />
+      </div>
+
+      {/* ── Case-file stack ── keeps the original narrow column width ── */}
+      <div className="max-w-3xl space-y-6">
+
       {/* Parent chain breadcrumb */}
       {ancestors.length > 0 && (
-        <nav className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
+        <nav
+          id="chapter-lineage"
+          className="flex items-center gap-1 font-mono text-[0.66rem] uppercase tracking-[0.06em] text-muted-foreground flex-wrap scroll-mt-8"
+        >
           {[...ancestors].reverse().map((ancestor, i) => (
             <span key={ancestor.id} className="flex items-center gap-1">
               {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
               <Link
                 to={`/issues/${ancestor.identifier ?? ancestor.id}`}
-                className="hover:text-foreground transition-colors truncate max-w-[200px]"
+                className="hover:text-foreground transition-colors truncate max-w-[200px] no-underline text-inherit"
                 title={ancestor.title}
               >
                 {ancestor.title}
@@ -733,14 +865,14 @@ export function IssueDetail() {
       )}
 
       {issue.hiddenAt && (
-        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        <div className="flex items-center gap-2 border border-destructive px-3 py-2 font-mono text-[0.72rem] text-destructive">
           <EyeOff className="h-4 w-4 shrink-0" />
           This issue is hidden
         </div>
       )}
 
       <div className="space-y-3">
-        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0 flex-wrap">
           <StatusIcon
             status={issue.status}
             onChange={(status) => updateIssue.mutate({ status })}
@@ -749,13 +881,12 @@ export function IssueDetail() {
             priority={issue.priority}
             onChange={(priority) => updateIssue.mutate({ priority })}
           />
-          <span className="text-sm font-mono text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
 
           {hasLiveRuns && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-600 dark:text-cyan-400 shrink-0">
+            <span className="inline-flex items-center gap-1.5 px-1.5 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[var(--boared-acid)] shrink-0">
               <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+                <span className="animate-ping absolute inline-flex h-full w-full bg-[var(--boared-acid)] opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 bg-[var(--boared-acid)]" />
               </span>
               Live
             </span>
@@ -764,35 +895,31 @@ export function IssueDetail() {
           {issue.projectId ? (
             <Link
               to={`/projects/${issue.projectId}`}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 -mx-1 py-0.5 min-w-0"
+              className="inline-flex items-center gap-1 font-mono text-[0.66rem] uppercase tracking-[0.06em] text-muted-foreground hover:text-foreground transition-colors min-w-0 no-underline"
             >
               <Hexagon className="h-3 w-3 shrink-0" />
               <span className="truncate">{(projects ?? []).find((p) => p.id === issue.projectId)?.name ?? issue.projectId.slice(0, 8)}</span>
             </Link>
           ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-50 px-1 -mx-1 py-0.5">
+            <span className="inline-flex items-center gap-1 font-mono text-[0.66rem] uppercase tracking-[0.06em] text-muted-foreground opacity-50">
               <Hexagon className="h-3 w-3 shrink-0" />
               No project
             </span>
           )}
 
           {(issue.labels ?? []).length > 0 && (
-            <div className="hidden sm:flex items-center gap-1">
+            <div className="hidden sm:flex items-center gap-2">
               {(issue.labels ?? []).slice(0, 4).map((label) => (
                 <span
                   key={label.id}
-                  className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
-                  style={{
-                    borderColor: label.color,
-                    color: label.color,
-                    backgroundColor: `${label.color}1f`,
-                  }}
+                  className="inline-flex items-center gap-1 font-mono text-[0.6rem] uppercase tracking-[0.08em] text-muted-foreground"
                 >
+                  <span className="inline-block h-2 w-2" style={{ backgroundColor: label.color }} />
                   {label.name}
                 </span>
               ))}
               {(issue.labels ?? []).length > 4 && (
-                <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 4}</span>
+                <span className="font-mono text-[0.6rem] text-muted-foreground">+{(issue.labels ?? []).length - 4}</span>
               )}
             </div>
           )}
@@ -828,10 +955,9 @@ export function IssueDetail() {
               onClick={() => convertToWorkflow.mutate()}
             >
               <Workflow className="h-4 w-4 mr-1" />
-              {convertToWorkflow.isPending ? "Converting..." : "Convert to Workflow"}
+              {convertToWorkflow.isPending ? "Converting..." : "Convert to workflow"}
             </Button>
 
-            {/* backlog3.0 C2: surface when this issue has been captured to the backlog */}
             {backlogEnabled && (
               <SentToBacklogIndicator
                 source="issue"
@@ -849,7 +975,7 @@ export function IssueDetail() {
             <PopoverContent className="w-48 p-1" align="end">
               {backlogEnabled && (
                 <button
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
                   onClick={() => {
                     const title = issue.title?.slice(0, 120) || "Captured from issue";
                     const origin = issue.identifier ?? issue.id.slice(0, 8);
@@ -871,7 +997,7 @@ export function IssueDetail() {
               )}
               {backlogEnabled && issue.status !== "backlog" && (
                 <button
-                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
                   disabled={moveToBacklog.isPending}
                   onClick={() => {
                     moveToBacklog.mutate();
@@ -887,7 +1013,7 @@ export function IssueDetail() {
                 linkedBacklog &&
                 linkedBacklog.length > 0 && (
                   <button
-                    className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                    className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
                     disabled={restoreFromBacklog.isPending}
                     onClick={() => {
                       const target = linkedBacklog[0];
@@ -903,7 +1029,7 @@ export function IssueDetail() {
                   </button>
                 )}
               <button
-                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
+                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs hover:bg-foreground/[0.03] text-destructive"
                 onClick={() => {
                   updateIssue.mutate(
                     { hiddenAt: new Date().toISOString() },
@@ -913,19 +1039,12 @@ export function IssueDetail() {
                 }}
               >
                 <EyeOff className="h-3 w-3" />
-                Hide this Issue
+                Hide this issue
               </button>
             </PopoverContent>
             </Popover>
           </div>
         </div>
-
-        <InlineEditor
-          value={issue.title}
-          onSave={(title) => updateIssue.mutate({ title })}
-          as="h2"
-          className="text-xl font-bold"
-        />
 
         {backlogEnabled && linkedBacklog && linkedBacklog.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -951,11 +1070,19 @@ export function IssueDetail() {
           </div>
         )}
 
+        <IssueCaseMap
+          issue={issue}
+          childIssues={childIssues}
+          comments={comments}
+          linkedRuns={linkedRuns}
+          agentMap={agentMap}
+        />
+
         <InlineEditor
           value={issue.description ?? ""}
           onSave={(description) => updateIssue.mutate({ description })}
           as="p"
-          className="text-sm text-muted-foreground"
+          className="text-[0.82rem] text-muted-foreground"
           placeholder="Add a description..."
           multiline
           mentions={mentionOptions}
@@ -966,70 +1093,47 @@ export function IssueDetail() {
         />
       </div>
 
-      {/* Thoughtscene — the 3D case-file visualization. Parents, runs,
-          comments, sub-matters, and approvals render as orbital/scene
-          elements. Wrapped in an error boundary so a WebGL failure
-          falls back gracefully instead of blanking the whole page. */}
-      <SceneErrorBoundary
-        label={issue.identifier ?? issue.id.slice(0, 8)}
-        height="clamp(420px, 60vh, 560px)"
-      >
-        <IssueScene
-          issue={issue}
-          comments={comments}
-          activity={activity}
-          childIssues={childIssues}
-          linkedRuns={linkedRuns}
-          agentMap={agentMap}
-          linkedApprovals={(linkedApprovals ?? []).map((a) => ({
-            id: a.id,
-            status: a.status,
-            requestedAt: (a as { requestedAt?: string | null }).requestedAt ?? a.createdAt ?? null,
-            decidedAt: a.decidedAt ?? null,
-          }))}
-          height="clamp(420px, 60vh, 560px)"
-        />
-      </SceneErrorBoundary>
-
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Attachments</h3>
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="hidden"
-              onChange={handleFilePicked}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadAttachment.isPending}
-            >
-              <Paperclip className="h-3.5 w-3.5 mr-1.5" />
-              {uploadAttachment.isPending ? "Uploading..." : "Upload image"}
-            </Button>
-          </div>
-        </div>
+        <SectionRule
+          label="Attachments"
+          meta={
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={handleFilePicked}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadAttachment.isPending}
+                className="inline-flex items-center gap-1 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Paperclip className="h-3 w-3" />
+                {uploadAttachment.isPending ? "Uploading..." : "Upload image"}
+              </button>
+            </>
+          }
+        />
 
         {attachmentError && (
-          <p className="text-xs text-destructive">{attachmentError}</p>
+          <p className="font-mono text-[0.72rem] text-destructive">{attachmentError}</p>
         )}
 
         {(!attachments || attachments.length === 0) ? (
-          <p className="text-xs text-muted-foreground">No attachments yet.</p>
+          <p className="font-mono text-[0.72rem] text-muted-foreground">No attachments yet.</p>
         ) : (
           <div className="space-y-2">
             {attachments.map((attachment) => (
-              <div key={attachment.id} className="border border-border rounded-md p-2">
+              <div key={attachment.id} className="border border-[var(--boared-rule)] p-2">
                 <div className="flex items-center justify-between gap-2">
                   <a
                     href={attachment.contentPath}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs hover:underline truncate"
+                    className="text-[0.78rem] hover:underline truncate"
                     title={attachment.originalFilename ?? attachment.id}
                   >
                     {attachment.originalFilename ?? attachment.id}
@@ -1044,7 +1148,7 @@ export function IssueDetail() {
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="font-mono text-[0.62rem] text-muted-foreground">
                   {attachment.contentType} · {(attachment.byteSize / 1024).toFixed(1)} KB
                 </p>
                 {isImageAttachment(attachment) && (
@@ -1052,7 +1156,7 @@ export function IssueDetail() {
                     <img
                       src={attachment.contentPath}
                       alt={attachment.originalFilename ?? "attachment"}
-                      className="mt-2 max-h-56 rounded border border-border object-contain bg-accent/10"
+                      className="mt-2 max-h-56 border border-[var(--boared-rule)] object-contain bg-[var(--boared-paper-2)]"
                       loading="lazy"
                     />
                   </a>
@@ -1063,34 +1167,25 @@ export function IssueDetail() {
         )}
       </div>
 
-      <Separator />
-
-      <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-3">
-        <TabsList variant="line" className="w-full justify-start gap-1">
-          <TabsTrigger value="comments" className="gap-1.5">
-            <MessageSquare className="h-3.5 w-3.5" />
-            Comments
-          </TabsTrigger>
-          <TabsTrigger value="subissues" className="gap-1.5">
-            <ListTree className="h-3.5 w-3.5" />
-            Sub-issues
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="gap-1.5">
-            <ActivityIcon className="h-3.5 w-3.5" />
-            Activity
-          </TabsTrigger>
-          {(issueFiles ?? []).length > 0 && (
-            <TabsTrigger value="files" className="gap-1.5">
-              <FileText className="h-3.5 w-3.5" />
-              Files
-              <span className="text-[10px] text-muted-foreground">({(issueFiles ?? []).length})</span>
-            </TabsTrigger>
+      {/* THE CASE FILE — sections stacked as a continuous paper trail.
+          No tabs. Each section is a labeled "filing" in the dossier. */}
+      <div className="space-y-10">
+        <SectionRule id="chapter-correspondence" label="Correspondence" />
+          {hiddenCommentCount > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                setCommentLimit((c) =>
+                  Math.min(commentsTotal, c + COMMENTS_INITIAL_LIMIT * 2),
+                )
+              }
+              className="w-full mb-3 px-3 py-2 border border-[var(--boared-rule)] font-mono text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground hover:bg-foreground/[0.03] transition-colors"
+            >
+              Load {Math.min(hiddenCommentCount, COMMENTS_INITIAL_LIMIT * 2)} older comments · {hiddenCommentCount} hidden
+            </button>
           )}
-        </TabsList>
-
-        <TabsContent value="comments">
-          <CommentThread
-            comments={commentsWithRunMeta}
+          <SceneAwareCommentThread
+            comments={visibleComments}
             linkedRuns={timelineRuns}
             issueStatus={issue.status}
             agentMap={agentMap}
@@ -1099,6 +1194,8 @@ export function IssueDetail() {
             reassignOptions={commentReassignOptions}
             currentAssigneeValue={currentAssigneeValue}
             mentions={mentionOptions}
+            composerRef={composerEditorRef}
+            commentNodeById={rowLookups.commentByCommentId}
             onAdd={async (body, reopen, reassignment) => {
               if (reassignment) {
                 await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });
@@ -1115,100 +1212,72 @@ export function IssueDetail() {
             }}
             liveRunSlot={<LiveRunWidget issueId={issueId!} companyId={issue.companyId} />}
           />
-        </TabsContent>
 
-        <TabsContent value="subissues">
+        <SectionRule id="chapter-subtasks" label="Sub-matters" meta={`${childIssues.length} ${childIssues.length === 1 ? "entry" : "entries"}`} />
+        <div>
           {childIssues.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No sub-issues.</p>
+            <p className="font-mono text-[0.72rem] text-muted-foreground">No sub-issues.</p>
           ) : (
-            <div className="border border-border rounded-lg divide-y divide-border">
+            <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
               {childIssues.map((child) => (
-                <Link
+                <SubmatterRow
                   key={child.id}
-                  to={`/issues/${child.identifier ?? child.id}`}
-                  className="flex items-center justify-between px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <StatusIcon status={child.status} />
-                    <PriorityIcon priority={child.priority} />
-                    <span className="font-mono text-muted-foreground shrink-0">
-                      {child.identifier ?? child.id.slice(0, 8)}
-                    </span>
-                    <span className="truncate">{child.title}</span>
-                  </div>
-                  {child.assigneeAgentId && (() => {
-                    const name = agentMap.get(child.assigneeAgentId)?.name;
-                    return name
-                      ? <Identity name={name} size="sm" />
-                      : <span className="text-muted-foreground font-mono">{child.assigneeAgentId.slice(0, 8)}</span>;
-                  })()}
-                </Link>
+                  child={child}
+                  descendant={rowLookups.descByIssueId.get(child.id)}
+                  agentMap={agentMap}
+                />
               ))}
             </div>
           )}
-        </TabsContent>
+        </div>
 
-        <TabsContent value="activity">
+        <SectionRule id="chapter-work" label="Activity log" />
+        <div>
           {!activity || activity.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No activity yet.</p>
+            <p className="font-mono text-[0.72rem] text-muted-foreground">No activity yet.</p>
           ) : (
-            <div className="space-y-1.5">
+            <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
               {activity.slice(0, 20).map((evt) => (
-                <div key={evt.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <ActorIdentity evt={evt} agentMap={agentMap} />
-                  <span>{formatAction(evt.action, evt.details)}</span>
-                  <span className="ml-auto shrink-0">{relativeTime(evt.createdAt)}</span>
-                </div>
+                <ActivityRow
+                  key={evt.id}
+                  event={evt}
+                  eventNode={rowLookups.eventByEventId.get(evt.id)}
+                  agentMap={agentMap}
+                  actorLabel={<ActorIdentity evt={evt} agentMap={agentMap} />}
+                  verbLabel={formatAction(evt.action, evt.details)}
+                />
               ))}
             </div>
           )}
-        </TabsContent>
+        </div>
 
-        <TabsContent value="files">
+        {(issueFiles ?? []).length > 0 && (
+        <>
+        <SectionRule id="chapter-files" label="Files touched" meta={`${(issueFiles ?? []).length} ${(issueFiles ?? []).length === 1 ? "file" : "files"}`} />
+        <div>
           {!linkedRuns ? (
-            <p className="text-xs text-muted-foreground">Loading runs...</p>
+            <p className="font-mono text-[0.72rem] text-muted-foreground">Loading runs...</p>
           ) : !issueFiles || issueFiles.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No files touched by runs on this issue.</p>
+            <p className="font-mono text-[0.72rem] text-muted-foreground">No files touched by runs on this issue.</p>
           ) : (
             <>
-              <div className="border border-border rounded-lg divide-y divide-border">
+              <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
                 {issueFiles.map((snap) => {
-                  const isMd = /\.md$/i.test(snap.filePath);
                   const isActive = viewingFile?.path === snap.filePath;
                   return (
-                    <button
+                    <FileRow
                       key={snap.id}
+                      snap={snap}
+                      isActive={isActive}
+                      runNode={rowLookups.runByRunId.get(snap.runId)}
                       onClick={() =>
-                        setViewingFile(isActive ? null : { path: snap.filePath, hash: snap.contentHash })
+                        setViewingFile(
+                          isActive
+                            ? null
+                            : { path: snap.filePath, hash: snap.contentHash },
+                        )
                       }
-                      className={cn(
-                        "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent/20 transition-colors text-left",
-                        isActive && "bg-accent/30"
-                      )}
-                    >
-                      <FileText className={cn("h-3.5 w-3.5 shrink-0", isMd ? "text-blue-500" : "text-muted-foreground")} />
-                      <span className="truncate font-mono text-xs">{snap.filePath}</span>
-                      {snap.operation && (
-                        <span className={cn(
-                          "text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0",
-                          snap.operation === "write" ? "bg-green-500/10 text-green-600" :
-                          snap.operation === "edit" ? "bg-yellow-500/10 text-yellow-600" :
-                          snap.operation === "delete" ? "bg-red-500/10 text-red-600" :
-                          snap.operation === "read" ? "bg-blue-500/10 text-blue-600" :
-                          "bg-muted text-muted-foreground"
-                        )}>
-                          {snap.operation}
-                        </span>
-                      )}
-                      <span className="ml-auto flex items-center gap-1.5 shrink-0">
-                        {snap.agentName && (
-                          <span className="text-[10px] text-muted-foreground/60">{snap.agentName}</span>
-                        )}
-                        <span className="text-[10px] text-muted-foreground">
-                          {relativeTime(snap.capturedAt)}
-                        </span>
-                      </span>
-                    </button>
+                    />
                   );
                 })}
               </div>
@@ -1222,41 +1291,72 @@ export function IssueDetail() {
               )}
             </>
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+        </>
+        )}
+      </div>
+
+      {/* Synthetic verdict anchor — matches chapter-verdict even when
+          there are no approvals to render. Kept invisible. */}
+      <div id="chapter-verdict" className="scroll-mt-8" aria-hidden="true" />
 
       {linkedApprovals && linkedApprovals.length > 0 && (
         <Collapsible
           open={secondaryOpen.approvals}
           onOpenChange={(open) => setSecondaryOpen((prev) => ({ ...prev, approvals: open }))}
-          className="rounded-lg border border-border"
+          className="border border-[var(--boared-rule)]"
         >
           <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
-            <span className="text-sm font-medium text-muted-foreground">
-              Linked Approvals ({linkedApprovals.length})
+            <span className="boared-label">
+              Linked approvals ({linkedApprovals.length})
             </span>
             <ChevronDown
               className={cn("h-4 w-4 text-muted-foreground transition-transform", secondaryOpen.approvals && "rotate-180")}
             />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="border-t border-border divide-y divide-border">
-              {linkedApprovals.map((approval) => (
-                <Link
-                  key={approval.id}
-                  to={`/approvals/${approval.id}`}
-                  className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={approval.status} />
-                    <span className="font-medium">
-                      {approval.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+            <div className="border-t border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+              {linkedApprovals.map((approval) => {
+                const node = rowLookups.approvalByApprovalId.get(approval.id);
+                const body = (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={approval.status} />
+                      <span>
+                        {approval.type
+                          .replace(/_/g, " ")
+                          .replace(/^./, (c) => c.toUpperCase())}
+                      </span>
+                      <span className="font-mono text-[0.66rem] text-muted-foreground">
+                        {approval.id.slice(0, 8)}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[0.62rem] text-muted-foreground tabular-nums">
+                      {relativeTime(approval.createdAt)}
                     </span>
-                    <span className="font-mono text-muted-foreground">{approval.id.slice(0, 8)}</span>
-                  </div>
-                  <span className="text-muted-foreground">{relativeTime(approval.createdAt)}</span>
-                </Link>
-              ))}
+                  </>
+                );
+                if (!node) {
+                  return (
+                    <Link
+                      key={approval.id}
+                      to={`/approvals/${approval.id}`}
+                      className="flex items-center justify-between px-3 py-2 text-[0.78rem] hover:bg-foreground/[0.03] transition-colors no-underline text-inherit"
+                    >
+                      {body}
+                    </Link>
+                  );
+                }
+                return (
+                  <ApprovalRow
+                    key={approval.id}
+                    approval={node}
+                    href={`/approvals/${approval.id}`}
+                  >
+                    {body}
+                  </ApprovalRow>
+                );
+              })}
             </div>
           </CollapsibleContent>
         </Collapsible>
@@ -1266,22 +1366,22 @@ export function IssueDetail() {
         <Collapsible
           open={secondaryOpen.cost}
           onOpenChange={(open) => setSecondaryOpen((prev) => ({ ...prev, cost: open }))}
-          className="rounded-lg border border-border"
+          className="border border-[var(--boared-rule)]"
         >
           <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
-            <span className="text-sm font-medium text-muted-foreground">Cost Summary</span>
+            <span className="boared-label">Cost summary</span>
             <ChevronDown
               className={cn("h-4 w-4 text-muted-foreground transition-transform", secondaryOpen.cost && "rotate-180")}
             />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="border-t border-border px-3 py-2">
+            <div className="border-t border-[var(--boared-rule)] px-3 py-2">
               {!issueCostSummary.hasCost && !issueCostSummary.hasTokens ? (
-                <div className="text-xs text-muted-foreground">No cost data yet.</div>
+                <div className="font-mono text-[0.72rem] text-muted-foreground">No cost data yet.</div>
               ) : (
-                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-3 font-mono text-[0.72rem] text-muted-foreground tabular-nums">
                   {issueCostSummary.hasCost && (
-                    <span className="font-medium text-foreground">
+                    <span className="text-foreground">
                       ${issueCostSummary.cost.toFixed(4)}
                     </span>
                   )}
@@ -1300,6 +1400,9 @@ export function IssueDetail() {
         </Collapsible>
       )}
 
+      </div>
+      {/* ── End of case-file stack (narrow column) ── */}
+
       {/* Mobile properties drawer */}
       <Sheet open={mobilePropsOpen} onOpenChange={setMobilePropsOpen}>
         <SheetContent side="bottom" className="max-h-[85dvh] pb-[env(safe-area-inset-bottom)]">
@@ -1313,6 +1416,349 @@ export function IssueDetail() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
-    </div>
+    </IssueDetailShell>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ *  IssueSceneBlock
+ *  --------------------------------------------------------------------
+ *  Owns everything that hinges on a fully-loaded issue — the 3D scene,
+ *  the Case Companion, the choreography hooks, the tour player, the
+ *  sticky mini-scene, and the state-change Papee bubbles.
+ *
+ *  Living inside IssueDetail.tsx lets us share the parent's data
+ *  fetches without re-fetching. Living as a separate FUNCTION lets us
+ *  call hooks that depend on `issue` being defined without running
+ *  afoul of React's rules-of-hooks (those hooks only mount once the
+ *  parent's loading/error gates have passed).
+ * ───────────────────────────────────────────────────────────────────── */
+interface IssueSceneBlockProps {
+  issue: Issue;
+  comments?: IssueComment[];
+  activity?: ActivityEvent[];
+  childIssues?: Issue[];
+  linkedRuns?: RunForIssue[];
+  agentMap: Map<string, Agent>;
+  linkedApprovals?: Array<{
+    id: string;
+    status: string;
+    requestedAt?: Date | string | null;
+    decidedAt?: Date | string | null;
+  }>;
+}
+
+/* Props from IssueDetail — graph + narrative + chapters + tour are
+ * all computed at the IssueDetail root (so the below-fold sections
+ * can also see the graph via the provider) and passed down. */
+interface InnerProps extends IssueSceneBlockProps {
+  graph: ReturnType<typeof useIssueGraph>;
+  narrative: ReturnType<typeof narrativeFor>;
+  chapters: Chapter[];
+  tour: ReturnType<typeof useGuidedTour>;
+}
+
+function IssueSceneBlock(props: InnerProps) {
+  const { issue, graph, narrative, chapters, tour } = props;
+  const papee = usePapeeOptional();
+  const actions = useSceneActions();
+  const sceneState = useSceneState();
+
+  const tourRunning = tour.status === "running";
+
+  /* Scroll choreography — writes activeChapterKey + pose into context. */
+  const scrollChor = useScrollChoreography({
+    chapters,
+    suspended: tourRunning,
+  });
+
+  /* Mirror scrollChor's outputs into the SceneStateContext so the
+   * Companion (which reads from context) sees them. */
+  useEffect(() => {
+    actions.setActiveChapterKey(scrollChor.activeKey ?? null);
+  }, [scrollChor.activeKey, actions]);
+  useEffect(() => {
+    if (scrollChor.targetPose) {
+      actions.setTargetPose(scrollChor.targetPose);
+    }
+  }, [scrollChor.targetPose, actions]);
+  /* Tour pose wins over scroll pose — push whenever it changes. */
+  useEffect(() => {
+    if (tour.pose) actions.setTargetPose(tour.pose);
+  }, [tour.pose, actions]);
+
+  /* Effective pose for the scene — prefer context; fall back to scroll/tour. */
+  const effectivePose =
+    sceneState.targetPose ?? tour.pose ?? scrollChor.targetPose;
+
+  /* Hero visibility — an IntersectionObserver on the hero wrapper drives
+   * whether the StickyMiniScene should be shown. */
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  const [heroVisible, setHeroVisible] = useState(true);
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) setHeroVisible(e.isIntersecting);
+      },
+      { threshold: 0 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  /* Scroll to the top of the hero when the user hits the sticky tile's
+   * ↑ chip or clicks an overview chapter link. */
+  const scrollToHero = useCallback(() => {
+    const el = heroRef.current ?? document.getElementById("chapter-overview");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  /* Contextual Papee bubbles — fire once per case on state transitions.
+   * Keyed by issue id so navigating between cases re-arms them. */
+  const lastBubbleRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!papee) return;
+    const key = `${issue.id}:${issue.status}:${narrative.nextAction?.label ?? ""}`;
+    if (lastBubbleRef.current === key) return;
+
+    const pendingApprovals = narrative.chips.find(
+      (c) => c.key === "pending-approval",
+    );
+    if (pendingApprovals) {
+      papee.pushBubble(ISSUE_SCENE_LINES.awaitingApproval, "critical");
+    } else if (issue.status === "blocked") {
+      papee.pushBubble(ISSUE_SCENE_LINES.blocked, "critical");
+    } else if (narrative.chips.find((c) => c.key === "stale")) {
+      // days from the chip label "STALE 5D"
+      const stale = narrative.chips.find((c) => c.key === "stale");
+      const days = stale ? parseInt(stale.label.match(/\d+/)?.[0] ?? "0", 10) : 0;
+      if (days > 0) {
+        papee.pushBubble(ISSUE_SCENE_LINES.staleRun(days), "normal");
+      }
+    }
+    lastBubbleRef.current = key;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issue.id, issue.status, narrative]);
+
+  /* Next-Action CTA dispatcher — real destinations. */
+  const handleNextAction = useCallback(() => {
+    const kind = narrative.nextAction?.kind;
+    if (!kind) return;
+
+    switch (kind) {
+      case "approvals": {
+        // Scroll to verdict anchor, expand approvals collapsible, and
+        // select the oldest pending approval (Inspector mode picks up).
+        const el = document.getElementById("chapter-verdict");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        window.dispatchEvent(new CustomEvent("paperclip:expand-approvals"));
+        const oldest = graph.approvals
+          .filter((a) => a.status === "pending")
+          .sort((a, b) => a.requestedAt - b.requestedAt)[0];
+        if (oldest) {
+          actions.selectAndFocus({ kind: "approval", data: oldest });
+        }
+        break;
+      }
+      case "composer": {
+        const el = document.getElementById("chapter-correspondence");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Request the composer to focus. IssueDetail wires this via
+        // a CustomEvent so we don't need to thread a ref through.
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("paperclip:focus-composer"));
+        }, 400);
+        break;
+      }
+      case "run": {
+        const newestLive = graph.runs
+          .filter((r) => r.isLive)
+          .sort((a, b) => b.startedAt - a.startedAt)[0];
+        if (newestLive) {
+          actions.selectAndFocus({ kind: "run", data: newestLive });
+        }
+        break;
+      }
+    }
+  }, [narrative.nextAction, graph, actions]);
+
+  return (
+    <>
+      <div
+        ref={heroRef}
+        className="mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4 lg:gap-6"
+      >
+        <IssueScene
+          {...props}
+          height="clamp(420px, 60vh, 560px)"
+          ledgerCompact
+          targetPose={effectivePose}
+        />
+        <CaseCompanion
+          {...props}
+          narrative={narrative}
+          chapters={chapters}
+          tourCurrent={tour.current}
+          onTakeTour={tour.start}
+          onCancelTour={tour.cancel}
+          onNextAction={handleNextAction}
+        />
+      </div>
+
+      {/* Sticky mini-scene — pinned tile when the hero scrolls out. */}
+      <StickyMiniScene
+        {...props}
+        targetPose={effectivePose}
+        visible={!heroVisible}
+        onReturnToTop={scrollToHero}
+      />
+
+      {/* Tour caption overlay — renders only when tour.running. */}
+      <TourPlayer
+        caption={tour.caption}
+        current={tour.current}
+        chapters={chapters}
+        onCancel={tour.cancel}
+      />
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ *  IssueDetailShell
+ *  --------------------------------------------------------------------
+ *  Owns the SceneStateProvider that wraps the whole issue page so
+ *  the hero (3D scene + Companion) AND the below-fold case-file stack
+ *  (sub-matters, activity, files, approvals, CommentThread) all share
+ *  the same selection, hover, filters, active-chapter, and graph.
+ *
+ *  Computes graph + narrative + chapters + tour once, hoists them into
+ *  the provider's `state`, and renders children unchanged.
+ * ───────────────────────────────────────────────────────────────────── */
+interface IssueDetailShellProps {
+  issue: Issue;
+  comments?: IssueComment[];
+  activity?: ActivityEvent[];
+  childIssues?: Issue[];
+  linkedRuns?: RunForIssue[];
+  agentMap: Map<string, Agent>;
+  linkedApprovals?: Array<{
+    id: string;
+    status: string;
+    requestedAt?: Date | string | null;
+    decidedAt?: Date | string | null;
+  }>;
+  children: React.ReactNode;
+}
+
+function IssueDetailShell(props: IssueDetailShellProps) {
+  const graph = useIssueGraph(props);
+  const narrative = useMemo(
+    () => narrativeFor(graph, graph.root),
+    [graph],
+  );
+  const chapters = useMemo(
+    () => chaptersFor(graph, narrative),
+    [graph, narrative],
+  );
+  const tour = useGuidedTour(chapters);
+  const tourRunning = tour.status === "running";
+
+  const data = useMemo(
+    () => ({
+      issue: props.issue,
+      comments: props.comments,
+      activity: props.activity,
+      childIssues: props.childIssues,
+      linkedRuns: props.linkedRuns,
+      agentMap: props.agentMap,
+      linkedApprovals: props.linkedApprovals,
+      graph,
+      narrative,
+      chapters,
+      tour,
+    }),
+    [
+      props.issue,
+      props.comments,
+      props.activity,
+      props.childIssues,
+      props.linkedRuns,
+      props.agentMap,
+      props.linkedApprovals,
+      graph,
+      narrative,
+      chapters,
+      tour,
+    ],
+  );
+
+  return (
+    <SceneStateProvider
+      graph={graph}
+      narrative={narrative}
+      chapters={chapters}
+      tourRunning={tourRunning}
+    >
+      <IssueDetailDataContext.Provider value={data}>
+        <div className="boared-reveal space-y-6">{props.children}</div>
+      </IssueDetailDataContext.Provider>
+    </SceneStateProvider>
+  );
+}
+
+/* Shared issue-page data context — holds graph + narrative + chapters
+ * + tour + raw props so every component under IssueDetailShell reads
+ * from one place. */
+interface IssueDetailData {
+  issue: Issue;
+  comments?: IssueComment[];
+  activity?: ActivityEvent[];
+  childIssues?: Issue[];
+  linkedRuns?: RunForIssue[];
+  agentMap: Map<string, Agent>;
+  linkedApprovals?: Array<{
+    id: string;
+    status: string;
+    requestedAt?: Date | string | null;
+    decidedAt?: Date | string | null;
+  }>;
+  graph: ReturnType<typeof useIssueGraph>;
+  narrative: ReturnType<typeof narrativeFor>;
+  chapters: Chapter[];
+  tour: ReturnType<typeof useGuidedTour>;
+}
+
+const IssueDetailDataContext = React.createContext<IssueDetailData | null>(
+  null,
+);
+
+function useIssueDetailData(): IssueDetailData {
+  const v = React.useContext(IssueDetailDataContext);
+  if (!v) throw new Error("Must be inside IssueDetailShell");
+  return v;
+}
+
+/* Hero host — pulls the precomputed values from the shell and renders
+ * the IssueSceneBlock. Must be a child of IssueDetailShell. */
+function IssueSceneBlockHost() {
+  const data = useIssueDetailData();
+  return (
+    <IssueSceneBlock
+      issue={data.issue}
+      comments={data.comments}
+      activity={data.activity}
+      childIssues={data.childIssues}
+      linkedRuns={data.linkedRuns}
+      agentMap={data.agentMap}
+      linkedApprovals={data.linkedApprovals}
+      graph={data.graph}
+      narrative={data.narrative}
+      chapters={data.chapters}
+      tour={data.tour}
+    />
   );
 }
