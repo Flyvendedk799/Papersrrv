@@ -71,6 +71,12 @@ interface WakeupOptions {
   requestedByActorType?: "user" | "agent" | "system";
   requestedByActorId?: string | null;
   contextSnapshot?: Record<string, unknown>;
+  // Dossier causal linkage. When a run is spawned in response to a
+  // specific comment or activity (e.g. Papee enact, CommentThread
+  // action buttons), pass the id so the graph reader can draw a
+  // real causal edge instead of falling back to the heuristic.
+  triggeredByCommentId?: string | null;
+  triggeredByActivityId?: string | null;
 }
 
 interface ParsedIssueAssigneeAdapterOverrides {
@@ -2035,6 +2041,8 @@ export function heartbeatService(db: Db) {
             wakeupRequestId: wakeupRequest.id,
             contextSnapshot: enrichedContextSnapshot,
             sessionIdBefore: sessionBefore,
+            triggeredByCommentId: opts.triggeredByCommentId ?? null,
+            triggeredByActivityId: opts.triggeredByActivityId ?? null,
           })
           .returning()
           .then((rows) => rows[0]);

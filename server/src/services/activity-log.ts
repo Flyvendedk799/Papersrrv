@@ -12,6 +12,10 @@ export interface LogActivityInput {
   entityId: string;
   agentId?: string | null;
   runId?: string | null;
+  // Dossier causal linkage. Set by callers that emit an activity
+  // event in response to a specific comment (e.g. "user replied and
+  // that triggered X"). Null for system-emitted or periodic events.
+  triggeredByCommentId?: string | null;
   details?: Record<string, unknown> | null;
 }
 
@@ -26,6 +30,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
     entityId: input.entityId,
     agentId: input.agentId ?? null,
     runId: input.runId ?? null,
+    triggeredByCommentId: input.triggeredByCommentId ?? null,
     details: sanitizedDetails,
   });
 
@@ -40,6 +45,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
       entityId: input.entityId,
       agentId: input.agentId ?? null,
       runId: input.runId ?? null,
+      triggeredByCommentId: input.triggeredByCommentId ?? null,
       details: sanitizedDetails,
     },
   });

@@ -95,11 +95,14 @@ export function papeeToolsService(db: Db) {
   }
 
   return {
-    /** Dispatcher entry point. Routes a PapeeTool to its handler. */
+    /** Dispatcher entry point. Routes a PapeeTool to its handler.
+     * `causalContext` lets callers thread the comment / run that
+     * triggered this enact so the Dossier's DAG gets a real edge. */
     async enact(
       companyId: string,
       tool: PapeeTool,
       actor: PapeeToolActor,
+      causalContext: { sourceCommentId?: string | null; sourceRunId?: string | null } = {},
     ): Promise<PapeeToolResult> {
       const flags = await loadMemoryFlags(companyId, actor);
       switch (tool.kind) {
@@ -205,7 +208,12 @@ export function papeeToolsService(db: Db) {
           const body = flags.terse && tool.body.length > 280
             ? tool.body.slice(0, 277) + "…"
             : tool.body;
-          const comment = await issues.addComment(tool.issueId, body, actorFor(actor));
+          const comment = await issues.addComment(
+            tool.issueId,
+            body,
+            actorFor(actor),
+            { replyToCommentId: causalContext.sourceCommentId ?? null },
+          );
           await audit(companyId, actor, "commentOnIssue", { type: "issue", id: tool.issueId }, { commentId: comment.id });
           return {
             ok: true,
@@ -318,6 +326,8 @@ export function papeeToolsService(db: Db) {
             projectId: tool.projectId ?? null,
             assigneeAgentId: tool.assignee && /^[0-9a-f]{8}-/.test(tool.assignee) ? tool.assignee : null,
             assigneeUserId: tool.assignee && !/^[0-9a-f]{8}-/.test(tool.assignee) ? tool.assignee : null,
+            createdFromCommentId: causalContext.sourceCommentId ?? null,
+            createdFromRunId: causalContext.sourceRunId ?? null,
           } as never);
           await audit(companyId, actor, "createIssue", { type: "issue", id: created.id }, { title: tool.title });
           return {
@@ -401,6 +411,7 @@ export function papeeToolsService(db: Db) {
             requestedByActorType: actor.type === "agent" ? "agent" : actor.type === "user" ? "user" : "system",
             requestedByActorId: actor.id,
             payload: tool.prompt ? { prompt: tool.prompt } : null,
+            triggeredByCommentId: causalContext.sourceCommentId ?? null,
           });
           if (!run) return { ok: false, summary: "Adapter refused", error: "no_run_created" };
           await audit(companyId, actor, "triggerAgentRun", { type: "agent", id: tool.agentId }, { runId: run.id });
