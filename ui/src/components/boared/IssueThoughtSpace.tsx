@@ -1,4 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { cn, relativeTime } from "../../lib/utils";
 import type { Issue, IssueComment, ActivityEvent, Agent } from "@paperclipai/shared";
 import type { RunForIssue } from "../../api/activity";
@@ -33,9 +42,24 @@ function easeOut(t: number) { const u = 1 - t; return 1 - u * u * u; }
 interface Props {
   issue: Issue; comments?: IssueComment[]; activity?: ActivityEvent[];
   childIssues?: Issue[]; linkedRuns?: RunForIssue[]; agentMap: Map<string, Agent>; className?: string;
+  /**
+   * Per-thought-id opacity multiplier in [0,1]. Missing entries default
+   * to 1.0. Used by the Dossier to drive the temporal scrubber (future
+   * events fade to ~0.05) and the phase-rail focus (non-focused
+   * clusters fade to ~0.1).
+   */
+  gateById?: Map<string, number>;
 }
 
-export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className }: Props) {
+export interface IssueThoughtSpaceHandle {
+  /** Programmatically select a node by thought id (e.g. `comment:abc`,
+   * `run:xyz`). Drives the camera fly-to via the existing selection
+   * path, so the info panel opens too. */
+  focusNodeId: (id: string | null) => void;
+}
+
+export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>(
+  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -68,6 +92,8 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
   const projSy = useRef(new Float32Array(64));
   const projSc = useRef(new Float32Array(64));
   const projVis = useRef(new Uint8Array(64));
+  /** Per-node opacity multiplier, rebuilt on gateById / node changes. */
+  const gateRef = useRef(new Float32Array(64));
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoverInfo, setHoverInfo] = useState<{ label: string; kind: ThoughtKind; authorName: string } | null>(null);
@@ -180,6 +206,26 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
     selectedIdxRef.current = idx;
     if (idx >= 0) focusOn(cam, nodesRef.current[idx].pos, 1.7);
   }, [selectedId]);
+
+  /* ── Gate (scrubber / focus-cluster opacity multipliers) ──
+   * Rebuilt whenever the caller updates gateById or when the node set
+   * itself changes (after rebuild). Cheap: one Float32 per node. */
+  useEffect(() => {
+    const nodes = nodesRef.current;
+    if (gateRef.current.length < nodes.length) {
+      gateRef.current = new Float32Array(nodes.length);
+    }
+    for (let i = 0; i < nodes.length; i++) {
+      if (!gateById) { gateRef.current[i] = 1; continue; }
+      const v = gateById.get(nodes[i].thought.id);
+      gateRef.current[i] = v == null ? 1 : Math.max(0, Math.min(1, v));
+    }
+  }, [gateById, thoughts]);
+
+  /* ── Imperative handle for Dossier / timeline click-to-fly. ── */
+  useImperativeHandle(ref, () => ({
+    focusNodeId: (id: string | null) => setSelectedId(id),
+  }), []);
 
   /* ── Pointer handlers ── */
   const hitTest = useCallback((px: number, py: number) => {
@@ -300,14 +346,16 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
       // Glowing lines between connected nodes — with canvas shadow
       // for the glow effect.  Only structural edges, not activity noise.
       const graph = graphRef.current;
+      const gate = gateRef.current;
       if (graph && intro > 0.1) {
         ctx.lineCap = "round";
 
-        // Helper: draw a glowing line
-        const glowLine = (x1: number, y1: number, x2: number, y2: number, col: string, a: number, w: number) => {
+        // Helper: draw a glowing line; extra `g` multiplier dims the
+        // whole line when either endpoint is gated (scrubber/focus).
+        const glowLine = (x1: number, y1: number, x2: number, y2: number, col: string, a: number, w: number, g: number) => {
           ctx.shadowColor = col; ctx.shadowBlur = 10;
           ctx.strokeStyle = col; ctx.lineWidth = w;
-          ctx.globalAlpha = a * intro;
+          ctx.globalAlpha = a * intro * g;
           ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
           ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
         };
@@ -316,18 +364,21 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
         for (const [pid, kids] of graph.children) {
           const pi = byIdRef.current.get(pid);
           if (pi === undefined || !vis[pi]) continue;
+          const gp = gate[pi] ?? 1;
           for (const cid of kids) {
             const ci = byIdRef.current.get(cid);
             if (ci === undefined || !vis[ci]) continue;
+            const gc = gate[ci] ?? 1;
+            const gEdge = Math.min(gp, gc);
             const pk = mind[pi].thought.kind, ck = mind[ci].thought.kind;
             if (pk === "activity" && ck === "activity") continue;
             if (pk === "activity" || ck === "activity") {
               // Dim for activity-involved edges
               ctx.strokeStyle = WARM_DIM; ctx.lineWidth = 0.5;
-              ctx.globalAlpha = 0.08 * intro; ctx.shadowBlur = 0;
+              ctx.globalAlpha = 0.08 * intro * gEdge; ctx.shadowBlur = 0;
               ctx.beginPath(); ctx.moveTo(sx[pi], sy[pi]); ctx.lineTo(sx[ci], sy[ci]); ctx.stroke();
             } else {
-              glowLine(sx[pi], sy[pi], sx[ci], sy[ci], WARM, 0.18, 1.0);
+              glowLine(sx[pi], sy[pi], sx[ci], sy[ci], WARM, 0.18, 1.0, gEdge);
             }
           }
         }
@@ -335,16 +386,22 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
         // Ancestor chain — golden luminous thread
         const ancNodes: number[] = [];
         for (let i = 0; i < mind.length; i++) if (mind[i].thought.kind === "ancestor" && vis[i]) ancNodes.push(i);
+        const gIssue = gate[0] ?? 1;
         if (ancNodes.length > 0 && vis[0]) {
-          glowLine(sx[0], sy[0], sx[ancNodes[0]], sy[ancNodes[0]], "#C8A96E", 0.45, 1.8);
-          for (let ai = 1; ai < ancNodes.length; ai++)
-            glowLine(sx[ancNodes[ai - 1]], sy[ancNodes[ai - 1]], sx[ancNodes[ai]], sy[ancNodes[ai]], "#C8A96E", 0.4, 1.5);
+          const g0 = Math.min(gIssue, gate[ancNodes[0]] ?? 1);
+          glowLine(sx[0], sy[0], sx[ancNodes[0]], sy[ancNodes[0]], "#C8A96E", 0.45, 1.8, g0);
+          for (let ai = 1; ai < ancNodes.length; ai++) {
+            const g = Math.min(gate[ancNodes[ai - 1]] ?? 1, gate[ancNodes[ai]] ?? 1);
+            glowLine(sx[ancNodes[ai - 1]], sy[ancNodes[ai - 1]], sx[ancNodes[ai]], sy[ancNodes[ai]], "#C8A96E", 0.4, 1.5, g);
+          }
         }
 
         // Subissue connections — emerald luminous threads
         for (let i = 0; i < mind.length; i++) {
-          if (mind[i].thought.kind === "subissue" && vis[i] && vis[0])
-            glowLine(sx[0], sy[0], sx[i], sy[i], "#3FCF8E", 0.35, 1.4);
+          if (mind[i].thought.kind === "subissue" && vis[i] && vis[0]) {
+            const g = Math.min(gIssue, gate[i] ?? 1);
+            glowLine(sx[0], sy[0], sx[i], sy[i], "#3FCF8E", 0.35, 1.4, g);
+          }
         }
         ctx.globalAlpha = 1; ctx.lineWidth = 1; ctx.lineCap = "butt";
       }
@@ -358,6 +415,8 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
         const t = mind[i].thought;
         const nodeR = mind[i].radius * sc[i];
         if (nodeR < 0.5) continue;
+        const g = gate[i] ?? 1;
+        if (g <= 0.001) continue;
         let color: string; let alpha: number; let coreR: number; let haloR: number;
         switch (t.kind as ThoughtKind) {
           case "issue": {
@@ -390,15 +449,15 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
         }
         // 1. Soft halo (glow sprite behind)
         const sprite = sprites.get(color, 96, 0.25);
-        ctx.globalAlpha = alpha * 0.55 * intro;
+        ctx.globalAlpha = alpha * 0.55 * intro * g;
         ctx.drawImage(sprite, sx[i] - haloR, sy[i] - haloR, haloR * 2, haloR * 2);
         // 2. Hard crystal core (filled circle)
-        ctx.globalAlpha = alpha * intro;
+        ctx.globalAlpha = alpha * intro * g;
         ctx.fillStyle = color;
         ctx.beginPath(); ctx.arc(sx[i], sy[i], coreR, 0, Math.PI * 2); ctx.fill();
         // 3. Bright inner highlight (white dot) for issue/run/subissue
         if (t.kind === "issue" || t.kind === "run" || t.kind === "subissue") {
-          ctx.globalAlpha = alpha * 0.5 * intro;
+          ctx.globalAlpha = alpha * 0.5 * intro * g;
           ctx.fillStyle = "#FFFFFF";
           ctx.beginPath(); ctx.arc(sx[i], sy[i], coreR * 0.35, 0, Math.PI * 2); ctx.fill();
         }
@@ -532,12 +591,14 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
       )}
     </div>
   );
-}, (prev, next) => {
+}), (prev, next) => {
   // Custom comparator — prevents re-renders from react-query polling
   // that returns new array refs with identical content. We check what
   // actually drives the visualization: issue identity + status, and
   // the LENGTHS of the data arrays (if a new comment/run/event arrives
-  // the length changes and we re-render; otherwise skip).
+  // the length changes and we re-render; otherwise skip). gateById is
+  // a ref-equality check — the Dossier rebuilds the Map only when
+  // scrubber/focus change, so identical refs mean "skip".
   return (
     prev.issue.id === next.issue.id &&
     prev.issue.status === next.issue.status &&
@@ -546,6 +607,7 @@ export const IssueThoughtSpace = memo(function IssueThoughtSpace({ issue, commen
     (prev.activity?.length ?? 0) === (next.activity?.length ?? 0) &&
     (prev.childIssues?.length ?? 0) === (next.childIssues?.length ?? 0) &&
     (prev.linkedRuns?.length ?? 0) === (next.linkedRuns?.length ?? 0) &&
-    prev.agentMap === next.agentMap
+    prev.agentMap === next.agentMap &&
+    prev.gateById === next.gateById
   );
 });

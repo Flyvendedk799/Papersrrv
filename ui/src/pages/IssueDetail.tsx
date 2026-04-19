@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
@@ -31,37 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { IssueCaseMap } from "../components/boared/IssueCaseMap";
-
-// ThoughtSpace brings its own WebGL pipeline (~separate from R3F);
-// lazy so pages that never open it don't pay the bundle cost.
-const IssueThoughtSpaceLazy = lazy(() =>
-  import("../components/boared/IssueThoughtSpace").then((m) => ({
-    default: m.IssueThoughtSpace,
-  })),
-);
-
-type CaseViewMode = "scene" | "thoughtSpace";
-const CASE_VIEW_STORAGE_KEY = "paperclip:issue-case-view";
-
-function readCaseViewPref(): CaseViewMode {
-  if (typeof window === "undefined") return "scene";
-  try {
-    const raw = window.localStorage.getItem(CASE_VIEW_STORAGE_KEY);
-    return raw === "thoughtSpace" ? "thoughtSpace" : "scene";
-  } catch {
-    return "scene";
-  }
-}
-
-function writeCaseViewPref(v: CaseViewMode): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(CASE_VIEW_STORAGE_KEY, v);
-  } catch {
-    /* ignore */
-  }
-}
+import { IssueDossier } from "../components/boared/IssueDossier";
 import { usePapeeEnact } from "../hooks/usePapeeEnact";
 import { isFeatureEnabled } from "../lib/featureFlags";
 import { SentToBacklogIndicator } from "../components/backlog/SentToBacklogIndicator";
@@ -293,11 +263,6 @@ export function IssueDetail() {
   const { pushToast } = useToast();
   const backlogEnabled = isFeatureEnabled("backlog_tab_enabled");
   const [moreOpen, setMoreOpen] = useState(false);
-  const [caseView, setCaseView] = useState<CaseViewMode>(readCaseViewPref);
-  const updateCaseView = useCallback((next: CaseViewMode) => {
-    setCaseView(next);
-    writeCaseViewPref(next);
-  }, []);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [secondaryOpen, setSecondaryOpen] = useState({
     approvals: false,
@@ -868,82 +833,18 @@ export function IssueDetail() {
           dateline={relativeTime(issue.updatedAt) + (hasLiveRuns ? " · live" : "")}
         />
 
-        {/* Optional immersive case view. IssueCaseMap below is the
-            canonical overview; this panel is a cool-but-deep read of
-            the same graph. Two renderers trade off visual style:
-              · Scene        — cinematic 3D (R3F + postprocessing)
-              · ThoughtSpace — particle mind-field (custom WebGL)
-            Toggle is outside the Collapsible trigger so you can
-            pre-pick a renderer without opening the panel. Only the
-            active renderer mounts — two WebGL contexts per issue is
-            wasteful, and ThoughtSpace is lazy-loaded. */}
-        <Collapsible defaultOpen={false} className="group space-y-2">
-          <div className="flex items-stretch gap-0 rounded-md border border-dashed border-border bg-muted/25 overflow-hidden">
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="flex-1 flex items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
-              >
-                <div className="min-w-0">
-                  <div className="boared-label text-[0.58rem] uppercase tracking-[0.18em] text-muted-foreground">
-                    Case view
-                  </div>
-                  <p className="mt-0.5 text-[0.7rem] text-muted-foreground">
-                    {caseView === "thoughtSpace"
-                      ? "ThoughtSpace — the graph as a particle mind-field."
-                      : "Scene — orbit the case in 3D."}
-                  </p>
-                </div>
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-              </button>
-            </CollapsibleTrigger>
-            <div
-              role="group"
-              aria-label="Case view renderer"
-              className="flex items-center border-l border-dashed border-border"
-            >
-              <button
-                type="button"
-                aria-pressed={caseView === "scene"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  updateCaseView("scene");
-                }}
-                className={cn(
-                  "px-3 h-full font-mono text-[0.6rem] uppercase tracking-[0.08em] transition-colors",
-                  caseView === "scene"
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                Scene
-              </button>
-              <button
-                type="button"
-                aria-pressed={caseView === "thoughtSpace"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  updateCaseView("thoughtSpace");
-                }}
-                className={cn(
-                  "px-3 h-full border-l border-dashed border-border font-mono text-[0.6rem] uppercase tracking-[0.08em] transition-colors",
-                  caseView === "thoughtSpace"
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                ThoughtSpace
-              </button>
-            </div>
-          </div>
-          <CollapsibleContent>
-            {caseView === "scene" ? (
-              <IssueSceneBlockHost />
-            ) : (
-              <IssueThoughtSpaceBlockHost />
-            )}
-          </CollapsibleContent>
-        </Collapsible>
+        {/* Unified 3D animated case dossier — metrics, phase rail,
+            ThoughtSpace, motion feed, event-weighted story scrubber.
+            Replaces the previous Scene/ThoughtSpace toggle and the
+            separate IssueCaseMap block. */}
+        <IssueDossier
+          issue={issue}
+          comments={comments}
+          activity={activity}
+          childIssues={childIssues}
+          linkedRuns={linkedRuns}
+          agentMap={agentMap}
+        />
       </div>
 
       {/* ── Case-file stack ── keeps the original narrow column width ── */}
@@ -1177,25 +1078,6 @@ export function IssueDetail() {
             )}
           </div>
         )}
-
-        <IssueCaseMap
-          issue={issue}
-          childIssues={childIssues}
-          comments={comments}
-          linkedRuns={linkedRuns}
-          agentMap={agentMap}
-          onFocusTab={(tab) => {
-            const anchor =
-              tab === "comments"
-                ? "chapter-correspondence"
-                : tab === "subissues"
-                  ? "chapter-subtasks"
-                  : "chapter-work";
-            document
-              .getElementById(anchor)
-              ?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-        />
 
         <InlineEditor
           value={issue.description ?? ""}
@@ -1861,46 +1743,3 @@ function useIssueDetailData(): IssueDetailData {
   return v;
 }
 
-/* Hero host — pulls the precomputed values from the shell and renders
- * the IssueSceneBlock. Must be a child of IssueDetailShell. */
-function IssueSceneBlockHost() {
-  const data = useIssueDetailData();
-  return (
-    <IssueSceneBlock
-      issue={data.issue}
-      comments={data.comments}
-      activity={data.activity}
-      childIssues={data.childIssues}
-      linkedRuns={data.linkedRuns}
-      agentMap={data.agentMap}
-      linkedApprovals={data.linkedApprovals}
-      graph={data.graph}
-      narrative={data.narrative}
-      chapters={data.chapters}
-      tour={data.tour}
-    />
-  );
-}
-
-function IssueThoughtSpaceBlockHost() {
-  const data = useIssueDetailData();
-  return (
-    <Suspense
-      fallback={
-        <div className="h-[clamp(420px,60vh,560px)] grid place-items-center border border-dashed border-border bg-muted/20 text-muted-foreground font-mono text-[0.65rem] uppercase tracking-[0.1em]">
-          Loading ThoughtSpace…
-        </div>
-      }
-    >
-      <IssueThoughtSpaceLazy
-        issue={data.issue}
-        comments={data.comments}
-        activity={data.activity}
-        childIssues={data.childIssues}
-        linkedRuns={data.linkedRuns}
-        agentMap={data.agentMap}
-        className="h-[clamp(420px,60vh,560px)] border border-[var(--boared-rule)]"
-      />
-    </Suspense>
-  );
-}
