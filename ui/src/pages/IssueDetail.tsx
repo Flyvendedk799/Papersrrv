@@ -833,11 +833,11 @@ export function IssueDetail() {
           dateline={relativeTime(issue.updatedAt) + (hasLiveRuns ? " · live" : "")}
         />
 
-        {/* Unified 3D animated case dossier — metrics, phase rail,
-            ThoughtSpace, motion feed, event-weighted story scrubber.
-            Replaces the previous Scene/ThoughtSpace toggle and the
-            separate IssueCaseMap block. */}
-        <IssueDossier
+        {/* Unified 3D animated case dossier. IssueDetailShell provides
+            narrative + tour via context so the Dossier doesn't need
+            to re-compute them; DossierMount below is a thin helper
+            that reads the context and passes them in as props. */}
+        <DossierMount
           issue={issue}
           comments={comments}
           activity={activity}
@@ -1741,5 +1741,69 @@ function useIssueDetailData(): IssueDetailData {
   const v = React.useContext(IssueDetailDataContext);
   if (!v) throw new Error("Must be inside IssueDetailShell");
   return v;
+}
+
+/* Thin wrapper that reads narrative/tour from IssueDetailDataContext
+ * and passes them to IssueDossier. Lets the Dossier stay decoupled
+ * from the shell's internal data shape. Also defines the onNextAction
+ * bridge that mirrors what the old CaseCompanion did — scroll + open
+ * the relevant below-the-fold section so the chip click lands
+ * somewhere meaningful. */
+function DossierMount(props: {
+  issue: IssueDetailData["issue"];
+  comments: IssueDetailData["comments"];
+  activity: IssueDetailData["activity"];
+  childIssues: IssueDetailData["childIssues"];
+  linkedRuns: IssueDetailData["linkedRuns"];
+  agentMap: IssueDetailData["agentMap"];
+}) {
+  const data = useIssueDetailData();
+  const tour = data.tour;
+  const onNextAction = React.useCallback(() => {
+    const kind = data.narrative.nextAction?.kind;
+    if (!kind) return;
+    const anchorId =
+      kind === "approvals" ? "chapter-verdict"
+      : kind === "composer" ? "chapter-correspondence"
+      : kind === "run" ? "chapter-work"
+      : "chapter-correspondence";
+    const el = document.getElementById(anchorId);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Companion used to also dispatch side-effects (expand the
+    // approvals collapsible, focus the composer). Those listeners are
+    // still wired in IssueDetail — fire them so the UX matches.
+    if (kind === "approvals") {
+      window.dispatchEvent(new Event("paperclip:expand-approvals"));
+    } else if (kind === "composer") {
+      window.dispatchEvent(new Event("paperclip:focus-composer"));
+    }
+  }, [data.narrative]);
+  return (
+    <IssueDossier
+      issue={props.issue}
+      comments={props.comments}
+      activity={props.activity}
+      childIssues={props.childIssues}
+      linkedRuns={props.linkedRuns}
+      agentMap={props.agentMap}
+      narrative={
+        data.narrative.nextAction
+          ? {
+              nextAction: {
+                kind: String(data.narrative.nextAction.kind),
+                label: data.narrative.nextAction.label,
+              },
+            }
+          : null
+      }
+      tour={{
+        status: tour.status,
+        caption: tour.caption ?? null,
+        start: () => tour.start(),
+        cancel: () => tour.cancel(),
+      }}
+      onNextAction={onNextAction}
+    />
+  );
 }
 

@@ -45,11 +45,18 @@ interface Props {
   childIssues?: Issue[]; linkedRuns?: RunForIssue[]; agentMap: Map<string, Agent>; className?: string;
   /**
    * Per-thought-id opacity multiplier in [0,1]. Missing entries default
-   * to 1.0. Used by the Dossier to drive the temporal scrubber (future
-   * events fade to ~0.05) and the phase-rail focus (non-focused
-   * clusters fade to ~0.1).
+   * to 1.0. The Dossier can use this to dim/emphasise arbitrary
+   * thoughts from outside the scene.
    */
   gateById?: Map<string, number>;
+  /**
+   * Called when the user clicks a thought in the scene (after the
+   * internal selection + camera fly). The Dossier hooks this to
+   * open its context card and scroll the DOM to the thought's twin
+   * case-file row. When provided, the in-scene selection overlay
+   * is suppressed — the Dossier owns the selection surface.
+   */
+  onNodeActivate?: (thoughtId: string) => void;
 }
 
 export interface IssueThoughtSpaceHandle {
@@ -60,7 +67,7 @@ export interface IssueThoughtSpaceHandle {
 }
 
 export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>(
-  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById }, ref) {
+  function IssueThoughtSpace({ issue, comments, activity, childIssues, linkedRuns, agentMap, className, gateById, onNodeActivate }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -337,10 +344,15 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     if (d && !d.moved) {
       const idx = hitTest(d.sx, d.sy);
-      if (idx >= 0) setSelectedId(nodesRef.current[idx].thought.id);
-      else if (selectedIdxRef.current >= 0) setSelectedId(null);
+      if (idx >= 0) {
+        const thoughtId = nodesRef.current[idx].thought.id;
+        setSelectedId(thoughtId);
+        onNodeActivate?.(thoughtId);
+      } else if (selectedIdxRef.current >= 0) {
+        setSelectedId(null);
+      }
     }
-  }, [hitTest]);
+  }, [hitTest, onNodeActivate]);
 
   useEffect(() => {
     const c = canvasRef.current; if (!c) return;
@@ -846,7 +858,10 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
         </div>
       )}
 
-      {selectedId && selectedThought && (
+      {/* In-scene selection panel. Suppressed when the Dossier owns
+          the selection surface (onNodeActivate is wired) — that keeps
+          one source of truth for "what is selected". */}
+      {!onNodeActivate && selectedId && selectedThought && (
         <div className="absolute top-1/2 left-6 md:left-10 z-20 max-w-[440px] pointer-events-none" style={{ transform: "translate(0, -50%)" }}>
           <div className="p-6 pointer-events-auto max-h-[70vh] overflow-y-auto backdrop-blur-sm" style={{ background: "rgba(15,14,12,0.82)", border: `1px solid ${WARM_DIM}`, color: WARM }}>
             <div className="font-mono text-[0.56rem] uppercase tracking-[0.2em] mb-3" style={{ color: WARM_DIM }}>{selectedThought.kind === "issue" ? "The matter" : selectedThought.kind === "comment" ? "Correspondence" : selectedThought.kind === "activity" ? "Activity" : selectedThought.kind === "subissue" ? "Sub-matter" : selectedThought.kind === "ancestor" ? "Ancestor" : "Run"} · {selectedThought.ts > 0 ? relativeTime(new Date(selectedThought.ts).toISOString()) : ""}</div>
@@ -875,6 +890,7 @@ export const IssueThoughtSpace = memo(forwardRef<IssueThoughtSpaceHandle, Props>
     (prev.childIssues?.length ?? 0) === (next.childIssues?.length ?? 0) &&
     (prev.linkedRuns?.length ?? 0) === (next.linkedRuns?.length ?? 0) &&
     prev.agentMap === next.agentMap &&
-    prev.gateById === next.gateById
+    prev.gateById === next.gateById &&
+    prev.onNodeActivate === next.onNodeActivate
   );
 });

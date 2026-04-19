@@ -1,35 +1,39 @@
 /**
  * IssueDossier — the hero block of IssueDetail.
  *
- * One unified 3D animated surface that tells the case's story through
- * navigation, not through a linear timeline control. The shape:
- *
  *   ┌─ metrics strip (age · breakdown · thread · runs) ──┐
- *   │ phase rail │   ThoughtSpace (DAG flow)             │
- *   │  (nav      │   · left-to-right causal depth axis   │ motion │
- *   │   only)    │   · hover/select → causal chain glows │ feed   │
- *   │            │   · brainwave pulses along edges      │        │
- *   └─────────────────────────────────────────────────────────────┘
+ *   │ phase pills (fly-camera shortcuts)                 │
+ *   ├──────────────────────────┬─────────────────────────┤
+ *   │                          │   context card          │
+ *   │   ThoughtSpace (DAG)     │   (selected thought +   │
+ *   │                          │    chain info +         │
+ *   │                          │    "jump to in thread") │
+ *   ├──────────────────────────┴─────────────────────────┤
+ *   │ [▶ Walk me through]   ◆ next-action chip           │
+ *   └────────────────────────────────────────────────────┘
  *
- * Storytelling is driven by exploration, not a play button: hover any
- * thought and its full upstream lineage + downstream consequences
- * light up (chain tracing lives inside IssueThoughtSpace). Clicking a
- * thought flies the camera to it. The phase rail and motion feed are
- * purely navigation aids — they fly the camera, no other state.
+ * Storytelling is navigation-driven: hover a thought to trace its
+ * causal chain (lives in IssueThoughtSpace); click to fly the camera
+ * and open the context card. The tour button expresses the same story
+ * as a guided sequence, using `narrative` + `chapters` + `tour` from
+ * IssueDetail's existing data context. The next-action chip surfaces
+ * whatever the narrative thinks you should do next.
  *
- * The heavy-lifting visualisation (graph, layout, particles, camera,
- * chain trace) lives in IssueThoughtSpace. This wrapper owns layout
- * + the tiny navigation HUD.
+ * Clicking a thought in the 3D scene also scrolls the page to that
+ * thought's DOM twin (#comment-{id}, or the SceneRow id for others),
+ * so the abstract visualization stays grounded in the readable case
+ * file below the Dossier.
  */
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  ChevronRight,
+  ArrowDown,
   GitBranch,
-  Layers,
   ListTree,
-  MessageSquare,
+  Pause,
+  Play,
   Radio,
+  Sparkles,
   Target,
 } from "lucide-react";
 import type {
@@ -47,6 +51,23 @@ import {
 
 type Phase = "ancestors" | "anchor" | "subissues" | "motion";
 
+/** Narrow slice of the `narrativeFor` return that the Dossier uses.
+ * Keeps the Dossier decoupled from the full scene-narrative types. */
+export interface DossierNarrative {
+  nextAction?: {
+    kind: string;
+    label: string;
+  } | null;
+}
+
+/** Narrow slice of the `useGuidedTour` return. */
+export interface DossierTour {
+  status: string;
+  caption?: string | null;
+  start: () => void;
+  cancel: () => void;
+}
+
 interface Props {
   issue: Issue;
   comments?: IssueComment[];
@@ -54,28 +75,37 @@ interface Props {
   childIssues?: Issue[];
   linkedRuns?: RunForIssue[];
   agentMap: Map<string, Agent>;
+  /** From IssueDetailDataContext — drives the next-action chip. */
+  narrative?: DossierNarrative | null;
+  /** From IssueDetailDataContext — drives the Play-tour button. */
+  tour?: DossierTour | null;
+  /** Bridge to IssueDetail's existing handleNextAction (scroll +
+   * expand + select). When absent the chip falls back to a scroll
+   * to the comment composer. */
+  onNextAction?: () => void;
   className?: string;
-}
-
-interface FeedItem {
-  id: string;
-  kind: "comment" | "run";
-  ts: number;
-  label: string;
-  authorName: string;
-  isLive?: boolean;
 }
 
 const DONE = new Set(["done", "cancelled"]);
 const LIVE_RUN = new Set(["queued", "running", "in_progress"]);
 
-// ID helpers — must match the shape IssueThoughtSpace emits when it
-// builds its internal thoughts[] array.
 const idComment = (id: string) => `comment:${id}`;
 const idRun = (id: string) => `run:${id}`;
 const idSub = (id: string) => `subissue:${id}`;
 const idAnc = (id: string) => `ancestor:${id}`;
 const idIssue = (id: string) => `issue:${id}`;
+
+/** Map a thought-id to the DOM id of its case-file row. */
+function domIdFor(thoughtId: string): string | null {
+  if (thoughtId.startsWith("comment:")) {
+    return `comment-${thoughtId.slice("comment:".length)}`;
+  }
+  // Sub-issues / activities / runs / approvals all get wrapped by
+  // SceneRow using `id={node.id}` (raw, unprefixed).
+  const colonIdx = thoughtId.indexOf(":");
+  if (colonIdx > 0) return thoughtId.slice(colonIdx + 1);
+  return null;
+}
 
 export function IssueDossier({
   issue,
@@ -84,9 +114,13 @@ export function IssueDossier({
   childIssues,
   linkedRuns,
   agentMap,
+  narrative,
+  tour,
+  onNextAction,
   className,
 }: Props) {
   const tsRef = useRef<IssueThoughtSpaceHandle>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const metrics = useMemo(() => {
     const kids = childIssues ?? [];
@@ -98,36 +132,18 @@ export function IssueDossier({
     return { total, done, liveRunCount, commentCount, ageMs };
   }, [childIssues, linkedRuns, comments, issue.createdAt]);
 
-  /* Motion feed — comments + runs, newest first. Click to fly camera. */
-  const motionFeed = useMemo<FeedItem[]>(() => {
-    const out: FeedItem[] = [];
-    for (const c of comments ?? []) {
-      const who = c.authorAgentId ? agentMap.get(c.authorAgentId)?.name ?? "—" : "—";
-      out.push({
-        id: idComment(c.id),
-        kind: "comment",
-        ts: new Date(c.createdAt).getTime(),
-        label: c.body.replace(/\s+/g, " ").slice(0, 120),
-        authorName: who,
-      });
-    }
-    for (const r of linkedRuns ?? []) {
-      const who = agentMap.get(r.agentId)?.name ?? "agent";
-      out.push({
-        id: idRun(r.runId),
-        kind: "run",
-        ts: new Date(r.startedAt ?? r.createdAt ?? issue.createdAt).getTime(),
-        label: `${who} · ${r.status}`,
-        authorName: who,
-        isLive: LIVE_RUN.has(r.status),
-      });
-    }
-    return out.sort((a, b) => b.ts - a.ts).slice(0, 40);
-  }, [comments, linkedRuns, agentMap, issue.createdAt]);
+  /* Per-kind lookups for the context card. Keeping these memoised
+   * so the card doesn't re-derive them on every selection change. */
+  const lookup = useMemo(() => {
+    const commentsMap = new Map<string, IssueComment>();
+    for (const c of comments ?? []) commentsMap.set(c.id, c);
+    const runsMap = new Map<string, RunForIssue>();
+    for (const r of linkedRuns ?? []) runsMap.set(r.runId, r);
+    const subsMap = new Map<string, Issue>();
+    for (const ch of childIssues ?? []) subsMap.set(ch.id, ch);
+    return { commentsMap, runsMap, subsMap };
+  }, [comments, linkedRuns, childIssues]);
 
-  /* Phase click: navigation only — flies the camera to a representative
-   * node in that cluster. No global dimming; the causal-chain dimming
-   * happens inside ThoughtSpace when the user hovers or selects. */
   const onPhaseClick = useCallback(
     (phase: Phase) => {
       let targetId: string | null = null;
@@ -137,7 +153,7 @@ export function IssueDossier({
           break;
         case "ancestors":
           if (issue.ancestors && issue.ancestors.length > 0) {
-            // Nearest ancestor reads best first.
+            // Nearest ancestor is the most useful entry point.
             targetId = idAnc(issue.ancestors[issue.ancestors.length - 1].id);
           }
           break;
@@ -147,18 +163,40 @@ export function IssueDossier({
         case "motion": {
           const live = (linkedRuns ?? []).find((r) => LIVE_RUN.has(r.status));
           if (live) targetId = idRun(live.runId);
-          else if (motionFeed.length > 0) targetId = motionFeed[0].id;
+          else {
+            const newestComment = (comments ?? []).slice().sort(
+              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+            )[0];
+            if (newestComment) targetId = idComment(newestComment.id);
+          }
           break;
         }
       }
-      if (targetId) tsRef.current?.focusNodeId(targetId);
+      if (targetId) {
+        setSelectedId(targetId);
+        tsRef.current?.focusNodeId(targetId);
+      }
     },
-    [issue.id, issue.ancestors, childIssues, linkedRuns, motionFeed],
+    [issue.id, issue.ancestors, childIssues, linkedRuns, comments],
   );
 
-  const onMotionClick = useCallback((id: string) => {
-    tsRef.current?.focusNodeId(id);
+  /* Scene click → select + scroll to DOM twin. This is the bridge
+   * that grounds the 3D scene in the case-file stack below. */
+  const onNodeActivate = useCallback((thoughtId: string) => {
+    setSelectedId(thoughtId);
+    const domId = domIdFor(thoughtId);
+    if (!domId) return;
+    const el = document.getElementById(domId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Trigger the SceneRow `data-pulse` flash that the case-file
+    // components already style for "Companion jumped here".
+    el.setAttribute("data-pulse", "true");
+    window.setTimeout(() => el.removeAttribute("data-pulse"), 1200);
   }, []);
+
+  const tourRunning = tour?.status === "running";
+  const canTour = !!tour && !!narrative;
 
   return (
     <section
@@ -167,7 +205,7 @@ export function IssueDossier({
         className,
       )}
     >
-      {/* Tiny informational strip — just enough to anchor the scene. */}
+      {/* Metrics strip — unchanged reads, compacter look. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 border-b border-[var(--boared-rule)]/50">
         <Metric label="Age" value={formatAge(metrics.ageMs)} sub="since opened" />
         <Metric
@@ -198,20 +236,20 @@ export function IssueDossier({
         />
       </div>
 
-      {/* 3-column layout. Phase rail and motion feed are navigation
-          shortcuts — neither drives global state beyond a camera fly. */}
-      <div className="grid grid-cols-1 md:grid-cols-[14rem_1fr_20rem] min-h-[clamp(520px,68vh,720px)]">
-        <PhaseRail
-          onClick={onPhaseClick}
-          counts={{
-            ancestors: (issue.ancestors ?? []).length,
-            anchor: 1,
-            subissues: (childIssues ?? []).length,
-            motion: (comments ?? []).length + (linkedRuns ?? []).length,
-          }}
-        />
+      {/* Phase pills — fly-camera shortcuts. No gating side-effect. */}
+      <PhasePills
+        onClick={onPhaseClick}
+        counts={{
+          ancestors: (issue.ancestors ?? []).length,
+          anchor: 1,
+          subissues: (childIssues ?? []).length,
+          motion: (comments ?? []).length + (linkedRuns ?? []).length,
+        }}
+      />
 
-        <div className="relative border-y md:border-y-0 md:border-x border-[var(--boared-rule)]/50 min-h-[520px]">
+      {/* Scene + context card. */}
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_20rem] min-h-[clamp(520px,70vh,760px)]">
+        <div className="relative border-b md:border-b-0 md:border-r border-[var(--boared-rule)]/50 min-h-[520px]">
           <IssueThoughtSpace
             ref={tsRef}
             issue={issue}
@@ -220,17 +258,63 @@ export function IssueDossier({
             childIssues={childIssues}
             linkedRuns={linkedRuns}
             agentMap={agentMap}
+            onNodeActivate={onNodeActivate}
             className="absolute inset-0"
           />
-          {/* Hint strip — explains the navigation-is-the-story idea
-              so first-time users know what to do. Fades into the
-              scene's own "drag · scroll · click" hint. */}
-          <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 font-mono text-[0.55rem] uppercase tracking-[0.16em] text-[#7A6F50]/80">
-            hover a thought · trace its chain · click to fly
-          </div>
+          {/* Tour caption chyron — bottom-centre of the canvas when
+              a tour is running. Purely informational, doesn't block
+              clicks. */}
+          {tourRunning && tour?.caption && (
+            <div className="pointer-events-none absolute left-1/2 bottom-4 -translate-x-1/2 max-w-[80%] px-3 py-1.5 rounded-sm border border-[#F2E6C4]/40 bg-[#08080A]/80 backdrop-blur-sm font-serif italic text-[0.82rem] text-[#F2E6C4] text-center">
+              {tour.caption}
+            </div>
+          )}
         </div>
 
-        <MotionFeed feed={motionFeed} onClick={onMotionClick} />
+        <ContextCard
+          issue={issue}
+          selectedId={selectedId}
+          lookup={lookup}
+          agentMap={agentMap}
+          onJumpToTwin={() => {
+            if (selectedId) onNodeActivate(selectedId);
+          }}
+        />
+      </div>
+
+      {/* Bottom bar: tour + next-action */}
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-[var(--boared-rule)]/50">
+        <button
+          type="button"
+          disabled={!canTour}
+          onClick={() => {
+            if (!tour) return;
+            if (tourRunning) tour.cancel();
+            else tour.start();
+          }}
+          className={cn(
+            "inline-flex items-center gap-1.5 h-7 px-2.5 font-mono text-[0.6rem] uppercase tracking-[0.12em] border transition-colors",
+            tourRunning
+              ? "border-[var(--boared-acid)] text-[var(--boared-acid)]"
+              : "border-[#7A6F50]/60 text-[#F2E6C4] hover:bg-[#F2E6C4]/[0.06]",
+            !canTour && "opacity-40 cursor-not-allowed",
+          )}
+          title={canTour ? (tourRunning ? "Stop the tour" : "Walk me through this case") : undefined}
+        >
+          {tourRunning ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+          {tourRunning ? "Stop tour" : "Walk me through"}
+        </button>
+
+        {narrative?.nextAction && (
+          <button
+            type="button"
+            onClick={() => onNextAction?.()}
+            className="ml-auto inline-flex items-center gap-1.5 h-7 px-3 font-mono text-[0.6rem] uppercase tracking-[0.12em] border border-[var(--boared-acid)]/70 text-[var(--boared-acid)] bg-[var(--boared-acid)]/[0.08] hover:bg-[var(--boared-acid)]/[0.18] transition-colors"
+          >
+            <Sparkles className="h-3 w-3" />
+            {narrative.nextAction.label}
+          </button>
+        )}
       </div>
     </section>
   );
@@ -272,24 +356,27 @@ function Metric({
   );
 }
 
-function PhaseRail({
+function PhasePills({
   onClick,
   counts,
 }: {
   onClick: (p: Phase) => void;
   counts: Record<Phase, number>;
 }) {
-  const rows: Array<{ id: Phase; label: string; hint: string; Icon: typeof Target }> = [
-    { id: "ancestors", label: "Upstream", hint: "why this exists", Icon: GitBranch },
-    { id: "anchor", label: "Anchor", hint: "the matter itself", Icon: Target },
-    { id: "subissues", label: "Breakdown", hint: "sub-matters", Icon: ListTree },
-    { id: "motion", label: "Motion", hint: "actions & thoughts", Icon: Radio },
+  const rows: Array<{ id: Phase; label: string; Icon: typeof Target }> = [
+    { id: "ancestors", label: "Upstream", Icon: GitBranch },
+    { id: "anchor", label: "Anchor", Icon: Target },
+    { id: "subissues", label: "Breakdown", Icon: ListTree },
+    { id: "motion", label: "Motion", Icon: Radio },
   ];
   return (
     <nav
-      aria-label="Navigate to a phase"
-      className="flex md:flex-col border-b md:border-b-0 divide-x md:divide-x-0 md:divide-y divide-[var(--boared-rule)]/50"
+      aria-label="Jump the camera to a phase"
+      className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-b border-[var(--boared-rule)]/50"
     >
+      <span className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-[#7A6F50] mr-1">
+        Jump to ▸
+      </span>
       {rows.map((r) => {
         const available = counts[r.id] > 0 || r.id === "anchor";
         return (
@@ -298,25 +385,18 @@ function PhaseRail({
             type="button"
             disabled={!available}
             onClick={() => available && onClick(r.id)}
-            title={available ? `Fly to ${r.label.toLowerCase()}` : undefined}
             className={cn(
-              "flex-1 md:flex-initial flex md:flex-row items-start gap-2 px-3 py-3 text-left transition-colors",
-              "text-[#F2E6C4]/70 hover:bg-[#F2E6C4]/[0.03] hover:text-[#F2E6C4]",
-              !available && "opacity-40 cursor-default",
+              "inline-flex items-center gap-1 h-6 px-2 border border-[#7A6F50]/50 font-mono text-[0.58rem] uppercase tracking-[0.12em] transition-colors",
+              available
+                ? "text-[#F2E6C4] hover:bg-[#F2E6C4]/[0.06] hover:border-[#F2E6C4]/70"
+                : "text-[#F2E6C4]/30 cursor-default",
             )}
           >
-            <r.Icon className="h-3.5 w-3.5 mt-[2px] shrink-0" />
-            <div className="min-w-0">
-              <div className="font-mono text-[0.58rem] uppercase tracking-[0.14em]">
-                {r.label}
-              </div>
-              <div className="mt-0.5 text-[0.68rem] text-[#7A6F50] leading-snug">
-                {r.hint}
-                {r.id !== "anchor" && counts[r.id] > 0 && (
-                  <span className="ml-1 tabular-nums">· {counts[r.id]}</span>
-                )}
-              </div>
-            </div>
+            <r.Icon className="h-2.5 w-2.5" />
+            {r.label}
+            {r.id !== "anchor" && counts[r.id] > 0 && (
+              <span className="ml-0.5 tabular-nums text-[#7A6F50]">{counts[r.id]}</span>
+            )}
           </button>
         );
       })}
@@ -324,61 +404,156 @@ function PhaseRail({
   );
 }
 
-function MotionFeed({
-  feed,
-  onClick,
+function ContextCard({
+  issue,
+  selectedId,
+  lookup,
+  agentMap,
+  onJumpToTwin,
 }: {
-  feed: FeedItem[];
-  onClick: (id: string) => void;
+  issue: Issue;
+  selectedId: string | null;
+  lookup: {
+    commentsMap: Map<string, IssueComment>;
+    runsMap: Map<string, RunForIssue>;
+    subsMap: Map<string, Issue>;
+  };
+  agentMap: Map<string, Agent>;
+  onJumpToTwin: () => void;
 }) {
-  if (feed.length === 0) {
+  /* Idle: a "where are we" read, not just a blank panel. */
+  if (!selectedId) {
     return (
-      <div className="hidden md:flex items-center justify-center p-4 text-center font-mono text-[0.65rem] text-[#7A6F50]">
-        Nothing has happened yet.
+      <div className="flex flex-col p-4 gap-3 max-h-[clamp(520px,70vh,760px)] overflow-y-auto">
+        <div className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-[#7A6F50]">
+          Context
+        </div>
+        <div className="font-serif italic text-[0.95rem] leading-snug text-[#F2E6C4]">
+          {issue.title}
+        </div>
+        <div className="text-[0.72rem] text-[#F2E6C4]/70 leading-snug">
+          Hover a thought to trace its lineage; click one to fly the camera
+          and see its full context here.
+        </div>
       </div>
     );
   }
+
+  let heading = "Thought";
+  let kind = "thought";
+  let author: string | null = null;
+  let ts: number | null = null;
+  let body: string | null = null;
+  let badge: string | null = null;
+  let canJump = false;
+
+  if (selectedId.startsWith("comment:")) {
+    const c = lookup.commentsMap.get(selectedId.slice("comment:".length));
+    if (c) {
+      heading = "Comment";
+      kind = "comment";
+      author = c.authorAgentId ? agentMap.get(c.authorAgentId)?.name ?? "—" : "—";
+      ts = new Date(c.createdAt).getTime();
+      body = c.body;
+      canJump = true;
+    }
+  } else if (selectedId.startsWith("run:")) {
+    const r = lookup.runsMap.get(selectedId.slice("run:".length));
+    if (r) {
+      heading = "Run";
+      kind = "run";
+      author = agentMap.get(r.agentId)?.name ?? "agent";
+      ts = new Date(r.startedAt ?? r.createdAt ?? issue.createdAt).getTime();
+      body = `status · ${r.status}${r.finishedAt ? ` · finished ${relativeTime(r.finishedAt)}` : ""}`;
+      badge = LIVE_RUN.has(r.status) ? "live" : null;
+      canJump = true;
+    }
+  } else if (selectedId.startsWith("subissue:")) {
+    const s = lookup.subsMap.get(selectedId.slice("subissue:".length));
+    if (s) {
+      heading = "Sub-matter";
+      kind = "subissue";
+      author = s.assigneeAgentId ? agentMap.get(s.assigneeAgentId)?.name ?? "—" : null;
+      ts = new Date(s.createdAt).getTime();
+      body = `${s.identifier ?? s.id.slice(0, 6)} · ${s.title}`;
+      badge = s.status;
+      canJump = true;
+    }
+  } else if (selectedId.startsWith("ancestor:")) {
+    heading = "Upstream";
+    kind = "ancestor";
+    const ancId = selectedId.slice("ancestor:".length);
+    const anc = (issue.ancestors ?? []).find((a) => a.id === ancId);
+    if (anc) {
+      body = `${anc.identifier ?? ancId.slice(0, 6)} · ${anc.title}`;
+    }
+  } else if (selectedId.startsWith("issue:")) {
+    heading = "Anchor";
+    kind = "anchor";
+    ts = new Date(issue.createdAt).getTime();
+    body = issue.title;
+    badge = issue.status;
+  }
+
   return (
-    <div className="max-h-[clamp(520px,68vh,720px)] overflow-y-auto">
-      <div className="sticky top-0 z-10 px-3 py-2 border-b border-[var(--boared-rule)]/50 bg-[#08080A]/95 backdrop-blur-sm font-mono text-[0.55rem] uppercase tracking-[0.18em] text-[#7A6F50]">
-        Motion · newest first
+    <div className="flex flex-col max-h-[clamp(520px,70vh,760px)] overflow-y-auto">
+      <div className="sticky top-0 z-10 px-3 py-2 border-b border-[var(--boared-rule)]/50 bg-[#08080A]/95 backdrop-blur-sm flex items-baseline justify-between gap-2">
+        <span className="font-mono text-[0.55rem] uppercase tracking-[0.18em] text-[#7A6F50]">
+          {heading}
+        </span>
+        {badge && (
+          <span
+            className={cn(
+              "font-mono text-[0.55rem] uppercase tracking-[0.12em]",
+              badge === "live"
+                ? "text-[var(--boared-acid)]"
+                : "text-[#F2E6C4]/75",
+            )}
+          >
+            {badge}
+          </span>
+        )}
       </div>
-      <ul className="divide-y divide-[var(--boared-rule)]/30">
-        {feed.map((b) => {
-          const Icon = b.kind === "comment" ? MessageSquare : Layers;
-          return (
-            <li key={b.id}>
-              <button
-                type="button"
-                onClick={() => onClick(b.id)}
-                title="Fly camera to this thought"
-                className="group w-full flex items-start gap-2 px-3 py-2 text-left hover:bg-[#F2E6C4]/[0.04] transition-colors"
-              >
-                <Icon className="h-3 w-3 mt-[4px] shrink-0 text-[#7A6F50] group-hover:text-[#F2E6C4]" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-[0.58rem] uppercase tracking-[0.1em] text-[#F2E6C4]">
-                      {b.authorName}
-                    </span>
-                    {b.isLive && (
-                      <span className="font-mono text-[0.55rem] uppercase tracking-[0.12em] text-[var(--boared-acid)]">
-                        live
-                      </span>
-                    )}
-                    <span className="ml-auto font-mono text-[0.55rem] tabular-nums text-[#7A6F50] shrink-0">
-                      {relativeTime(new Date(b.ts).toISOString())}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 text-[0.72rem] text-[#F2E6C4]/85 leading-snug line-clamp-2">
-                    {b.label}
-                  </div>
-                </div>
-                <ChevronRight className="h-3 w-3 mt-[4px] shrink-0 text-[#7A6F50] opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+
+      <div className="flex flex-col gap-2 p-3">
+        {(author || ts) && (
+          <div className="flex items-center gap-2 font-mono text-[0.6rem] uppercase tracking-[0.1em] text-[#7A6F50]">
+            {author && <span className="text-[#F2E6C4]">{author}</span>}
+            {ts && <span className="tabular-nums">{relativeTime(new Date(ts).toISOString())}</span>}
+          </div>
+        )}
+
+        {body && (
+          <div className="text-[0.82rem] leading-snug text-[#F2E6C4] whitespace-pre-wrap">
+            {kind === "comment" ? body : <span className="italic">{body}</span>}
+          </div>
+        )}
+
+        {canJump && (
+          <button
+            type="button"
+            onClick={onJumpToTwin}
+            className="self-start inline-flex items-center gap-1.5 h-7 px-2.5 font-mono text-[0.6rem] uppercase tracking-[0.12em] border border-[#7A6F50]/60 text-[#F2E6C4] hover:bg-[#F2E6C4]/[0.06] transition-colors"
+          >
+            <ArrowDown className="h-3 w-3" />
+            Jump to in thread
+          </button>
+        )}
+
+        {/* Inline legend-style prompt for the next action on this
+            thought type. Small but makes the panel feel alive. */}
+        <div className="mt-1 font-mono text-[0.55rem] uppercase tracking-[0.1em] text-[#7A6F50]">
+          {kind === "comment"
+            ? "↑ upstream · ↓ downstream — trace via hover"
+            : kind === "run"
+              ? "belongs to this run"
+              : kind === "subissue"
+                ? "child of the anchor"
+                : kind === "ancestor"
+                  ? "upstream of the anchor"
+                  : "the matter itself"}
+        </div>
+      </div>
     </div>
   );
 }
