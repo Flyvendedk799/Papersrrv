@@ -39,14 +39,13 @@ export type FeatureFlagKey =
   | "issue_page_v3";
 
 const DEFAULTS: Record<FeatureFlagKey, boolean> = {
-  // Backlog tab is default-off. Opt in via VITE_FF_BACKLOG_TAB_ENABLED=on,
-  // `?ff=backlog_tab_enabled`, or `localStorage["paperclip.ff.backlog_tab_enabled"]="on"`.
-  backlog_tab_enabled: false,
-  // GitHub tab is default-off. Opt in via VITE_FF_GITHUB_TAB_ENABLED=on,
-  // `?ff=github_tab_enabled`, or `localStorage["paperclip.ff.github_tab_enabled"]="on"`.
-  github_tab_enabled: false,
-  // PAT-based GitHub auth is default-off; GitHub App auth is preferred.
-  github_pat_auth: false,
+  // Backlog tab — shipped, default on.
+  backlog_tab_enabled: true,
+  // GitHub tab — shipped, default on.
+  github_tab_enabled: true,
+  // PAT-based GitHub auth — on so users can actually add a connection
+  // (GitHub App OAuth flow is still pending).
+  github_pat_auth: true,
   // Webhook ingress default-off until a webhook secret is configured.
   github_webhooks: false,
   // PR mutations (comment/approve/merge) off by default.

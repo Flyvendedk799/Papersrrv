@@ -52,17 +52,23 @@ const PRIMARY_NAV_STATIC: Array<{ to: string; label: string; key: string }> = [
   { to: "/inbox", label: "Inbox", key: "inbox" },
 ];
 
-// GitHub tab is appended behind the `github_tab_enabled` flag (4.0 B1).
-// Projects stays in place; both live alongside until the umbrella flag
-// flips on for a deployment (per backlog 4.0 B1 / E1 continuity rule).
-const PRIMARY_NAV: Array<{ to: string; label: string; key: string }> =
-  isFeatureEnabled("github_tab_enabled")
-    ? [
-        ...PRIMARY_NAV_STATIC.slice(0, 3),
-        { to: "/github", label: "GitHub", key: "github" },
-        ...PRIMARY_NAV_STATIC.slice(3),
-      ]
-    : PRIMARY_NAV_STATIC;
+function buildPrimaryNav(): Array<{ to: string; label: string; key: string }> {
+  const nav = [...PRIMARY_NAV_STATIC];
+  if (isFeatureEnabled("backlog_tab_enabled")) {
+    // Insert Backlog right after Issues so planning artifacts live
+    // next to the cases they evolve from.
+    const idx = nav.findIndex((n) => n.key === "issues");
+    nav.splice(idx + 1, 0, { to: "/backlog", label: "Backlog", key: "backlog" });
+  }
+  if (isFeatureEnabled("github_tab_enabled")) {
+    // GitHub slots after Projects so engineering context lives together.
+    const idx = nav.findIndex((n) => n.key === "projects");
+    nav.splice(idx + 1, 0, { to: "/github", label: "GitHub", key: "github" });
+  }
+  return nav;
+}
+
+const PRIMARY_NAV = buildPrimaryNav();
 
 const ARCHIVE_NAV: Array<{ to: string; label: string }> = [
   { to: "/goals", label: "Goals" },
