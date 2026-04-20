@@ -38,6 +38,11 @@ import { CaseProblem } from "../components/boared/caseFile/CaseProblem";
 import { CaseBanner } from "../components/boared/caseFile/CaseBanner";
 import { CasePageLayout } from "../components/boared/caseFile/CasePageLayout";
 import { CaseSectionRule } from "../components/boared/caseFile/CaseSectionRule";
+import { ChapterHeading } from "../components/boared/caseFile/ChapterHeading";
+import { ChapterNav } from "../components/boared/caseFile/ChapterNav";
+import { ScrollProgressRail } from "../components/boared/caseFile/ScrollProgressRail";
+import { ImmersiveGraphFrame } from "../components/boared/caseFile/ImmersiveGraphFrame";
+import { CaseArcRibbon } from "../components/boared/caseFile/CaseArcRibbon";
 import { CaseSidebar } from "../components/boared/caseFile/CaseSidebar";
 import { CaseArtifacts } from "../components/boared/caseFile/CaseArtifacts";
 import { CaseGraph } from "../components/boared/caseFile/CaseGraph";
@@ -971,6 +976,11 @@ export function IssueDetail() {
       agentMap={agentMap}
       linkedApprovals={linkedApprovals}
     >
+      {/* Scroll progress rail — acid thread across the very top of
+       * the viewport that fills as the reader moves through the
+       * case. Ambient immersion cue. */}
+      <ScrollProgressRail />
+
       {/* Sticky reading aid — md+ only, appears after the hero
        * scrolls past the viewport. Keeps identity + quick-jump
        * chips always reachable. */}
@@ -1061,6 +1071,10 @@ export function IssueDetail() {
         }
         hero={
           <div id="chapter-overview" className="scroll-mt-8 space-y-4">
+            {/* Narrative arc — opens to closes / in-flight. Sits
+             * above the hero so the reader has a compass before
+             * they read the title. */}
+            <CaseArcRibbon issue={issue} hasLiveRuns={hasLiveRuns} />
             <CaseHero
               issue={issue}
               hasLiveRuns={hasLiveRuns}
@@ -1134,9 +1148,11 @@ export function IssueDetail() {
             />
 
             {/* What was made — CaseArtifacts from synthesis. */}
-            <section id="chapter-artifacts" className="space-y-3 scroll-mt-8">
-              <CaseSectionRule
-                label="What was made"
+            <section id="chapter-artifacts" className="scroll-mt-20 space-y-4">
+              <ChapterHeading
+                index={2}
+                title="What was made"
+                subtitle="Tangible outputs of the work — files touched, pull requests opened, sub-cases spawned, decisions recorded."
                 meta={
                   synthesis?.artifacts?.length
                     ? `${synthesis.artifacts.length} ${synthesis.artifacts.length === 1 ? "artifact" : "artifacts"}`
@@ -1174,16 +1190,22 @@ export function IssueDetail() {
             </section>
 
             {/* How it got here — the fan-out/fan-in graph. */}
-            <section id="chapter-graph" className="space-y-3 scroll-mt-8">
-              <CaseSectionRule
-                label="How it got here"
+            <section id="chapter-graph" className="scroll-mt-20 space-y-4">
+              <ChapterHeading
+                index={3}
+                title="How it got here"
+                subtitle={
+                  issue.status === "done" || issue.status === "cancelled"
+                    ? "The path from opening statement to resolution, traced step by step."
+                    : "The work-in-progress — branches, delegations and decisions so far."
+                }
                 meta={
                   synthesis?.graph?.nodes?.length
                     ? `${synthesis.graph.nodes.length} ${synthesis.graph.nodes.length === 1 ? "step" : "steps"}`
                     : undefined
                 }
               />
-              <CaseGraph
+              <ImmersiveGraphFrame
                 graph={synthesis?.graph ?? { nodes: [], edges: [] }}
                 synthesis={synthesis}
                 loading={synthesisQuery.isLoading}
@@ -1195,9 +1217,11 @@ export function IssueDetail() {
              * Pass the FULL comment list; CaseConversation handles
              * classification, capping, older-loading and the
              * Conversation/Full-log toggle internally. */}
-            <section id="chapter-correspondence" className="space-y-3 scroll-mt-8">
-              <CaseSectionRule
-                label="The conversation"
+            <section id="chapter-correspondence" className="scroll-mt-20 space-y-4">
+              <ChapterHeading
+                index={4}
+                title="The conversation"
+                subtitle="The thread — role-tagged so the reader can follow who decided what, without running down every comment."
                 meta={
                   commentsTotal > 0
                     ? `${commentsTotal} ${commentsTotal === 1 ? "entry" : "entries"} total`
@@ -1237,10 +1261,13 @@ export function IssueDetail() {
 
             {/* Files touched — only rendered when runs actually produced files. */}
             {(issueFiles ?? []).length > 0 && (
-              <section id="chapter-files" className="space-y-3 scroll-mt-8">
-                <CaseSectionRule
-                  label="Files touched"
+              <section id="chapter-files" className="scroll-mt-20 space-y-4">
+                <ChapterHeading
+                  index={5}
+                  title="Files touched"
+                  subtitle="Every file that was read or written while the case was worked."
                   meta={`${(issueFiles ?? []).length} ${(issueFiles ?? []).length === 1 ? "file" : "files"}`}
+                  compact
                 />
                 <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
                   {(issueFiles ?? [])
@@ -1295,10 +1322,13 @@ export function IssueDetail() {
 
             {/* Activity log — supplementary; readable only on request. */}
             {activity && activity.length > 0 && (
-              <section id="chapter-work" className="space-y-3 scroll-mt-8">
-                <CaseSectionRule
-                  label="Activity log"
+              <section id="chapter-work" className="scroll-mt-20 space-y-4">
+                <ChapterHeading
+                  index={6}
+                  title="Activity log"
+                  subtitle="The raw chronology — every event emitted against the case, for audit and replay."
                   meta={`${activity.length} ${activity.length === 1 ? "event" : "events"}`}
+                  compact
                 />
                 <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
                   {activity
@@ -1337,9 +1367,12 @@ export function IssueDetail() {
 
             {/* Attachments — image uploads. */}
             {(attachments && attachments.length > 0) || attachmentError ? (
-              <section className="space-y-3">
-                <CaseSectionRule
-                  label="Attachments"
+              <section id="chapter-attachments" className="scroll-mt-20 space-y-4">
+                <ChapterHeading
+                  index={7}
+                  title="Attachments"
+                  subtitle="Screenshots, reference images, or any visual material filed against this case."
+                  compact
                   action={
                     <>
                       <input
@@ -1410,12 +1443,15 @@ export function IssueDetail() {
             {/* Approvals (verdict anchor) — shown inline when any
              * exist, with the acid-red banner already promoted
              * above when pending. */}
-            <div id="chapter-verdict" className="scroll-mt-8" aria-hidden={!(linkedApprovals && linkedApprovals.length > 0)}>
+            <div id="chapter-verdict" className="scroll-mt-20" aria-hidden={!(linkedApprovals && linkedApprovals.length > 0)}>
               {linkedApprovals && linkedApprovals.length > 0 && (
-                <section className="space-y-3">
-                  <CaseSectionRule
-                    label="Approvals"
+                <section className="space-y-4">
+                  <ChapterHeading
+                    index={8}
+                    title="Approvals"
+                    subtitle="Decisions that required a human in the loop. Pending approvals block resolution."
                     meta={`${linkedApprovals.length} ${linkedApprovals.length === 1 ? "decision" : "decisions"}`}
+                    compact
                   />
                   <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
                     {linkedApprovals.map((approval) => {

@@ -64,10 +64,14 @@ export function CasePageLayout({
           <div className="hidden lg:block" />
         )}
 
-        {/* Main column */}
-        <div className="flex flex-col gap-8 min-w-0">
+        {/* Main column — extra vertical rhythm between chapters
+         * so each reads as its own page in a periodical rather than
+         * bullet points in a SaaS dashboard. `main` is rendered as a
+         * flex column too so every chapter section (the sibling
+         * <section> elements the caller passes) inherits the gap. */}
+        <div className="flex flex-col gap-10 md:gap-14 min-w-0">
           {hero}
-          {main}
+          <div className="flex flex-col gap-10 md:gap-16 min-w-0">{main}</div>
         </div>
 
         {/* Sidebar */}
