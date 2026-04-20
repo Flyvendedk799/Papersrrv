@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  authUsers,
   companyMemberships,
   instanceUserRoles,
   principalPermissionGrants,
@@ -81,6 +82,37 @@ export function accessService(db: Db) {
       .from(companyMemberships)
       .where(eq(companyMemberships.companyId, companyId))
       .orderBy(sql`${companyMemberships.createdAt} desc`);
+  }
+
+  /**
+   * Lightweight user directory for the assignee picker (F1). Returns
+   * id + displayName + email for every user member of the company.
+   * Available to anyone with company access (no permission gate) —
+   * it's metadata any teammate can see.
+   */
+  async function listCompanyUsers(companyId: string) {
+    const memberships = await db
+      .select({
+        principalId: companyMemberships.principalId,
+      })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.principalType, "user"),
+        ),
+      );
+    const userIds = memberships.map((m) => m.principalId).filter(Boolean);
+    if (userIds.length === 0) return [];
+    const rows = await db
+      .select({ id: authUsers.id, displayName: authUsers.name, email: authUsers.email })
+      .from(authUsers)
+      .where(inArray(authUsers.id, userIds));
+    return rows.map((r) => ({
+      id: r.id,
+      displayName: r.displayName ?? r.email,
+      email: r.email,
+    }));
   }
 
   async function setMemberPermissions(
@@ -258,6 +290,7 @@ export function accessService(db: Db) {
     getMembership,
     ensureMembership,
     listMembers,
+    listCompanyUsers,
     setMemberPermissions,
     promoteInstanceAdmin,
     demoteInstanceAdmin,

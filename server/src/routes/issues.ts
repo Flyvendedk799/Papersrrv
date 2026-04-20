@@ -3,13 +3,21 @@ import multer from "multer";
 import type { Db } from "@paperclipai/db";
 import {
   addIssueCommentSchema,
+  addWatcherSchema,
+  bulkIssueUpdateSchema,
   createIssueAttachmentMetadataSchema,
   createIssueLabelSchema,
+  createIssueLinkSchema,
+  createIssueTemplateSchema,
+  createSavedViewSchema,
   checkoutIssueSchema,
   createIssueSchema,
+  instantiateIssueTemplateSchema,
   linkIssueApprovalSchema,
+  reorderIssueSchema,
   transferToBacklogSchema,
   updateIssueSchema,
+  updateSavedViewSchema,
 } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
@@ -26,6 +34,8 @@ import {
   projectService,
 } from "../services/index.js";
 import { formatPlanOutput } from "../services/plan-output-formatter.js";
+import { issueDepthService, instantiateIssueTemplate } from "../services/issue-depth.js";
+import { parseAdvancedIssueQuery } from "../services/issues.js";
 import { logger } from "../middleware/logger.js";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -232,15 +242,47 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
     const wantsPagination = req.query.cursor !== undefined || req.query.limit !== undefined;
     const { cursor, limit } = parsePaginationParams(req.query as Record<string, unknown>);
+
+    // F10 — parse advanced search syntax (status:done assignee:@alice
+    // label:bug priority:high is:overdue) from the q param and merge
+    // its structured filters with explicit query params. Explicit
+    // params win so the UI-provided filter widget still works.
+    const rawQ = (req.query.q as string | undefined)?.trim() ?? "";
+    const parsed = rawQ.length > 0 ? parseAdvancedIssueQuery(rawQ) : { q: "", filters: {} };
+
     const result = await svc.list(companyId, {
-      status: req.query.status as string | undefined,
-      assigneeAgentId: req.query.assigneeAgentId as string | undefined,
+      status: (req.query.status as string | undefined) ?? undefined,
+      statuses: parsed.filters.statuses,
+      priority: req.query.priority as string | undefined,
+      priorities: parsed.filters.priorities,
+      assigneeAgentId: (req.query.assigneeAgentId as string | undefined)
+        ?? (parsed.filters.assigneeAgentId as string | undefined),
       assigneeUserId,
       touchedByUserId,
       unreadForUserId,
-      projectId: req.query.projectId as string | undefined,
+      projectId: (req.query.projectId as string | undefined) ?? (parsed.filters.projectId as string | undefined),
       labelId: req.query.labelId as string | undefined,
-      q: req.query.q as string | undefined,
+      labelIds: parsed.filters.labelIds,
+      // If the parser extracted structured filters, use the
+      // remaining free-text (if any). If the parser extracted
+      // nothing, fall back to raw q for legacy literal search.
+      q: parsed.q.length > 0
+        ? parsed.q
+        : Object.keys(parsed.filters).length === 0 && rawQ.length > 0
+          ? rawQ
+          : undefined,
+      includeArchived:
+        req.query.includeArchived === "true"
+        || req.query.includeArchived === "1"
+        || parsed.filters.includeArchived === true,
+      overdueOnly:
+        req.query.overdueOnly === "true"
+        || req.query.overdueOnly === "1"
+        || parsed.filters.overdueOnly === true,
+      dueWithinDays:
+        req.query.dueWithinDays !== undefined
+          ? Number(req.query.dueWithinDays)
+          : parsed.filters.dueWithinDays,
       cursor,
       limit,
     });
@@ -1290,5 +1332,343 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.json({ ok: true });
   });
 
+  /* ══════════════════════════════════════════════════════════════
+   * Issue depth routes (migration 0045_issue_depth / F1–F10)
+   * ══════════════════════════════════════════════════════════════ */
+
+  const depth = issueDepthService(db);
+
+  // F3 — bulk update
+  router.post(
+    "/companies/:companyId/issues/bulk",
+    validate(bulkIssueUpdateSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      const body = req.body as import("@paperclipai/shared").BulkIssueUpdate;
+      const result = await depth.bulkUpdate(companyId, body);
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: `issue.bulk_${body.op}`,
+        entityType: "issue",
+        entityId: "bulk",
+        details: { ids: body.ids, op: body.op, updated: result.updated },
+      });
+      res.json(result);
+    },
+  );
+
+  // F9 — reorder a single issue (updates status and/or rank)
+  router.post(
+    "/issues/:id/reorder",
+    validate(reorderIssueSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const existing = await svc.getById(id);
+      if (!existing) {
+        res.status(404).json({ error: "Issue not found" });
+        return;
+      }
+      assertCompanyAccess(req, existing.companyId);
+      const body = req.body as import("@paperclipai/shared").ReorderIssue;
+      let nextRank = body.rank;
+      if (!nextRank) {
+        nextRank = await computeRankBetween(db, existing.companyId, {
+          status: body.status ?? existing.status,
+          beforeIssueId: body.beforeIssueId ?? null,
+          afterIssueId: body.afterIssueId ?? null,
+        });
+      }
+      const updated = await svc.update(id, {
+        status: body.status,
+        rank: nextRank ?? null,
+      });
+      res.json(updated);
+    },
+  );
+
+  // F6 — issue links
+  router.get("/issues/:id/links", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const links = await depth.listLinks(existing.companyId, id);
+    res.json(links);
+  });
+
+  router.post(
+    "/issues/:id/links",
+    validate(createIssueLinkSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const existing = await svc.getById(id);
+      if (!existing) {
+        res.status(404).json({ error: "Issue not found" });
+        return;
+      }
+      assertCompanyAccess(req, existing.companyId);
+      const actor = getActorInfo(req);
+      const links = await depth.createLink(
+        existing.companyId,
+        id,
+        req.body,
+        {
+          userId: actor.actorType === "user" ? actor.actorId : null,
+          agentId: actor.agentId,
+        },
+      );
+      await logActivity(db, {
+        companyId: existing.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "issue.link_added",
+        entityType: "issue",
+        entityId: id,
+        details: { kind: req.body.kind, target: req.body.targetIssueId },
+      });
+      res.status(201).json(links);
+    },
+  );
+
+  router.delete("/issues/:id/links/:linkId", async (req, res) => {
+    const id = req.params.id as string;
+    const linkId = req.params.linkId as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    await depth.deleteLink(existing.companyId, id, linkId);
+    res.status(204).end();
+  });
+
+  // F7 — watchers
+  router.get("/issues/:id/watchers", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const watchers = await depth.listWatchers(id);
+    res.json(watchers);
+  });
+
+  router.post(
+    "/issues/:id/watchers",
+    validate(addWatcherSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const existing = await svc.getById(id);
+      if (!existing) {
+        res.status(404).json({ error: "Issue not found" });
+        return;
+      }
+      assertCompanyAccess(req, existing.companyId);
+      const watchers = await depth.addWatcher(existing.companyId, id, req.body);
+      res.status(201).json(watchers);
+    },
+  );
+
+  router.delete("/issues/:id/watchers", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const watchers = await depth.removeWatcher(id, {
+      userId: req.body?.userId ?? null,
+      agentId: req.body?.agentId ?? null,
+    });
+    res.json(watchers);
+  });
+
+  // F4 — saved views
+  router.get("/companies/:companyId/issue-views", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const views = await depth.listSavedViews(
+      companyId,
+      actor.actorType === "user" ? actor.actorId : null,
+    );
+    res.json(views);
+  });
+
+  router.post(
+    "/companies/:companyId/issue-views",
+    validate(createSavedViewSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      const view = await depth.createSavedView(companyId, req.body, {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+      });
+      res.status(201).json(view);
+    },
+  );
+
+  router.patch(
+    "/companies/:companyId/issue-views/:id",
+    validate(updateSavedViewSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      const view = await depth.updateSavedView(companyId, id, req.body, {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+      });
+      res.json(view);
+    },
+  );
+
+  router.delete("/companies/:companyId/issue-views/:id", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    await depth.deleteSavedView(companyId, id, {
+      userId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    res.status(204).end();
+  });
+
+  // F5 — issue templates
+  router.get("/companies/:companyId/issue-templates", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const templates = await depth.listTemplates(companyId);
+    res.json(templates);
+  });
+
+  router.post(
+    "/companies/:companyId/issue-templates",
+    validate(createIssueTemplateSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      const t = await depth.createTemplate(companyId, req.body, {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        agentId: actor.agentId,
+      });
+      res.status(201).json(t);
+    },
+  );
+
+  router.delete("/companies/:companyId/issue-templates/:id", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    await depth.archiveTemplate(companyId, id);
+    res.status(204).end();
+  });
+
+  router.post(
+    "/companies/:companyId/issue-templates/instantiate",
+    validate(instantiateIssueTemplateSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const template = await depth.getTemplate(companyId, req.body.templateId);
+      if (!template) {
+        res.status(404).json({ error: "Template not found" });
+        return;
+      }
+      const { title, body } = instantiateIssueTemplate(
+        template,
+        req.body.values ?? {},
+      );
+      const actor = getActorInfo(req);
+      const issue = await svc.create(companyId, {
+        title,
+        description: body,
+        priority: template.defaultPriority ?? "medium",
+        kind: template.defaultKind,
+        assigneeAgentId: template.defaultAssigneeAgentId,
+        assigneeUserId: template.defaultAssigneeUserId,
+        projectId: template.defaultProjectId,
+        labelIds: template.defaultLabelIds ?? undefined,
+        createdByAgentId: actor.agentId,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+        ...(req.body.overrides ?? {}),
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "issue.from_template",
+        entityType: "issue",
+        entityId: issue.id,
+        details: { templateId: template.id, templateName: template.name },
+      });
+      res.status(201).json(issue);
+    },
+  );
+
   return router;
 }
+
+/** F9 — compute a fractional rank string for an issue inserted
+ * between `before` and `after` in a given status column. */
+async function computeRankBetween(
+  db: Db,
+  companyId: string,
+  input: { status: string; beforeIssueId: string | null; afterIssueId: string | null },
+): Promise<string> {
+  const { issues: issueTable } = await import("@paperclipai/db");
+  const { eq, and } = await import("drizzle-orm");
+  const neighbours: Array<{ id: string; rank: string | null }> = [];
+  if (input.beforeIssueId) {
+    const row = await db
+      .select({ id: issueTable.id, rank: issueTable.rank })
+      .from(issueTable)
+      .where(and(eq(issueTable.companyId, companyId), eq(issueTable.id, input.beforeIssueId)))
+      .limit(1)
+      .then((rs) => rs[0]);
+    if (row) neighbours.push(row);
+  }
+  if (input.afterIssueId) {
+    const row = await db
+      .select({ id: issueTable.id, rank: issueTable.rank })
+      .from(issueTable)
+      .where(and(eq(issueTable.companyId, companyId), eq(issueTable.id, input.afterIssueId)))
+      .limit(1)
+      .then((rs) => rs[0]);
+    if (row) neighbours.push(row);
+  }
+  const prev = neighbours[0]?.rank ?? null;
+  const next = neighbours[1]?.rank ?? null;
+  return midRank(prev, next);
+}
+
+/** Produce a string that sorts between `prev` and `next` under
+ * lexicographic ordering. Trivial implementation: if neither is
+ * set, use a mid-alpha; if one is set, append/prepend a char. */
+function midRank(prev: string | null, next: string | null): string {
+  if (!prev && !next) return "m";
+  if (prev && !next) return prev + "m";
+  if (!prev && next) return next < "m" ? "a" + next : "m";
+  // Both set: find midpoint by appending a char between them.
+  if (prev === next) return prev + "m";
+  if (prev! < next!) return prev + "m";
+  return next + "m";
+}
+

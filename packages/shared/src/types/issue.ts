@@ -92,6 +92,14 @@ export interface Issue {
   // through normal flows or pre-dating the column.
   createdFromCommentId?: string | null;
   createdFromRunId?: string | null;
+  // F2 / migration 0045 — PM primitives.
+  dueDate?: Date | string | null;
+  estimate?: "xs" | "s" | "m" | "l" | "xl" | null;
+  rank?: string | null;
+  // F1 / F8 lineage (0043).
+  sourcePlanId?: string | null;
+  sourcePlanStepIdx?: number | null;
+  sourceBacklogItemId?: string | null;
   labelIds?: string[];
   labels?: IssueLabel[];
   project?: Project | null;
@@ -116,6 +124,81 @@ export interface IssueComment {
   replyToCommentId?: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/* ──────────────────────────────────────────────────────────
+ * Issue-depth types (migration 0045_issue_depth)
+ * ────────────────────────────────────────────────────────── */
+
+export interface IssueLinkApi {
+  id: string;
+  companyId: string;
+  sourceIssueId: string;
+  targetIssueId: string;
+  kind:
+    | "blocks"
+    | "blocked_by"
+    | "duplicates"
+    | "duplicated_by"
+    | "relates_to";
+  createdByUserId: string | null;
+  createdByAgentId: string | null;
+  createdAt: string;
+  /** Hydrated target issue summary (optional; populated by list endpoints). */
+  target?: {
+    id: string;
+    identifier: string | null;
+    title: string;
+    status: IssueStatus;
+    priority: IssuePriority;
+  };
+}
+
+export interface IssueWatcher {
+  id: string;
+  issueId: string;
+  userId: string | null;
+  agentId: string | null;
+  addedAt: string;
+  /** Hydrated identity (populated by list endpoints). */
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}
+
+export interface IssueSavedView {
+  id: string;
+  companyId: string;
+  ownerUserId: string | null;
+  name: string;
+  description: string | null;
+  filtersJson: unknown;
+  sortKey: string | null;
+  groupBy: string | null;
+  viewKind: "list" | "kanban";
+  isPinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IssueTemplate {
+  id: string;
+  companyId: string;
+  name: string;
+  description: string | null;
+  titleTemplate: string;
+  bodyTemplate: string | null;
+  defaultPriority: IssuePriority | null;
+  defaultKind: IssueKind;
+  defaultAssigneeAgentId: string | null;
+  defaultAssigneeUserId: string | null;
+  defaultProjectId: string | null;
+  defaultLabelIds: string[] | null;
+  variables:
+    | Array<{ name: string; label: string; default?: string | null; required?: boolean }>
+    | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface IssueAttachment {

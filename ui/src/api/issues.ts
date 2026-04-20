@@ -1,4 +1,20 @@
-import type { Approval, Issue, IssueAttachment, IssueComment, IssueLabel } from "@paperclipai/shared";
+import type {
+  Approval,
+  BulkIssueUpdate,
+  CreateIssueLink,
+  CreateIssueTemplate,
+  CreateSavedView,
+  Issue,
+  IssueAttachment,
+  IssueComment,
+  IssueLabel,
+  IssueLinkApi,
+  IssueSavedView,
+  IssueTemplate,
+  IssueWatcher,
+  ReorderIssue,
+  UpdateSavedView,
+} from "@paperclipai/shared";
 import { api } from "./client";
 
 /* Mirror of server SynthesisPayload — kept narrow so the UI never
@@ -52,6 +68,7 @@ export const issuesApi = {
     companyId: string,
     filters?: {
       status?: string;
+      priority?: string;
       projectId?: string;
       assigneeAgentId?: string;
       assigneeUserId?: string;
@@ -59,10 +76,14 @@ export const issuesApi = {
       unreadForUserId?: string;
       labelId?: string;
       q?: string;
+      includeArchived?: boolean;
+      overdueOnly?: boolean;
+      dueWithinDays?: number;
     },
   ) => {
     const params = new URLSearchParams();
     if (filters?.status) params.set("status", filters.status);
+    if (filters?.priority) params.set("priority", filters.priority);
     if (filters?.projectId) params.set("projectId", filters.projectId);
     if (filters?.assigneeAgentId) params.set("assigneeAgentId", filters.assigneeAgentId);
     if (filters?.assigneeUserId) params.set("assigneeUserId", filters.assigneeUserId);
@@ -70,6 +91,11 @@ export const issuesApi = {
     if (filters?.unreadForUserId) params.set("unreadForUserId", filters.unreadForUserId);
     if (filters?.labelId) params.set("labelId", filters.labelId);
     if (filters?.q) params.set("q", filters.q);
+    if (filters?.includeArchived) params.set("includeArchived", "1");
+    if (filters?.overdueOnly) params.set("overdueOnly", "1");
+    if (filters?.dueWithinDays !== undefined) {
+      params.set("dueWithinDays", String(filters.dueWithinDays));
+    }
     const qs = params.toString();
     return api.get<Issue[]>(`/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
   },
@@ -139,4 +165,58 @@ export const issuesApi = {
     api.post<Approval[]>(`/issues/${id}/approvals`, { approvalId }),
   unlinkApproval: (id: string, approvalId: string) =>
     api.delete<{ ok: true }>(`/issues/${id}/approvals/${approvalId}`),
+
+  /* ─── Issue depth (migration 0045) ─── */
+
+  // F3 — bulk update
+  bulkUpdate: (companyId: string, body: BulkIssueUpdate) =>
+    api.post<{ updated: number; skipped: string[] }>(
+      `/companies/${companyId}/issues/bulk`,
+      body,
+    ),
+
+  // F9 — reorder within/across status columns
+  reorder: (id: string, body: ReorderIssue) =>
+    api.post<Issue>(`/issues/${id}/reorder`, body),
+
+  // F6 — links
+  listLinks: (id: string) => api.get<IssueLinkApi[]>(`/issues/${id}/links`),
+  addLink: (id: string, body: CreateIssueLink) =>
+    api.post<IssueLinkApi[]>(`/issues/${id}/links`, body),
+  removeLink: (id: string, linkId: string) =>
+    api.delete<void>(`/issues/${id}/links/${linkId}`),
+
+  // F7 — watchers
+  listWatchers: (id: string) => api.get<IssueWatcher[]>(`/issues/${id}/watchers`),
+  addWatcher: (id: string, body: { userId?: string | null; agentId?: string | null }) =>
+    api.post<IssueWatcher[]>(`/issues/${id}/watchers`, body),
+  removeWatcher: (id: string, body: { userId?: string | null; agentId?: string | null }) =>
+    api.delete<IssueWatcher[]>(`/issues/${id}/watchers`),
+
+  // F4 — saved views
+  listViews: (companyId: string) =>
+    api.get<IssueSavedView[]>(`/companies/${companyId}/issue-views`),
+  createView: (companyId: string, body: CreateSavedView) =>
+    api.post<IssueSavedView>(`/companies/${companyId}/issue-views`, body),
+  updateView: (companyId: string, id: string, body: UpdateSavedView) =>
+    api.patch<IssueSavedView>(`/companies/${companyId}/issue-views/${id}`, body),
+  deleteView: (companyId: string, id: string) =>
+    api.delete<void>(`/companies/${companyId}/issue-views/${id}`),
+
+  // F5 — templates
+  listTemplates: (companyId: string) =>
+    api.get<IssueTemplate[]>(`/companies/${companyId}/issue-templates`),
+  createTemplate: (companyId: string, body: CreateIssueTemplate) =>
+    api.post<IssueTemplate>(`/companies/${companyId}/issue-templates`, body),
+  deleteTemplate: (companyId: string, id: string) =>
+    api.delete<void>(`/companies/${companyId}/issue-templates/${id}`),
+  instantiateTemplate: (
+    companyId: string,
+    body: {
+      templateId: string;
+      values?: Record<string, string>;
+      overrides?: Record<string, unknown>;
+    },
+  ) =>
+    api.post<Issue>(`/companies/${companyId}/issue-templates/instantiate`, body),
 };

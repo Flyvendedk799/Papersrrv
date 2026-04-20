@@ -191,6 +191,16 @@ const CommentRow = memo(function CommentRow({
           <CopyMarkdownButton text={comment.body} />
         </span>
       </div>
+      {/* F8 — threading indicator. When this comment is a reply,
+       * show a link to scroll up to the parent comment. */}
+      {comment.replyToCommentId && (
+        <a
+          href={`#comment-${comment.replyToCommentId}`}
+          className="inline-flex items-center gap-1 font-mono text-[0.56rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-acid)] mb-1 no-underline"
+        >
+          ↪ reply to {comment.replyToCommentId.slice(0, 8)}
+        </a>
+      )}
       {isLong && !expanded ? (
         <div className="relative">
           <div className="max-h-[140px] overflow-hidden">

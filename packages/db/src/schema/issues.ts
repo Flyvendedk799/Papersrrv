@@ -76,6 +76,17 @@ export const issues = pgTable(
     sourcePlanId: uuid("source_plan_id"),
     sourcePlanStepIdx: integer("source_plan_step_idx"),
     sourceBacklogItemId: uuid("source_backlog_item_id"),
+    /* Issue depth (migration 0045_issue_depth).
+     *
+     * dueDate  — optional target completion time.
+     * estimate — effort hint ('xs' | 's' | 'm' | 'l' | 'xl'). Text
+     *            column; validation lives in the shared validator.
+     * rank     — fractional string for kanban/list reorder
+     *            persistence within a status column. Null for legacy
+     *            rows; populated by the reorder endpoint. */
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    estimate: text("estimate"),
+    rank: text("rank"),
     /* Case-file synthesis cache. Populated by the synthesis endpoint
      * on demand and invalidated by a hash mismatch on inputs. Shape
      * is `SynthesisPayload` from server/src/services/case-synthesis
@@ -106,5 +117,7 @@ export const issues = pgTable(
     companyKindIdx: index("issues_company_kind_idx").on(table.companyId, table.kind),
     sourcePlanIdx: index("issues_source_plan_idx").on(table.sourcePlanId),
     sourceBacklogItemIdx: index("issues_source_backlog_item_idx").on(table.sourceBacklogItemId),
+    companyDueIdx: index("issues_company_due_idx").on(table.companyId, table.dueDate),
+    companyStatusRankIdx: index("issues_company_status_rank_idx").on(table.companyId, table.status, table.rank),
   }),
 );

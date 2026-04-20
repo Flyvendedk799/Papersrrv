@@ -20,6 +20,8 @@ import { relativeTime, cn, formatTokens } from "../lib/utils";
 import { InlineEditor } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
 import { IssueProperties } from "../components/IssueProperties";
+import { IssueLinksPanel } from "../components/issue/IssueLinksPanel";
+import { IssueWatchersPanel } from "../components/issue/IssueWatchersPanel";
 import { LiveRunWidget } from "../components/LiveRunWidget";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { StatusIcon } from "../components/StatusIcon";
@@ -881,7 +883,18 @@ export function IssueDetail() {
   useEffect(() => {
     if (issue) {
       openPanel(
-        <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} />
+        <div className="space-y-5">
+          <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} />
+          {/* F6 / F7 — cross-issue links + watchers in the
+           * properties panel so they're always reachable without
+           * scrolling the case file. */}
+          <div className="pt-3 border-t border-[var(--boared-rule)]">
+            <IssueLinksPanel issueId={issue.id} />
+          </div>
+          <div className="pt-3 border-t border-[var(--boared-rule)]">
+            <IssueWatchersPanel issueId={issue.id} />
+          </div>
+        </div>
       );
     }
     return () => closePanel();

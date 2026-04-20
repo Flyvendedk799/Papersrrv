@@ -84,6 +84,21 @@ export {
   type PlanTemplateRow,
   type NewPlanTemplateRow,
 } from "./plan_templates.js";
+export {
+  issueWatchers,
+  type IssueWatcherRow,
+  type NewIssueWatcherRow,
+} from "./issue_watchers.js";
+export {
+  issueSavedViews,
+  type IssueSavedViewRow,
+  type NewIssueSavedViewRow,
+} from "./issue_saved_views.js";
+export {
+  issueTemplates,
+  type IssueTemplateRow,
+  type NewIssueTemplateRow,
+} from "./issue_templates.js";
 export { papeeMemory, type PapeeMemoryRow, type NewPapeeMemoryRow } from "./papee_memory.js";
 export { issueLinks, type IssueLinkRow, type NewIssueLinkRow } from "./issue_links.js";
 export {

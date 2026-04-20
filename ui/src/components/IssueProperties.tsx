@@ -7,6 +7,7 @@ import { authApi } from "../api/auth";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { filesApi } from "../api/files";
+import { usersApi } from "../api/users";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
@@ -26,6 +27,81 @@ interface IssuePropertiesProps {
   issue: Issue;
   onUpdate: (data: Record<string, unknown>) => void;
   inline?: boolean;
+}
+
+/** F2 — inline due-date picker. Native date input, with overdue
+ * styling and a "clear" affordance. Stores the chosen date at
+ * 23:59 local so "due today" means end of day. */
+function DueDatePicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (iso: string | null) => void;
+}) {
+  const localDate = value ? new Date(value).toISOString().slice(0, 10) : "";
+  const overdue = value ? new Date(value).getTime() < Date.now() : false;
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="date"
+        value={localDate}
+        onChange={(e) => {
+          if (!e.target.value) {
+            onChange(null);
+            return;
+          }
+          const d = new Date(`${e.target.value}T23:59:00`);
+          onChange(d.toISOString());
+        }}
+        className={cn(
+          "bg-transparent text-xs font-mono tabular-nums outline-none border-b border-transparent hover:border-border focus:border-[var(--boared-acid)] px-0 py-0",
+          overdue && "text-[var(--boared-acid)]",
+        )}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="text-muted-foreground hover:text-foreground p-0.5"
+          aria-label="Clear due date"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** F2 — inline estimate picker (xs/s/m/l/xl). Cycles on click; a
+ * small label renders the current tier. Null = unset. */
+function EstimatePicker({
+  value,
+  onChange,
+}: {
+  value: "xs" | "s" | "m" | "l" | "xl" | null;
+  onChange: (value: "xs" | "s" | "m" | "l" | "xl" | null) => void;
+}) {
+  const tiers: Array<"xs" | "s" | "m" | "l" | "xl"> = ["xs", "s", "m", "l", "xl"];
+  return (
+    <div className="flex items-center gap-0.5">
+      {tiers.map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => onChange(value === t ? null : t)}
+          className={cn(
+            "font-mono text-[0.62rem] uppercase tracking-[0.14em] px-1.5 py-0.5 rounded",
+            value === t
+              ? "bg-foreground text-background"
+              : "text-muted-foreground hover:bg-accent/50",
+          )}
+        >
+          {t}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -141,6 +217,13 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     enabled: !!companyId,
   });
 
+  // F1 — company user directory for the assignee picker.
+  const { data: users } = useQuery({
+    queryKey: ["company-users", companyId],
+    queryFn: () => usersApi.listCompanyUsers(companyId!),
+    enabled: !!companyId,
+  });
+
   const createLabel = useMutation({
     mutationFn: (data: { name: string; color: string }) => issuesApi.createLabel(companyId!, data),
     onSuccess: async (created) => {
@@ -193,14 +276,13 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const assignee = issue.assigneeAgentId
     ? agents?.find((a) => a.id === issue.assigneeAgentId)
     : null;
-  const userLabel = (userId: string | null | undefined) =>
-    userId
-      ? userId === "local-board"
-        ? "Board"
-        : currentUserId && userId === currentUserId
-          ? "Me"
-          : userId.slice(0, 5)
-      : null;
+  const userLabel = (userId: string | null | undefined) => {
+    if (!userId) return null;
+    if (userId === "local-board") return "Board";
+    if (currentUserId && userId === currentUserId) return "Me";
+    const u = users?.find((x) => x.id === userId);
+    return u?.displayName ?? userId.slice(0, 8);
+  };
   const assigneeUserLabel = userLabel(issue.assigneeUserId);
   const creatorUserLabel = userLabel(issue.createdByUserId);
 
@@ -370,6 +452,43 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
             {a.name}
           </button>
         ))}
+        {users && users.length > 0 && (
+          <>
+            <div className="px-2 py-1 mt-1 border-t border-border font-mono text-[0.54rem] uppercase tracking-[0.18em] text-muted-foreground">
+              Teammates
+            </div>
+            {users
+              .filter((u) => {
+                if (!assigneeSearch.trim()) return true;
+                const q = assigneeSearch.toLowerCase();
+                return (
+                  u.displayName.toLowerCase().includes(q) ||
+                  u.email.toLowerCase().includes(q)
+                );
+              })
+              .map((u) => (
+                <button
+                  key={u.id}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    u.id === issue.assigneeUserId && "bg-accent",
+                  )}
+                  onClick={() => {
+                    onUpdate({ assigneeAgentId: null, assigneeUserId: u.id });
+                    setAssigneeOpen(false);
+                  }}
+                >
+                  <User className="shrink-0 h-3 w-3 text-muted-foreground" />
+                  <span className="truncate">
+                    {u.displayName}
+                    {u.id === currentUserId && (
+                      <span className="ml-1 font-mono text-[0.56rem] text-muted-foreground">(me)</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+          </>
+        )}
       </div>
     </>
   );
@@ -505,6 +624,22 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
         >
           {projectContent}
         </PropertyPicker>
+
+        {/* F2 — Due date */}
+        <PropertyRow label="Due">
+          <DueDatePicker
+            value={issue.dueDate ? new Date(issue.dueDate as string | Date).toISOString() : null}
+            onChange={(iso) => onUpdate({ dueDate: iso })}
+          />
+        </PropertyRow>
+
+        {/* F2 — Estimate */}
+        <PropertyRow label="Estimate">
+          <EstimatePicker
+            value={(issue.estimate as "xs" | "s" | "m" | "l" | "xl" | null | undefined) ?? null}
+            onChange={(v) => onUpdate({ estimate: v })}
+          />
+        </PropertyRow>
 
         {issue.parentId && (
           <PropertyRow label="Parent">

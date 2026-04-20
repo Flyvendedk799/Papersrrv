@@ -4,6 +4,7 @@ import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
+import { IssueTemplatePicker } from "./issue/IssueTemplatePicker";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
@@ -189,6 +190,7 @@ export function NewIssueDialog() {
   const [assigneeChrome, setAssigneeChrome] = useState(false);
   const [assigneeUseProjectWorkspace, setAssigneeUseProjectWorkspace] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [dialogCompanyId, setDialogCompanyId] = useState<string | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -620,6 +622,16 @@ export function NewIssueDialog() {
             <span>New issue</span>
           </div>
           <div className="flex items-center gap-1">
+            {/* F5 — open the template picker. Instantiates directly,
+             * bypassing the dialog's form. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground font-mono text-[0.6rem] uppercase tracking-[0.14em] h-6"
+              onClick={() => setTemplatesOpen(true)}
+            >
+              Templates
+            </Button>
             <Button
               variant="ghost"
               size="icon-xs"
@@ -638,6 +650,17 @@ export function NewIssueDialog() {
             </Button>
           </div>
         </div>
+        {templatesOpen && effectiveCompanyId && (
+          <IssueTemplatePicker
+            companyId={effectiveCompanyId}
+            onPicked={(issueId) => {
+              setTemplatesOpen(false);
+              closeNewIssue();
+              window.location.href = `/issues/${issueId}`;
+            }}
+            onClose={() => setTemplatesOpen(false)}
+          />
+        )}
 
         {/* Mode selector — Task vs Plan. Planning-kind issues
          * intentionally read differently across the app (PLAN stamp,

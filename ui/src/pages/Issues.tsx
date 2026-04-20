@@ -99,8 +99,23 @@ export function Issues() {
   });
 
   const updateIssue = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      issuesApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      // F9 — kanban drag produces a `__reorder` sentinel. Route it
+      // to the reorder endpoint so rank is computed server-side.
+      if (data.__reorder) {
+        const r = data.__reorder as {
+          status?: string;
+          beforeIssueId?: string | null;
+          afterIssueId?: string | null;
+        };
+        return issuesApi.reorder(id, {
+          status: r.status as never,
+          beforeIssueId: r.beforeIssueId ?? null,
+          afterIssueId: r.afterIssueId ?? null,
+        });
+      }
+      return issuesApi.update(id, data);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
     },

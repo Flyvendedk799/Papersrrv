@@ -19,6 +19,8 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search, ArrowDown } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
+import { BulkActionBar } from "./issue/BulkActionBar";
+import { SavedViewsMenu } from "./issue/SavedViewsMenu";
 import type { Issue } from "@paperclipai/shared";
 
 /* ── Helpers ── */
@@ -177,6 +179,35 @@ export function IssuesList({
   const [issueSearch, setIssueSearch] = useState(initialSearch ?? "");
   const [debouncedIssueSearch, setDebouncedIssueSearch] = useState(issueSearch);
   const normalizedIssueSearch = debouncedIssueSearch.trim();
+
+  // F3 — multi-select state for bulk actions.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+  const toggleSelect = (issueId: string, range = false) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (range && lastSelectedId) {
+        const ids = flatRows
+          .filter((r) => r.type === "issue")
+          .map((r) => (r.type === "issue" ? r.issue.id : ""));
+        const fromIdx = ids.indexOf(lastSelectedId);
+        const toIdx = ids.indexOf(issueId);
+        if (fromIdx >= 0 && toIdx >= 0) {
+          const [a, b] = fromIdx < toIdx ? [fromIdx, toIdx] : [toIdx, fromIdx];
+          for (let i = a; i <= b; i++) next.add(ids[i]);
+          return next;
+        }
+      }
+      if (next.has(issueId)) next.delete(issueId);
+      else next.add(issueId);
+      return next;
+    });
+    setLastSelectedId(issueId);
+  };
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setLastSelectedId(null);
+  };
 
   useEffect(() => {
     setIssueSearch(initialSearch ?? "");
@@ -345,14 +376,49 @@ export function IssuesList({
                 setIssueSearch(e.target.value);
                 onSearchChange?.(e.target.value);
               }}
-              placeholder="Search issues..."
+              placeholder="Search… · try status:done is:overdue"
               className="pl-7 text-xs sm:text-sm"
-              aria-label="Search issues"
+              aria-label="Search issues (advanced syntax supported)"
+              title="Advanced syntax: status:done priority:high label:bug is:overdue due:week"
             />
           </div>
         </div>
 
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+          {/* F4 — saved views */}
+          {selectedCompanyId && (
+            <SavedViewsMenu
+              companyId={selectedCompanyId}
+              currentFilters={{
+                status: viewState.statuses as never,
+                priority: viewState.priorities as never,
+                labelIds: viewState.labels,
+                q: issueSearch.trim() || undefined,
+              }}
+              currentSort={viewState.sortField}
+              currentGroupBy={viewState.groupBy}
+              currentViewKind={viewState.viewMode === "board" ? "kanban" : "list"}
+              onApply={(view) => {
+                const f = (view.filtersJson ?? {}) as {
+                  status?: string[];
+                  priority?: string[];
+                  labelIds?: string[];
+                  q?: string;
+                };
+                updateView({
+                  statuses: (f.status ?? []) as never,
+                  priorities: (f.priority ?? []) as never,
+                  labels: f.labelIds ?? [],
+                  sortField: (view.sortKey as never) ?? viewState.sortField,
+                  groupBy: (view.groupBy as never) ?? viewState.groupBy,
+                  viewMode: view.viewKind === "kanban" ? "board" : "list",
+                });
+                if (f.q !== undefined) {
+                  setIssueSearch(f.q ?? "");
+                }
+              }}
+            />
+          )}
           {/* View mode toggle */}
           <div className="flex items-center border border-border rounded-md overflow-hidden mr-1">
             <button
@@ -613,6 +679,13 @@ export function IssuesList({
           className="flex-1 overflow-auto"
           style={{ height: "calc(100vh - 180px)" }}
         >
+          {selectedCompanyId && selectedIds.size > 0 && (
+            <BulkActionBar
+              companyId={selectedCompanyId}
+              selectedIds={Array.from(selectedIds)}
+              onClear={clearSelection}
+            />
+          )}
           <div
             style={{
               height: `${virtualizer.getTotalSize()}px`,
@@ -679,10 +752,31 @@ export function IssuesList({
                 >
                   <Link
                     to={`/issues/${issue.identifier ?? issue.id}`}
-                    className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit h-full"
+                    className="group/row flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit h-full"
                   >
-                    {/* Spacer matching caret width so status icon aligns with group title (hidden on mobile) */}
-                    <div className="w-3.5 shrink-0 hidden sm:block" />
+                    {/* F3 — multi-select checkbox. Visible when the
+                     * row is selected, or on row hover. */}
+                    <label
+                      className={cn(
+                        "shrink-0 w-3.5 h-3.5 flex items-center justify-center cursor-pointer hidden sm:flex",
+                        selectedIds.has(issue.id)
+                          ? "opacity-100"
+                          : "opacity-0 group-hover/row:opacity-100 transition-opacity",
+                      )}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleSelect(issue.id, e.shiftKey);
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        tabIndex={-1}
+                        checked={selectedIds.has(issue.id)}
+                        readOnly
+                        className="h-3 w-3 accent-[var(--boared-acid)]"
+                      />
+                    </label>
                     <div className="shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
                       <StatusIcon
                         status={issue.status}

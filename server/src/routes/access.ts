@@ -2924,6 +2924,15 @@ export function accessRoutes(
     res.json(members);
   });
 
+  // Lightweight user directory for the assignee picker (F1).
+  // Any teammate can see who their teammates are.
+  router.get("/companies/:companyId/users", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const users = await access.listCompanyUsers(companyId);
+    res.json(users);
+  });
+
   router.patch(
     "/companies/:companyId/members/:memberId/permissions",
     validate(updateMemberPermissionsSchema),

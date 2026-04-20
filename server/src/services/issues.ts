@@ -49,15 +49,94 @@ function applyStatusSideEffects(
 
 export interface IssueFilters {
   status?: string;
+  /** Multiple statuses, applied as `status IN (...)`. Precedence
+   * over `status` when both provided. */
+  statuses?: string[];
+  priority?: string;
+  priorities?: string[];
   assigneeAgentId?: string;
   assigneeUserId?: string;
   touchedByUserId?: string;
   unreadForUserId?: string;
   projectId?: string;
   labelId?: string;
+  labelIds?: string[];
   q?: string;
+  /** When true include hidden_at != null rows in the result. */
+  includeArchived?: boolean;
+  /** F2 — `true` to only return issues where due_date < now and
+   * status not in (done, cancelled). */
+  overdueOnly?: boolean;
+  /** F2 — `N` to only return issues where due_date is within the
+   * next N days (inclusive of overdue). */
+  dueWithinDays?: number;
   limit?: number;
   cursor?: string;
+}
+
+/**
+ * Parse an advanced-search query string into structured filters
+ * (F10). Syntax: `free text status:done assignee:@alice label:bug
+ * priority:high`. Tokens without a prefix fall through to `q` (free
+ * text search). Unknown prefixes are ignored.
+ *
+ * This is a pure function so it's trivially testable and re-usable
+ * on the client for typeahead / chip rendering.
+ */
+export function parseAdvancedIssueQuery(
+  input: string,
+): { q: string; filters: Partial<IssueFilters> } {
+  const filters: Partial<IssueFilters> = {};
+  const freeTokens: string[] = [];
+  const statuses = new Set<string>();
+  const priorities = new Set<string>();
+  const tokens = input.match(/"[^"]+"|\S+/g) ?? [];
+  for (const raw of tokens) {
+    const tok = raw.replace(/^"|"$/g, "");
+    const m = /^(-?)(\w+):(.+)$/.exec(tok);
+    if (!m) {
+      freeTokens.push(tok);
+      continue;
+    }
+    const [, , key, value] = m;
+    const v = value.replace(/^@/, "").trim();
+    switch (key.toLowerCase()) {
+      case "status":
+        statuses.add(v);
+        break;
+      case "priority":
+      case "p":
+        priorities.add(v);
+        break;
+      case "assignee":
+      case "@":
+        // Server resolves @me via the route; here just stash it.
+        filters.assigneeUserId = v;
+        break;
+      case "label":
+      case "tag":
+        filters.labelIds = filters.labelIds ? [...filters.labelIds, v] : [v];
+        break;
+      case "project":
+        filters.projectId = v;
+        break;
+      case "is":
+        if (v === "overdue") filters.overdueOnly = true;
+        else if (v === "archived") filters.includeArchived = true;
+        break;
+      case "due":
+        if (v === "today") filters.dueWithinDays = 0;
+        else if (v === "week") filters.dueWithinDays = 7;
+        else if (/^\d+d$/.test(v)) filters.dueWithinDays = Number(v.slice(0, -1));
+        break;
+      default:
+        // Preserve unknown prefixes as free text.
+        freeTokens.push(tok);
+    }
+  }
+  if (statuses.size > 0) filters.statuses = Array.from(statuses);
+  if (priorities.size > 0) filters.priorities = Array.from(priorities);
+  return { q: freeTokens.join(" ").trim(), filters };
 }
 
 type IssueRow = typeof issues.$inferSelect;
@@ -444,9 +523,16 @@ export function issueService(db: Db) {
             AND ${issueComments.body} ILIKE ${containsPattern} ESCAPE '\\'
         )
       `;
-      if (filters?.status) {
+      if (filters?.statuses && filters.statuses.length > 0) {
+        conditions.push(inArray(issues.status, filters.statuses));
+      } else if (filters?.status) {
         const statuses = filters.status.split(",").map((s) => s.trim());
         conditions.push(statuses.length === 1 ? eq(issues.status, statuses[0]) : inArray(issues.status, statuses));
+      }
+      if (filters?.priorities && filters.priorities.length > 0) {
+        conditions.push(inArray(issues.priority, filters.priorities));
+      } else if (filters?.priority) {
+        conditions.push(eq(issues.priority, filters.priority));
       }
       if (filters?.assigneeAgentId) {
         conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
@@ -461,13 +547,26 @@ export function issueService(db: Db) {
         conditions.push(unreadForUserCondition(companyId, unreadForUserId));
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
-      if (filters?.labelId) {
+      const effectiveLabelIds = filters?.labelIds && filters.labelIds.length > 0
+        ? filters.labelIds
+        : filters?.labelId
+          ? [filters.labelId]
+          : undefined;
+      if (effectiveLabelIds) {
         const labeledIssueIds = await db
           .select({ issueId: issueLabels.issueId })
           .from(issueLabels)
-          .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
+          .where(and(eq(issueLabels.companyId, companyId), inArray(issueLabels.labelId, effectiveLabelIds)));
         if (labeledIssueIds.length === 0) return [];
         conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
+      }
+      if (filters?.overdueOnly) {
+        conditions.push(sql`${issues.dueDate} IS NOT NULL AND ${issues.dueDate} < NOW()`);
+        conditions.push(sql`${issues.status} NOT IN ('done','cancelled')`);
+      } else if (typeof filters?.dueWithinDays === "number") {
+        const interval = `${filters.dueWithinDays} days`;
+        conditions.push(sql`${issues.dueDate} IS NOT NULL`);
+        conditions.push(sql`${issues.dueDate} < NOW() + INTERVAL ${interval}`);
       }
       if (hasSearch) {
         conditions.push(
@@ -479,7 +578,9 @@ export function issueService(db: Db) {
           )!,
         );
       }
-      conditions.push(isNull(issues.hiddenAt));
+      if (!filters?.includeArchived) {
+        conditions.push(isNull(issues.hiddenAt));
+      }
 
       if (filters?.cursor) {
         const decoded = decodeCursor(filters.cursor);
@@ -1066,10 +1167,12 @@ export function issueService(db: Db) {
         })
         .returning();
 
-      // Update issue's updatedAt so comment activity is reflected in recency sorting
+      // Update issue's updatedAt so comment activity is reflected in recency sorting.
+      // F10 — null out synthesisGeneratedAt so the next detail-page
+      // read regenerates the case-file synthesis with the new comment.
       await db
         .update(issues)
-        .set({ updatedAt: new Date() })
+        .set({ updatedAt: new Date(), synthesisGeneratedAt: null })
         .where(eq(issues.id, issueId));
 
       return comment;
@@ -1131,6 +1234,12 @@ export function issueService(db: Db) {
             issueCommentId: input.issueCommentId ?? null,
           })
           .returning();
+
+        // F10 — invalidate synthesis cache.
+        await tx
+          .update(issues)
+          .set({ synthesisGeneratedAt: null, updatedAt: new Date() })
+          .where(eq(issues.id, issue.id));
 
         return {
           id: attachment.id,

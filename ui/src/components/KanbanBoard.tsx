@@ -202,6 +202,15 @@ export function KanbanBoard({
         grouped[issue.status].push(issue);
       }
     }
+    // F9 — sort within each column by the persisted `rank`. Null
+    // ranks sort last so legacy issues don't block newly-ranked ones.
+    for (const status of boardStatuses) {
+      grouped[status].sort((a, b) => {
+        const ar = (a.rank as string | null | undefined) ?? "~";
+        const br = (b.rank as string | null | undefined) ?? "~";
+        return ar.localeCompare(br);
+      });
+    }
     return grouped;
   }, [issues]);
 
@@ -223,23 +232,52 @@ export function KanbanBoard({
     const issue = issues.find((i) => i.id === issueId);
     if (!issue) return;
 
-    // Determine target status: the "over" could be a column id (status string)
-    // or another card's id. Find which column the "over" belongs to.
+    // Resolve target status + optional drop target id (for in-column
+    // reorder). "over" can be a column status-id OR another card id.
     let targetStatus: string | null = null;
+    let dropTargetId: string | null = null;
 
     if (boardStatuses.includes(over.id as string)) {
       targetStatus = over.id as string;
     } else {
-      // It's a card - find which column it's in
       const targetIssue = issues.find((i) => i.id === over.id);
       if (targetIssue) {
         targetStatus = targetIssue.status;
+        dropTargetId = targetIssue.id;
       }
     }
 
-    if (targetStatus && targetStatus !== issue.status) {
-      onUpdateIssue(issueId, { status: targetStatus });
+    if (!targetStatus) return;
+
+    // F9 — compute neighbour IDs and persist both status and rank
+    // via the reorder endpoint. Server computes a fractional rank
+    // between `beforeIssueId` and `afterIssueId` so drag order sticks
+    // across refresh.
+    const columnIssues = issues
+      .filter((i) => i.status === targetStatus && i.id !== issueId)
+      .sort((a, b) => (a.rank ?? "").localeCompare(b.rank ?? ""));
+
+    let beforeIssueId: string | null = null;
+    let afterIssueId: string | null = null;
+    if (dropTargetId) {
+      const idx = columnIssues.findIndex((i) => i.id === dropTargetId);
+      if (idx >= 0) {
+        beforeIssueId = columnIssues[idx - 1]?.id ?? null;
+        afterIssueId = columnIssues[idx]?.id ?? null;
+      }
+    } else {
+      // Dropped onto the column itself → append.
+      beforeIssueId = columnIssues[columnIssues.length - 1]?.id ?? null;
+      afterIssueId = null;
     }
+
+    onUpdateIssue(issueId, {
+      __reorder: {
+        status: targetStatus,
+        beforeIssueId,
+        afterIssueId,
+      },
+    });
   }
 
   function handleDragOver(_event: DragOverEvent) {
