@@ -82,9 +82,76 @@ export interface BacklogPlan {
    * created via POST /issues/:id/transfer-to-backlog. Null for
    * hand-authored plans. Migration 0041. */
   sourceIssueId: string | null;
+  /** Structured plan output (F3 / migration 0043). Copied from the
+   * source issue on transfer and kept in sync on edits. Shape
+   * enforced by PlanOutput Zod schema; typed as unknown here so the
+   * shared types don't drag in the planning validator module
+   * transitively. Callers parse with planOutputSchema as needed. */
+  planOutputJson: unknown | null;
+  /** Approval gate status (F6 / migration 0043).
+   * 'none' | 'pending' | 'approved' | 'rejected'. */
+  approvalStatus: "none" | "pending" | "approved" | "rejected";
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Comment on a backlog plan (F5 / migration 0043). Mirrors
+ * BacklogItemComment so the existing CommentThread renderer works
+ * without modification. */
+export interface BacklogPlanComment {
+  id: string;
+  companyId: string;
+  backlogPlanId: string;
+  authorAgentId: string | null;
+  authorUserId: string | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  authorAgent: {
+    id: string;
+    displayName: string;
+    iconName: string | null;
+    avatarUrl: string | null;
+  } | null;
+}
+
+/** A reusable plan shell (F10). Variables declare placeholders
+ * (e.g. `{release_version}`) that are substituted at instantiation
+ * time. */
+export interface PlanTemplateVariable {
+  name: string;
+  label: string;
+  default?: string | null;
+  required?: boolean;
+}
+
+export interface PlanTemplate {
+  id: string;
+  companyId: string;
+  name: string;
+  description: string | null;
+  planOutputJson: unknown;
+  variables: PlanTemplateVariable[] | null;
+  createdByAgentId: string | null;
+  createdByUserId: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A single revision of a plan's structured document (F7). */
+export interface BacklogPlanRevision {
+  id: string;
+  planId: string;
+  version: number;
+  planOutputJson: unknown | null;
+  title: string | null;
+  description: string | null;
+  summaryOfChange: string | null;
+  editedByAgentId: string | null;
+  editedByUserId: string | null;
+  editedAt: string;
 }
 
 export interface CreateBacklogItemInput {

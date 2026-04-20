@@ -22,7 +22,16 @@ import {
   planOutputSchema,
   type PlanOutput,
   type PlanOutputStep,
+  type PlanOutputStepOwner,
 } from "@paperclipai/shared";
+
+/** Directory used by {@link resolvePlanStepOwners}. Callers build
+ * this once per transfer (list agents + users for the company) and
+ * pass it in to upgrade every step's owner. */
+export interface OwnerResolveDirectory {
+  agents: Array<{ id: string; name: string; displayName?: string | null }>;
+  users: Array<{ id: string; displayName?: string | null; email?: string | null }>;
+}
 
 /** Accept anything. Try to produce a valid PlanOutput or return
  * null so the caller can decide how to handle failure (reject the
@@ -55,6 +64,55 @@ export function formatPlanOutput(raw: unknown): PlanOutput | null {
     if (parsed.success) return parsed.data;
   }
 
+  return null;
+}
+
+/**
+ * Upgrade every step owner in a PlanOutput from free-form label
+ * into a structured {agentId|userId|label} pointer where possible.
+ *
+ * Matching rules (case-insensitive):
+ *   - exact match on agent.name or agent.displayName   → agentId
+ *   - "@{name}" prefix stripped then matched            → agentId
+ *   - exact match on user.displayName or user.email    → userId
+ *   - otherwise label stays as-is
+ *
+ * Idempotent: already-resolved owners ({agentId} etc.) pass through.
+ */
+export function resolvePlanStepOwners(
+  plan: PlanOutput,
+  directory: OwnerResolveDirectory,
+): PlanOutput {
+  const steps = plan.proposedSteps.map((step) => {
+    const owner = step.owner;
+    if (!owner) return step;
+    if (owner.agentId || owner.userId) return step;
+    const label = (owner.label ?? "").trim();
+    if (!label) return step;
+    const resolved = matchOwner(label, directory);
+    if (!resolved) return step;
+    return { ...step, owner: resolved };
+  });
+  return { ...plan, proposedSteps: steps };
+}
+
+function matchOwner(raw: string, directory: OwnerResolveDirectory): PlanOutputStepOwner | null {
+  const label = raw.replace(/^@+/, "").trim().toLowerCase();
+  if (!label) return null;
+  for (const agent of directory.agents) {
+    const name = (agent.name ?? "").toLowerCase();
+    const display = (agent.displayName ?? "").toLowerCase();
+    if (name === label || display === label) {
+      return { agentId: agent.id, label: agent.displayName ?? agent.name };
+    }
+  }
+  for (const user of directory.users) {
+    const display = (user.displayName ?? "").toLowerCase();
+    const email = (user.email ?? "").toLowerCase();
+    if (display === label || email === label) {
+      return { userId: user.id, label: user.displayName ?? user.email ?? user.id };
+    }
+  }
   return null;
 }
 

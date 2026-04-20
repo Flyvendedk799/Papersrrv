@@ -109,6 +109,12 @@ export function RecentPlansCard() {
                     </div>
                     <div className="font-mono text-[0.52rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)]">
                       {p.kind} · {relativeTime(p.createdAt)}
+                      {p.approvalStatus === "pending" && (
+                        <>
+                          {" · "}
+                          <span className="text-[var(--boared-acid)]">pending</span>
+                        </>
+                      )}
                     </div>
                   </Link>
                 </li>

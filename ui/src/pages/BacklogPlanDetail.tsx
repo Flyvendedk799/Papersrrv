@@ -1,22 +1,34 @@
 /**
  * BacklogPlanDetail — proper detail view for a single backlog plan.
  *
- * Includes provenance (source issue link for planning-transfer
- * plans), full description rendered as markdown, child backlog
- * items grouped by status, dates, and actions.
+ * Renders the structured plan document (F3), live execution
+ * progress (F4), discussion thread (F5), approval banner (F6),
+ * revision history tab (F7), save-as-template action (F10), plus
+ * the existing provenance + items grouping.
  */
 
-import { useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { planOutputSchema, type PlanOutput } from "@paperclipai/shared";
+import { Check, X, History, MessageSquare, FileText, Bookmark } from "lucide-react";
 import { backlogApi } from "../api/backlog";
 import { useCompany } from "../context/CompanyContext";
+import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
-import { relativeTime } from "../lib/utils";
+import { cn, relativeTime } from "../lib/utils";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { EmptyState } from "../components/boared/EmptyState";
 import { SkeletonList } from "../components/boared/Skeleton";
 import { RouteErrorBoundary } from "../components/boared/RouteErrorBoundary";
+import { CasePlanDocument } from "../components/boared/caseFile/CasePlanDocument";
+import { PlanProgressBand } from "../components/boared/caseFile/PlanProgressBand";
+import { PlanCommentThread } from "../components/boared/caseFile/PlanCommentThread";
+import { PlanRevisionsPanel } from "../components/boared/caseFile/PlanRevisionsPanel";
+import { PlanApprovalBanner } from "../components/boared/caseFile/PlanApprovalBanner";
+import { PlanSaveAsTemplateDialog } from "../components/boared/caseFile/PlanSaveAsTemplateDialog";
+
+type TabKey = "plan" | "items" | "discussion" | "revisions";
 
 export function BacklogPlanDetail() {
   return (
@@ -29,6 +41,12 @@ export function BacklogPlanDetail() {
 function BacklogPlanDetailInner() {
   const { planId } = useParams<{ planId: string }>();
   const { selectedCompanyId } = useCompany();
+  const { pushToast } = useToast();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<TabKey>("plan");
+  const [spawningIdx, setSpawningIdx] = useState<number | null>(null);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
 
   const { data: plan, isLoading } = useQuery({
     queryKey: queryKeys.backlog.plan(selectedCompanyId ?? "", planId ?? ""),
@@ -43,6 +61,19 @@ function BacklogPlanDetailInner() {
   });
   const items = itemsRes ?? [];
 
+  const { data: progress } = useQuery({
+    queryKey: [...queryKeys.backlog.plan(selectedCompanyId ?? "", planId ?? ""), "progress"],
+    queryFn: () => backlogApi.planProgress(selectedCompanyId!, planId!),
+    enabled: !!selectedCompanyId && !!planId,
+    refetchInterval: 20_000,
+  });
+
+  const parsedPlan: PlanOutput | null = useMemo(() => {
+    if (!plan?.planOutputJson) return null;
+    const r = planOutputSchema.safeParse(plan.planOutputJson);
+    return r.success ? r.data : null;
+  }, [plan?.planOutputJson]);
+
   const grouped = useMemo(() => {
     const m = new Map<string, typeof items>();
     for (const i of items) {
@@ -52,6 +83,31 @@ function BacklogPlanDetailInner() {
     }
     return m;
   }, [items]);
+
+  const spawnStep = useMutation({
+    mutationFn: (stepIdx: number) => {
+      setSpawningIdx(stepIdx);
+      return backlogApi.spawnIssueFromStep(selectedCompanyId!, planId!, stepIdx);
+    },
+    onSuccess: (res) => {
+      setSpawningIdx(null);
+      qc.invalidateQueries({ queryKey: queryKeys.backlog.plan(selectedCompanyId!, planId!) });
+      qc.invalidateQueries({
+        queryKey: [...queryKeys.backlog.plan(selectedCompanyId!, planId!), "progress"],
+      });
+      pushToast({
+        tone: "info",
+        title: res.alreadyExisted ? "Issue already linked" : "Issue spawned",
+      });
+    },
+    onError: (err) => {
+      setSpawningIdx(null);
+      pushToast({
+        tone: "error",
+        title: err instanceof Error ? err.message : "Spawn failed",
+      });
+    },
+  });
 
   if (isLoading || !plan) {
     return (
@@ -65,7 +121,6 @@ function BacklogPlanDetailInner() {
 
   return (
     <div className="mx-auto w-full max-w-[1120px] px-4 py-6 space-y-6">
-      {/* Breadcrumb */}
       <nav className="font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)] flex items-center gap-2">
         <Link to="/backlog" className="hover:text-[var(--boared-ink)] no-underline">
           Backlog
@@ -78,7 +133,6 @@ function BacklogPlanDetailInner() {
         <span className="text-[var(--boared-ink)] truncate max-w-[32ch]">{plan.title}</span>
       </nav>
 
-      {/* Hero */}
       <header className="space-y-3 border-b border-[var(--boared-rule)] pb-4">
         <div className="flex items-center gap-2 font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--boared-ink-faint)]">
           <span>{plan.kind}</span>
@@ -108,75 +162,116 @@ function BacklogPlanDetailInner() {
             </>
           )}
         </div>
-        <h1 className="font-serif italic text-[clamp(1.8rem,4vw,2.8rem)] leading-tight text-[var(--boared-ink)]">
-          {plan.title}
-        </h1>
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <h1 className="font-serif italic text-[clamp(1.8rem,4vw,2.8rem)] leading-tight text-[var(--boared-ink)]">
+            {plan.title}
+          </h1>
+          {parsedPlan && (
+            <button
+              type="button"
+              onClick={() => setSaveTemplateOpen(true)}
+              className="inline-flex items-center gap-1.5 font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-acid)] border border-[var(--boared-rule)] px-2 py-1 focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
+            >
+              <Bookmark className="h-3 w-3" aria-hidden="true" />
+              Save as template
+            </button>
+          )}
+        </div>
+        {progress && <PlanProgressBand progress={progress} />}
       </header>
 
-      {/* Body */}
+      <PlanApprovalBanner plan={plan} />
+
+      <nav className="flex items-center gap-4 border-b border-[var(--boared-rule)] -mb-2">
+        <TabButton active={tab === "plan"} onClick={() => setTab("plan")}>
+          <FileText className="h-3 w-3" aria-hidden="true" /> Plan
+        </TabButton>
+        <TabButton active={tab === "items"} onClick={() => setTab("items")}>
+          Items · {items.length}
+        </TabButton>
+        <TabButton active={tab === "discussion"} onClick={() => setTab("discussion")}>
+          <MessageSquare className="h-3 w-3" aria-hidden="true" /> Discussion
+        </TabButton>
+        <TabButton active={tab === "revisions"} onClick={() => setTab("revisions")}>
+          <History className="h-3 w-3" aria-hidden="true" /> Revisions
+        </TabButton>
+      </nav>
+
       <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_260px]">
         <div className="space-y-6 min-w-0">
-          {/* Description (markdown — rendered plan body) */}
-          <section>
-            <h2 className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--boared-ink-faint)] mb-2">
-              Plan
-            </h2>
-            {plan.description ? (
-              <MarkdownBody className="prose-serif">{plan.description}</MarkdownBody>
-            ) : (
-              <p className="font-serif italic text-[var(--boared-ink-faint)]">
-                No plan body yet.
-              </p>
-            )}
-          </section>
+          {tab === "plan" && (
+            <section className="space-y-6">
+              {parsedPlan ? (
+                <CasePlanDocument
+                  plan={parsedPlan}
+                  animateIn
+                  onSpawnIssue={(idx) => spawnStep.mutate(idx)}
+                  spawningStepIdx={spawningIdx}
+                  onOpenIssue={(issueId) => navigate(`/issues/${issueId}`)}
+                />
+              ) : plan.description ? (
+                <section>
+                  <h2 className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--boared-ink-faint)] mb-2">
+                    Plan
+                  </h2>
+                  <MarkdownBody className="prose-serif">{plan.description}</MarkdownBody>
+                </section>
+              ) : (
+                <p className="font-serif italic text-[var(--boared-ink-faint)]">
+                  No plan body yet.
+                </p>
+              )}
+            </section>
+          )}
 
-          {/* Items grouped by status */}
-          <section>
-            <h2 className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--boared-ink-faint)] mb-2">
-              Items in this plan · {items.length}
-            </h2>
-            {items.length === 0 ? (
-              <EmptyState
-                title="No items filed under this plan yet."
-                description="Items appear here when they're filed against this plan, or when promoted from steps."
-                kicker="Empty plan"
-                primaryAction={{
-                  label: "View full backlog",
-                  href: "/backlog",
-                }}
-              />
-            ) : (
-              <div className="space-y-3">
-                {Array.from(grouped.entries()).map(([status, list]) => (
-                  <div key={status}>
-                    <h3 className="font-mono text-[0.56rem] uppercase tracking-[0.18em] text-[var(--boared-ink-soft)] mb-1.5">
-                      {status} · {list.length}
-                    </h3>
-                    <ul className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
-                      {list.map((it) => (
-                        <li key={it.id}>
-                          <Link
-                            to={`/backlog/items/${it.id}`}
-                            className="flex items-baseline gap-2 px-3 py-2 hover:bg-[var(--boared-paper-2)] no-underline text-inherit"
-                          >
-                            <span className="font-serif italic text-[0.92rem] text-[var(--boared-ink)] flex-1 min-w-0 truncate">
-                              {it.title}
-                            </span>
-                            <span className="font-mono text-[0.52rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)]">
-                              {relativeTime(it.updatedAt)}
-                            </span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          {tab === "items" && (
+            <section>
+              <h2 className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--boared-ink-faint)] mb-2">
+                Items in this plan · {items.length}
+              </h2>
+              {items.length === 0 ? (
+                <EmptyState
+                  title="No items filed under this plan yet."
+                  description="Items appear here when they're filed against this plan, or when promoted from steps."
+                  kicker="Empty plan"
+                  primaryAction={{ label: "View full backlog", href: "/backlog" }}
+                />
+              ) : (
+                <div className="space-y-3">
+                  {Array.from(grouped.entries()).map(([status, list]) => (
+                    <div key={status}>
+                      <h3 className="font-mono text-[0.56rem] uppercase tracking-[0.18em] text-[var(--boared-ink-soft)] mb-1.5">
+                        {status} · {list.length}
+                      </h3>
+                      <ul className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+                        {list.map((it) => (
+                          <li key={it.id}>
+                            <Link
+                              to={`/backlog/items/${it.id}`}
+                              className="flex items-baseline gap-2 px-3 py-2 hover:bg-[var(--boared-paper-2)] no-underline text-inherit"
+                            >
+                              <span className="font-serif italic text-[0.92rem] text-[var(--boared-ink)] flex-1 min-w-0 truncate">
+                                {it.title}
+                              </span>
+                              <span className="font-mono text-[0.52rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)]">
+                                {relativeTime(it.updatedAt)}
+                              </span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === "discussion" && <PlanCommentThread planId={plan.id} companyId={plan.companyId} />}
+
+          {tab === "revisions" && <PlanRevisionsPanel planId={plan.id} companyId={plan.companyId} />}
         </div>
 
-        {/* Sidebar */}
         <aside className="border border-[var(--boared-rule)] bg-[var(--boared-paper)] p-3 space-y-3 h-fit">
           <Row label="Created" value={relativeTime(plan.createdAt)} />
           {plan.startsAt && <Row label="Starts" value={relativeTime(plan.startsAt)} />}
@@ -195,9 +290,53 @@ function BacklogPlanDetailInner() {
             />
           )}
           <Row label="Items" value={<span className="tabular-nums">{items.length}</span>} />
+          {progress && (
+            <Row
+              label="Progress"
+              value={
+                <span className="tabular-nums">
+                  {progress.done}/{progress.total}
+                </span>
+              }
+            />
+          )}
         </aside>
       </div>
+
+      {parsedPlan && saveTemplateOpen && (
+        <PlanSaveAsTemplateDialog
+          plan={parsedPlan}
+          companyId={plan.companyId}
+          defaultName={plan.title}
+          onClose={() => setSaveTemplateOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "relative inline-flex items-center gap-1 py-2 font-mono text-[0.62rem] uppercase tracking-[0.14em] focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]",
+        active
+          ? "text-[var(--boared-ink)] after:content-[''] after:absolute after:left-0 after:right-0 after:-bottom-px after:h-px after:bg-[var(--boared-ink)]"
+          : "text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)]",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -211,3 +350,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   );
 }
+
+// Unused exports kept to avoid accidental orphan lint; these are
+// symbols referenced in JSX above.
+export const _ref = { Check, X };

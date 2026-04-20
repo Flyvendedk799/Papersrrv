@@ -14,18 +14,24 @@ import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
+  authUsers,
   backlogItemComments,
   backlogItemLabels,
   backlogItems,
+  backlogPlanComments,
+  backlogPlanRevisions,
   backlogPlans,
   issueComments,
   issues,
   type BacklogItemCommentRow,
   type BacklogItemRow,
+  type BacklogPlanCommentRow,
+  type BacklogPlanRevisionRow,
   type BacklogPlanRow,
 } from "@paperclipai/db";
-import { planOutputSchema, type PlanOutput } from "@paperclipai/shared";
+import { planOutputSchema, type PlanOutput, type PlanProgress } from "@paperclipai/shared";
 import { issueService } from "./issues.js";
+import { resolvePlanStepOwners, type OwnerResolveDirectory } from "./plan-output-formatter.js";
 import type {
   BacklogBulkAction,
   BacklogBulkPatch,
@@ -37,8 +43,10 @@ import type {
   BacklogItemStatus,
   BacklogOverview,
   BacklogPlan,
+  BacklogPlanComment,
   BacklogPlanKind,
   BacklogPlanProgress,
+  BacklogPlanRevision,
   BacklogPlanStatus,
   BulkBacklogItemInput,
   BulkBacklogItemResult,
@@ -90,6 +98,49 @@ function commentToApi(
           avatarUrl: null,
         }
       : null,
+  };
+}
+
+function planCommentToApi(
+  row: BacklogPlanCommentRow,
+  agent: {
+    id: string;
+    displayName: string;
+    iconName: string | null;
+  } | null,
+): BacklogPlanComment {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    backlogPlanId: row.backlogPlanId,
+    authorAgentId: row.authorAgentId,
+    authorUserId: row.authorUserId,
+    body: row.body,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    authorAgent: agent
+      ? {
+          id: agent.id,
+          displayName: agent.displayName,
+          iconName: agent.iconName,
+          avatarUrl: null,
+        }
+      : null,
+  };
+}
+
+function revisionToApi(row: BacklogPlanRevisionRow): BacklogPlanRevision {
+  return {
+    id: row.id,
+    planId: row.backlogPlanId,
+    version: row.version,
+    planOutputJson: row.planOutputJson ?? null,
+    title: row.title ?? null,
+    description: row.description ?? null,
+    summaryOfChange: row.summaryOfChange ?? null,
+    editedByAgentId: row.editedByAgentId ?? null,
+    editedByUserId: row.editedByUserId ?? null,
+    editedAt: row.editedAt.toISOString(),
   };
 }
 
@@ -145,6 +196,25 @@ function renderPlanDescription(plan: PlanOutput): string {
   return lines.join("\n");
 }
 
+/**
+ * Load the company's agents + users for plan-step owner resolution
+ * (F2). Cached per-request by the caller (pass through
+ * transferIssueToBacklog / owner-update path).
+ */
+async function loadOwnerDirectory(db: Db, companyId: string): Promise<OwnerResolveDirectory> {
+  const agentRows = await db
+    .select({ id: agents.id, name: agents.name, displayName: agents.name })
+    .from(agents)
+    .where(eq(agents.companyId, companyId));
+  const userRows = await db
+    .select({ id: authUsers.id, displayName: authUsers.name, email: authUsers.email })
+    .from(authUsers);
+  return {
+    agents: agentRows,
+    users: userRows,
+  };
+}
+
 function planToApi(row: BacklogPlanRow): BacklogPlan {
   return {
     id: row.id,
@@ -161,6 +231,8 @@ function planToApi(row: BacklogPlanRow): BacklogPlan {
     createdByUserId: row.createdByUserId,
     createdByAgentId: row.createdByAgentId,
     sourceIssueId: row.sourceIssueId ?? null,
+    planOutputJson: row.planOutputJson ?? null,
+    approvalStatus: (row.approvalStatus ?? "none") as BacklogPlan["approvalStatus"],
     archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -1422,7 +1494,13 @@ export function backlogService(db: Db) {
       if (!validated.success) {
         throw unprocessable("Stored plan output does not match the enforced PlanOutput schema");
       }
-      const plan = validated.data;
+
+      // F2 — resolve step owners against the company's agents + users.
+      // Free-form labels like "alice" or "@claude-frontend" become
+      // structured {agentId} / {userId} pointers where possible;
+      // unmatched labels stay as labels.
+      const directory = await loadOwnerDirectory(db, companyId);
+      const plan = resolvePlanStepOwners(validated.data, directory);
 
       const now = new Date();
       const planTitle = normalizeTitle(opts.title ?? issueRow.title ?? "Untitled plan");
@@ -1430,6 +1508,11 @@ export function backlogService(db: Db) {
       const description = renderPlanDescription(plan);
 
       // Insert the backlog plan with the back-reference.
+      // F3 — copy the structured plan output onto the plan row so
+      // the plan detail page can render the full document without
+      // chasing the source issue. F6 hook — approval_status default
+      // is 'none'; a later pass flips it to 'pending' when a
+      // company-level flag is on (not wired yet).
       const [inserted] = await db
         .insert(backlogPlans)
         .values({
@@ -1444,8 +1527,24 @@ export function backlogService(db: Db) {
           createdByUserId: actor.userId,
           createdByAgentId: actor.agentId,
           sourceIssueId: issueId,
+          planOutputJson: plan,
+          approvalStatus: "none",
         })
         .returning();
+
+      // F7 — seed revision #1 at plan creation so history always
+      // starts from the transfer point.
+      await db.insert(backlogPlanRevisions).values({
+        companyId,
+        backlogPlanId: inserted.id,
+        version: 1,
+        planOutputJson: plan,
+        title: planTitle,
+        description,
+        summaryOfChange: "Transferred from planning issue",
+        editedByAgentId: actor.agentId,
+        editedByUserId: actor.userId,
+      });
 
       // Optional: seed backlog items from the plan's proposed steps.
       // Uses the issue as the source-ref so each item links back to
@@ -1520,6 +1619,398 @@ export function backlogService(db: Db) {
         .where(and(eq(backlogPlans.companyId, companyId), eq(backlogPlans.id, id)))
         .returning()
         .then((rs) => rs[0]);
+      return planToApi(updated);
+    },
+
+    /* ----------------------------------------------------------------
+     * Plan depth operations (migration 0043_plan_depth / F1–F7)
+     * ---------------------------------------------------------------- */
+
+    /** F4 — roll up issues linked to this plan via source_plan_id
+     * into { total, spawned, inFlight, done, cancelled, pending }.
+     * Total comes from the plan's proposedSteps length; the rest
+     * come from issues.source_plan_id.
+     */
+    async planProgress(companyId: string, planId: string): Promise<PlanProgress> {
+      const plan = await db
+        .select({ planOutputJson: backlogPlans.planOutputJson })
+        .from(backlogPlans)
+        .where(and(eq(backlogPlans.companyId, companyId), eq(backlogPlans.id, planId)))
+        .limit(1)
+        .then((rs) => rs[0]);
+      const parsed = plan?.planOutputJson ? planOutputSchema.safeParse(plan.planOutputJson) : null;
+      const total = parsed?.success ? parsed.data.proposedSteps.length : 0;
+
+      const spawnedRows = await db
+        .select({ status: issues.status })
+        .from(issues)
+        .where(and(eq(issues.companyId, companyId), eq(issues.sourcePlanId, planId)));
+      const spawned = spawnedRows.length;
+      const done = spawnedRows.filter((r) => r.status === "done").length;
+      const cancelled = spawnedRows.filter((r) => r.status === "cancelled").length;
+      const inFlight = spawned - done - cancelled;
+      const pending = Math.max(0, total - spawned);
+      return { total, spawned, inFlight, done, cancelled, pending };
+    },
+
+    /** F1 — spawn a work issue from a specific step of the plan.
+     * Idempotent: if the step already has a spawnedIssueId on the
+     * stored plan_output_json, returns that issue id without
+     * creating a duplicate. */
+    async spawnIssueFromPlanStep(
+      companyId: string,
+      planId: string,
+      stepIdx: number,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<{ issueId: string; alreadyExisted: boolean }> {
+      const planRow = await db
+        .select()
+        .from(backlogPlans)
+        .where(and(eq(backlogPlans.companyId, companyId), eq(backlogPlans.id, planId)))
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!planRow) throw notFound("Backlog plan not found");
+      if (!planRow.planOutputJson) throw unprocessable("Plan has no structured plan output");
+      const parsed = planOutputSchema.safeParse(planRow.planOutputJson);
+      if (!parsed.success) throw unprocessable("Stored plan output is malformed");
+      const plan = parsed.data;
+      if (stepIdx < 0 || stepIdx >= plan.proposedSteps.length) {
+        throw unprocessable(`Step ${stepIdx} is out of bounds`);
+      }
+      const step = plan.proposedSteps[stepIdx]!;
+
+      if (step.spawnedIssueId) {
+        // Confirm the issue still exists before returning; if the
+        // user deleted it we'll re-spawn.
+        const existing = await db
+          .select({ id: issues.id })
+          .from(issues)
+          .where(eq(issues.id, step.spawnedIssueId))
+          .limit(1)
+          .then((rs) => rs[0]);
+        if (existing) {
+          return { issueId: existing.id, alreadyExisted: true };
+        }
+      }
+
+      const assigneeAgentId = step.owner?.agentId ?? null;
+      const assigneeUserId = step.owner?.userId ?? null;
+      const description =
+        `${step.detail}\n\n` +
+        `— Spawned from plan: ${planRow.title} (step ${stepIdx + 1} of ${plan.proposedSteps.length})`;
+
+      const [inserted] = await db
+        .insert(issues)
+        .values({
+          companyId,
+          title: step.title.slice(0, 200),
+          description,
+          status: "backlog",
+          priority: step.effort === "large" ? "high" : "medium",
+          kind: "issue",
+          projectId: planRow.projectId ?? null,
+          goalId: planRow.goalId ?? null,
+          assigneeAgentId,
+          assigneeUserId,
+          createdByUserId: actor.userId,
+          createdByAgentId: actor.agentId,
+          sourcePlanId: planId,
+          sourcePlanStepIdx: stepIdx,
+        })
+        .returning();
+
+      // Update the stored plan_output_json so the step's
+      // spawnedIssueId is persisted; readers render the step as
+      // linked without a follow-up query.
+      const updatedSteps = plan.proposedSteps.map((s, i) =>
+        i === stepIdx ? { ...s, spawnedIssueId: inserted.id } : s,
+      );
+      const updatedPlan = { ...plan, proposedSteps: updatedSteps };
+      await db
+        .update(backlogPlans)
+        .set({ planOutputJson: updatedPlan, updatedAt: new Date() })
+        .where(eq(backlogPlans.id, planId));
+
+      return { issueId: inserted.id, alreadyExisted: false };
+    },
+
+    /** F5 — list comments on a plan, most-recent first by creation time
+     * to mirror the existing item-comment UX. */
+    async listPlanComments(
+      companyId: string,
+      planId: string,
+    ): Promise<BacklogPlanComment[]> {
+      const rows = await db
+        .select({
+          c: backlogPlanComments,
+          agent: {
+            id: agents.id,
+            displayName: agents.name,
+            iconName: agents.icon,
+          },
+        })
+        .from(backlogPlanComments)
+        .leftJoin(agents, eq(agents.id, backlogPlanComments.authorAgentId))
+        .where(
+          and(
+            eq(backlogPlanComments.companyId, companyId),
+            eq(backlogPlanComments.backlogPlanId, planId),
+          ),
+        )
+        .orderBy(asc(backlogPlanComments.createdAt));
+      return rows.map((r) => planCommentToApi(r.c, r.agent));
+    },
+
+    async createPlanComment(
+      companyId: string,
+      planId: string,
+      input: { body: string },
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<BacklogPlanComment> {
+      const body = (input?.body ?? "").trim();
+      if (!body) throw unprocessable("body is required");
+      const plan = await db
+        .select({ id: backlogPlans.id })
+        .from(backlogPlans)
+        .where(and(eq(backlogPlans.companyId, companyId), eq(backlogPlans.id, planId)))
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!plan) throw notFound("Backlog plan not found");
+
+      const inserted = await db
+        .insert(backlogPlanComments)
+        .values({
+          companyId,
+          backlogPlanId: planId,
+          authorUserId: actor.userId,
+          authorAgentId: actor.agentId,
+          body,
+        })
+        .returning()
+        .then((rs) => rs[0]);
+
+      const agent = actor.agentId
+        ? await db
+            .select({
+              id: agents.id,
+              displayName: agents.name,
+              iconName: agents.icon,
+            })
+            .from(agents)
+            .where(eq(agents.id, actor.agentId))
+            .limit(1)
+            .then((rs) => rs[0] ?? null)
+        : null;
+      return planCommentToApi(inserted, agent);
+    },
+
+    async deletePlanComment(
+      companyId: string,
+      commentId: string,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<void> {
+      const existing = await db
+        .select()
+        .from(backlogPlanComments)
+        .where(
+          and(
+            eq(backlogPlanComments.companyId, companyId),
+            eq(backlogPlanComments.id, commentId),
+          ),
+        )
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!existing) throw notFound("Comment not found");
+      const ownsComment =
+        (actor.userId !== null && existing.authorUserId === actor.userId) ||
+        (actor.agentId !== null && existing.authorAgentId === actor.agentId);
+      if (!ownsComment) throw unprocessable("Only the author can delete this comment");
+      await db
+        .delete(backlogPlanComments)
+        .where(eq(backlogPlanComments.id, commentId));
+    },
+
+    /** F7 — list revisions (most recent first). */
+    async listPlanRevisions(
+      companyId: string,
+      planId: string,
+    ): Promise<BacklogPlanRevision[]> {
+      const rows = await db
+        .select()
+        .from(backlogPlanRevisions)
+        .where(
+          and(
+            eq(backlogPlanRevisions.companyId, companyId),
+            eq(backlogPlanRevisions.backlogPlanId, planId),
+          ),
+        )
+        .orderBy(desc(backlogPlanRevisions.version));
+      return rows.map(revisionToApi);
+    },
+
+    /** F7 — edit a plan's structured plan_output_json and snapshot
+     * the prior version into backlog_plan_revisions. Re-resolves
+     * step owners before storing so manual edits gain the same
+     * agent/user FK upgrades as transfer does. */
+    async updatePlanOutput(
+      companyId: string,
+      planId: string,
+      input: { planOutput: unknown; summaryOfChange?: string | null },
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<BacklogPlan> {
+      const existing = await db
+        .select()
+        .from(backlogPlans)
+        .where(and(eq(backlogPlans.companyId, companyId), eq(backlogPlans.id, planId)))
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!existing) throw notFound("Backlog plan not found");
+
+      const parsed = planOutputSchema.safeParse(input.planOutput);
+      if (!parsed.success) {
+        throw unprocessable("planOutput does not match the PlanOutput schema");
+      }
+      const directory = await loadOwnerDirectory(db, companyId);
+      const nextPlan = resolvePlanStepOwners(parsed.data, directory);
+
+      // Peek the current highest version so we append cleanly.
+      const latest = await db
+        .select({ version: backlogPlanRevisions.version })
+        .from(backlogPlanRevisions)
+        .where(eq(backlogPlanRevisions.backlogPlanId, planId))
+        .orderBy(desc(backlogPlanRevisions.version))
+        .limit(1)
+        .then((rs) => rs[0]);
+      const nextVersion = (latest?.version ?? 0) + 1;
+
+      await db.insert(backlogPlanRevisions).values({
+        companyId,
+        backlogPlanId: planId,
+        version: nextVersion,
+        planOutputJson: nextPlan,
+        title: existing.title,
+        description: existing.description ?? null,
+        summaryOfChange: input.summaryOfChange ?? null,
+        editedByAgentId: actor.agentId,
+        editedByUserId: actor.userId,
+      });
+
+      const [updated] = await db
+        .update(backlogPlans)
+        .set({
+          planOutputJson: nextPlan,
+          description: renderPlanDescription(nextPlan),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(backlogPlans.companyId, companyId), eq(backlogPlans.id, planId)))
+        .returning();
+      return planToApi(updated);
+    },
+
+    /** F9 — search plans by title/description AND within the
+     * structured plan_output_json (step titles, risks, open
+     * questions). Uses ILIKE + jsonb casts for compatibility; a
+     * production tsvector index can replace this later. */
+    async searchPlans(
+      companyId: string,
+      query: string,
+      limit = 20,
+    ): Promise<BacklogPlan[]> {
+      const q = query.trim();
+      if (!q) return [];
+      const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+      const rows = await db
+        .select()
+        .from(backlogPlans)
+        .where(
+          and(
+            eq(backlogPlans.companyId, companyId),
+            or(
+              ilike(backlogPlans.title, like),
+              ilike(backlogPlans.description, like),
+              sql`${backlogPlans.planOutputJson}::text ILIKE ${like}`,
+            ),
+          ),
+        )
+        .orderBy(desc(backlogPlans.updatedAt))
+        .limit(limit);
+      return rows.map(planToApi);
+    },
+
+    /** F8 — spawn a planning-kind investigation issue from a
+     * backlog item. Idempotent: if the item already has an
+     * investigation linked via issues.source_backlog_item_id, the
+     * existing issue is returned. */
+    async spawnInvestigationFromItem(
+      companyId: string,
+      itemId: string,
+      actor: { userId: string | null; agentId: string | null },
+    ): Promise<{ issueId: string; alreadyExisted: boolean }> {
+      const item = await db
+        .select()
+        .from(backlogItems)
+        .where(and(eq(backlogItems.companyId, companyId), eq(backlogItems.id, itemId)))
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!item) throw notFound("Backlog item not found");
+
+      const existing = await db
+        .select({ id: issues.id })
+        .from(issues)
+        .where(
+          and(
+            eq(issues.companyId, companyId),
+            eq(issues.sourceBacklogItemId, itemId),
+            eq(issues.kind, "planning"),
+          ),
+        )
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (existing) {
+        return { issueId: existing.id, alreadyExisted: true };
+      }
+
+      const description =
+        (item.body?.trim() ?? "") +
+        `\n\n— Investigation opened from backlog item: ${item.title}`;
+      const [inserted] = await db
+        .insert(issues)
+        .values({
+          companyId,
+          title: `Investigate: ${item.title.slice(0, 180)}`,
+          description: description.trim(),
+          status: "in_progress",
+          priority: "medium",
+          kind: "planning",
+          projectId: item.projectId ?? null,
+          goalId: item.goalId ?? null,
+          createdByUserId: actor.userId,
+          createdByAgentId: actor.agentId,
+          sourceBacklogItemId: itemId,
+        })
+        .returning();
+      return { issueId: inserted.id, alreadyExisted: false };
+    },
+
+    /** F6 — transition a plan's approval_status. Enforces the
+     * none|pending|approved|rejected state machine. */
+    async setPlanApprovalStatus(
+      companyId: string,
+      planId: string,
+      status: "none" | "pending" | "approved" | "rejected",
+    ): Promise<BacklogPlan> {
+      const existing = await db
+        .select()
+        .from(backlogPlans)
+        .where(and(eq(backlogPlans.companyId, companyId), eq(backlogPlans.id, planId)))
+        .limit(1)
+        .then((rs) => rs[0]);
+      if (!existing) throw notFound("Backlog plan not found");
+      const [updated] = await db
+        .update(backlogPlans)
+        .set({ approvalStatus: status, updatedAt: new Date() })
+        .where(and(eq(backlogPlans.companyId, companyId), eq(backlogPlans.id, planId)))
+        .returning();
       return planToApi(updated);
     },
 

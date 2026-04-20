@@ -7,6 +7,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
+import { backlogApi } from "../api/backlog";
 import { queryKeys } from "../lib/queryKeys";
 import {
   CommandDialog,
@@ -28,6 +29,7 @@ import {
   History,
   SquarePen,
   Plus,
+  ClipboardList,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { agentUrl, projectUrl } from "../lib/utils";
@@ -78,6 +80,16 @@ export function CommandPalette() {
   const { data: projects = [] } = useQuery({
     queryKey: queryKeys.projects.list(selectedCompanyId!),
     queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && open,
+  });
+
+  // F9 — search plans by title/description + plan_output_json.
+  const { data: plans = [] } = useQuery({
+    queryKey: ["command-palette", "plans", selectedCompanyId, searchQuery],
+    queryFn: () =>
+      searchQuery.length > 0
+        ? backlogApi.searchPlans(selectedCompanyId!, searchQuery, 8)
+        : backlogApi.listPlans(selectedCompanyId!),
     enabled: !!selectedCompanyId && open,
   });
 
@@ -224,6 +236,27 @@ export function CommandPalette() {
                 <CommandItem key={project.id} onSelect={() => go(projectUrl(project))}>
                   <Hexagon className="mr-2 h-4 w-4" />
                   {project.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
+        )}
+
+        {plans.length > 0 && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Plans">
+              {plans.slice(0, 8).map((plan) => (
+                <CommandItem
+                  key={plan.id}
+                  value={`${searchQuery} ${plan.title}`}
+                  onSelect={() => go(`/backlog/plans/${plan.id}`)}
+                >
+                  <ClipboardList className="mr-2 h-4 w-4" />
+                  {plan.title}
+                  <span className="ml-auto text-[0.62rem] text-muted-foreground">
+                    {plan.kind}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

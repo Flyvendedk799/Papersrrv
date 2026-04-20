@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ArrowLeft, Rocket, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, Rocket, Search, Trash2 } from "lucide-react";
 import type { BacklogItemComment } from "@paperclipai/shared";
 import { backlogApi } from "../api/backlog";
 import { useCompany } from "../context/CompanyContext";
@@ -163,6 +163,26 @@ export function BacklogItemDetail() {
     },
   });
 
+  // F8 — reverse funnel: spawn a planning investigation from this item.
+  const startInvestigation = useMutation({
+    mutationFn: () => backlogApi.startInvestigation(selectedCompanyId!, itemId!),
+    onSuccess: (result) => {
+      invalidateItem();
+      pushToast({
+        title: result.alreadyExisted ? "Investigation already open" : "Investigation started",
+        tone: "success",
+      });
+      navigate(`/issues/${result.issueId}`);
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Failed to start investigation",
+        body: (err as Error).message,
+        tone: "error",
+      });
+    },
+  });
+
   if (!selectedCompanyId) {
     return (
       <div className="mx-auto max-w-3xl p-6 text-sm text-muted-foreground">
@@ -213,6 +233,18 @@ export function BacklogItemDetail() {
             >
               <Rocket className="size-3" />
               {promoteItem.isPending ? "Promoting…" : "Promote to Issue"}
+            </Button>
+          )}
+          {canPromote && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => startInvestigation.mutate()}
+              disabled={startInvestigation.isPending}
+              title="Spawn a planning investigation with this item as context"
+            >
+              <Search className="size-3" />
+              {startInvestigation.isPending ? "Opening…" : "Start investigation"}
             </Button>
           )}
           {item.status !== "archived" && (

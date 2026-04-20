@@ -164,10 +164,14 @@ export {
 export {
   planOutputSchema,
   planOutputStepSchema,
+  planOutputStepOwnerSchema,
+  planProgressSchema,
   issueKindSchema,
   transferToBacklogSchema,
   type PlanOutput,
   type PlanOutputStep,
+  type PlanOutputStepOwner,
+  type PlanProgress,
   type IssueKind,
   type TransferToBacklogInput,
 } from "./planning.js";

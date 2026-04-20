@@ -4,6 +4,8 @@ import type {
   BacklogItemFilters,
   BacklogOverview,
   BacklogPlan,
+  BacklogPlanComment,
+  BacklogPlanRevision,
   BulkBacklogItemInput,
   BulkBacklogItemResult,
   BulkPromoteBacklogItemInput,
@@ -11,6 +13,9 @@ import type {
   CreateBacklogItemCommentInput,
   CreateBacklogItemInput,
   CreateBacklogPlanInput,
+  PlanProgress,
+  PlanTemplate,
+  PlanTemplateVariable,
   PromoteBacklogItemInput,
   PromoteBacklogItemResult,
   ReorderBacklogItemInput,
@@ -149,4 +154,87 @@ export const backlogApi = {
     api.patch<BacklogPlan>(`/companies/${companyId}/backlog/plans/${id}`, input),
   archivePlan: (companyId: string, id: string) =>
     api.post<BacklogPlan>(`/companies/${companyId}/backlog/plans/${id}/archive`, {}),
+
+  /* ─── Plan depth API (migration 0043/0044) ─── */
+
+  // F4
+  planProgress: (companyId: string, id: string) =>
+    api.get<PlanProgress>(`/companies/${companyId}/backlog/plans/${id}/progress`),
+
+  // F1
+  spawnIssueFromStep: (companyId: string, planId: string, stepIdx: number) =>
+    api.post<{ issueId: string; alreadyExisted: boolean }>(
+      `/companies/${companyId}/backlog/plans/${planId}/steps/${stepIdx}/spawn-issue`,
+      {},
+    ),
+
+  // F5
+  listPlanComments: (companyId: string, planId: string) =>
+    api.get<BacklogPlanComment[]>(
+      `/companies/${companyId}/backlog/plans/${planId}/comments`,
+    ),
+  createPlanComment: (companyId: string, planId: string, body: string) =>
+    api.post<BacklogPlanComment>(
+      `/companies/${companyId}/backlog/plans/${planId}/comments`,
+      { body },
+    ),
+  deletePlanComment: (companyId: string, planId: string, commentId: string) =>
+    api.delete<void>(
+      `/companies/${companyId}/backlog/plans/${planId}/comments/${commentId}`,
+    ),
+
+  // F7
+  listPlanRevisions: (companyId: string, planId: string) =>
+    api.get<BacklogPlanRevision[]>(
+      `/companies/${companyId}/backlog/plans/${planId}/revisions`,
+    ),
+  updatePlanOutput: (
+    companyId: string,
+    planId: string,
+    planOutput: unknown,
+    summaryOfChange?: string,
+  ) =>
+    api.patch<BacklogPlan>(
+      `/companies/${companyId}/backlog/plans/${planId}/plan-output`,
+      { planOutput, summaryOfChange: summaryOfChange ?? null },
+    ),
+
+  // F6
+  setPlanApproval: (
+    companyId: string,
+    planId: string,
+    status: "none" | "pending" | "approved" | "rejected",
+  ) =>
+    api.post<BacklogPlan>(
+      `/companies/${companyId}/backlog/plans/${planId}/approval`,
+      { status },
+    ),
+
+  // F8
+  startInvestigation: (companyId: string, itemId: string) =>
+    api.post<{ issueId: string; alreadyExisted: boolean }>(
+      `/companies/${companyId}/backlog/items/${itemId}/start-investigation`,
+      {},
+    ),
+
+  // F9
+  searchPlans: (companyId: string, q: string, limit = 20) =>
+    api.get<BacklogPlan[]>(
+      `/companies/${companyId}/backlog/plans/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
+
+  // F10
+  listTemplates: (companyId: string) =>
+    api.get<PlanTemplate[]>(`/companies/${companyId}/plan-templates`),
+  createTemplate: (
+    companyId: string,
+    input: {
+      name: string;
+      description?: string | null;
+      planOutput: unknown;
+      variables?: PlanTemplateVariable[] | null;
+    },
+  ) => api.post<PlanTemplate>(`/companies/${companyId}/plan-templates`, input),
+  deleteTemplate: (companyId: string, id: string) =>
+    api.delete<void>(`/companies/${companyId}/plan-templates/${id}`),
 };

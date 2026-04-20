@@ -62,6 +62,20 @@ export const issues = pgTable(
     kind: text("kind").notNull().default("issue"),
     planOutputJson: jsonb("plan_output_json").$type<unknown>(),
     transferredToBacklogAt: timestamp("transferred_to_backlog_at", { withTimezone: true }),
+    /* Lineage columns (migration 0043_plan_depth).
+     *
+     * sourcePlanId          — when a work issue was spawned from a
+     *                         specific step on a backlog_plan (F1),
+     *                         this points to that plan. Powers
+     *                         progress rollup + bidirectional nav.
+     * sourcePlanStepIdx     — zero-based index into the plan's
+     *                         proposedSteps array.
+     * sourceBacklogItemId   — when a planning issue was spawned from
+     *                         a stuck backlog item (F8), this points
+     *                         back to it. */
+    sourcePlanId: uuid("source_plan_id"),
+    sourcePlanStepIdx: integer("source_plan_step_idx"),
+    sourceBacklogItemId: uuid("source_backlog_item_id"),
     /* Case-file synthesis cache. Populated by the synthesis endpoint
      * on demand and invalidated by a hash mismatch on inputs. Shape
      * is `SynthesisPayload` from server/src/services/case-synthesis
@@ -90,5 +104,7 @@ export const issues = pgTable(
     projectStatusIdx: index("issues_company_project_status_idx").on(table.companyId, table.projectId, table.status),
     identifierIdx: uniqueIndex("issues_identifier_idx").on(table.identifier),
     companyKindIdx: index("issues_company_kind_idx").on(table.companyId, table.kind),
+    sourcePlanIdx: index("issues_source_plan_idx").on(table.sourcePlanId),
+    sourceBacklogItemIdx: index("issues_source_backlog_item_idx").on(table.sourceBacklogItemId),
   }),
 );

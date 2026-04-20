@@ -18,6 +18,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclipai/db";
 import { backlogService, issueService, logActivity } from "../services/index.js";
+import { planTemplateService } from "../services/plan-templates.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { badRequest, notFound } from "../errors.js";
 
@@ -798,6 +799,16 @@ export function backlogRoutes(db: Db) {
 
   // ─── Plans ──────────────────────────────────────────────────────────
 
+  // F9 — search plans by title/description + structured plan_output_json.
+  router.get("/companies/:companyId/backlog/plans/search", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const limit = Math.min(Number(req.query.limit ?? 20), 50);
+    const results = await svc.searchPlans(companyId, q, limit);
+    res.json(results);
+  });
+
   router.get("/companies/:companyId/backlog/plans", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -886,6 +897,264 @@ export function backlogRoutes(db: Db) {
       details: { previousStatus: existing.status },
     });
     res.json(archived);
+  });
+
+  // F8 — reverse funnel: start a planning investigation from a
+  // backlog item. Idempotent via issues.source_backlog_item_id.
+  router.post(
+    "/companies/:companyId/backlog/items/:id/start-investigation",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      const result = await svc.spawnInvestigationFromItem(companyId, id, {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        agentId: actor.agentId,
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: result.alreadyExisted ? "backlog_item.investigation_reused" : "backlog_item.investigation_started",
+        entityType: "backlog_item",
+        entityId: id,
+        details: { issueId: result.issueId },
+      });
+      res.status(result.alreadyExisted ? 200 : 201).json(result);
+    },
+  );
+
+  /* --------- Plan depth routes (migration 0043_plan_depth) --------- */
+
+  // F4 — plan execution progress
+  router.get("/companies/:companyId/backlog/plans/:id/progress", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const progress = await svc.planProgress(companyId, id);
+    res.json(progress);
+  });
+
+  // F1 — spawn an issue from a specific step
+  router.post(
+    "/companies/:companyId/backlog/plans/:id/steps/:idx/spawn-issue",
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const id = req.params.id as string;
+      const idx = Number(req.params.idx);
+      if (!Number.isFinite(idx) || idx < 0) {
+        res.status(400).json({ error: "Invalid step index" });
+        return;
+      }
+      assertCompanyAccess(req, companyId);
+      const actor = getActorInfo(req);
+      const result = await svc.spawnIssueFromPlanStep(companyId, id, idx, {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        agentId: actor.agentId,
+      });
+      await logActivity(db, {
+        companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: result.alreadyExisted ? "backlog_plan.step_issue_reused" : "backlog_plan.step_spawned_issue",
+        entityType: "backlog_plan",
+        entityId: id,
+        details: { stepIdx: idx, issueId: result.issueId },
+      });
+      res.status(result.alreadyExisted ? 200 : 201).json(result);
+    },
+  );
+
+  // F5 — plan comments
+  router.get("/companies/:companyId/backlog/plans/:id/comments", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const comments = await svc.listPlanComments(companyId, id);
+    res.json(comments);
+  });
+
+  router.post("/companies/:companyId/backlog/plans/:id/comments", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const body = typeof req.body?.body === "string" ? req.body.body : "";
+    const comment = await svc.createPlanComment(
+      companyId,
+      id,
+      { body },
+      {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        agentId: actor.agentId,
+      },
+    );
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "backlog_plan.comment_added",
+      entityType: "backlog_plan",
+      entityId: id,
+      details: { commentId: comment.id },
+    });
+    res.status(201).json(comment);
+  });
+
+  router.delete("/companies/:companyId/backlog/plans/:id/comments/:commentId", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    const commentId = req.params.commentId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    await svc.deletePlanComment(companyId, commentId, {
+      userId: actor.actorType === "user" ? actor.actorId : null,
+      agentId: actor.agentId,
+    });
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "backlog_plan.comment_deleted",
+      entityType: "backlog_plan",
+      entityId: id,
+      details: { commentId },
+    });
+    res.status(204).end();
+  });
+
+  // F7 — plan revisions
+  router.get("/companies/:companyId/backlog/plans/:id/revisions", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const revisions = await svc.listPlanRevisions(companyId, id);
+    res.json(revisions);
+  });
+
+  router.patch("/companies/:companyId/backlog/plans/:id/plan-output", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const updated = await svc.updatePlanOutput(
+      companyId,
+      id,
+      {
+        planOutput: req.body?.planOutput,
+        summaryOfChange: req.body?.summaryOfChange ?? null,
+      },
+      {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        agentId: actor.agentId,
+      },
+    );
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "backlog_plan.revised",
+      entityType: "backlog_plan",
+      entityId: id,
+      details: { summary: req.body?.summaryOfChange ?? null },
+    });
+    res.json(updated);
+  });
+
+  // F10 — plan templates
+  const templateSvc = planTemplateService(db);
+
+  router.get("/companies/:companyId/plan-templates", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const templates = await templateSvc.list(companyId);
+    res.json(templates);
+  });
+
+  router.post("/companies/:companyId/plan-templates", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const actor = getActorInfo(req);
+    const created = await templateSvc.create(
+      companyId,
+      {
+        name: req.body?.name ?? "",
+        description: req.body?.description ?? null,
+        planOutput: req.body?.planOutput,
+        variables: req.body?.variables ?? null,
+      },
+      {
+        userId: actor.actorType === "user" ? actor.actorId : null,
+        agentId: actor.agentId,
+      },
+    );
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "plan_template.created",
+      entityType: "plan_template",
+      entityId: created.id,
+      details: { name: created.name },
+    });
+    res.status(201).json(created);
+  });
+
+  router.delete("/companies/:companyId/plan-templates/:id", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    await templateSvc.remove(companyId, id);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "plan_template.archived",
+      entityType: "plan_template",
+      entityId: id,
+    });
+    res.status(204).end();
+  });
+
+  // F6 — plan approval transitions
+  router.post("/companies/:companyId/backlog/plans/:id/approval", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const id = req.params.id as string;
+    assertCompanyAccess(req, companyId);
+    const status = req.body?.status;
+    if (status !== "pending" && status !== "approved" && status !== "rejected" && status !== "none") {
+      res.status(422).json({ error: "Invalid approval status" });
+      return;
+    }
+    const updated = await svc.setPlanApprovalStatus(companyId, id, status);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: `backlog_plan.approval_${status}`,
+      entityType: "backlog_plan",
+      entityId: id,
+    });
+    res.json(updated);
   });
 
   return router;

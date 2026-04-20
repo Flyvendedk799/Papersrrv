@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, index, unique, jsonb } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { projects } from "./projects.js";
 import { goals } from "./goals.js";
@@ -44,6 +44,25 @@ export const backlogPlans = pgTable(
      * duplicate creation on retry. No-FK on write side because
      * issues may be deleted independently; readers tolerate null. */
     sourceIssueId: uuid("source_issue_id"),
+    /* Structured plan output (migration 0043_plan_depth).
+     *
+     * Copied from issues.plan_output_json on transfer so the plan
+     * detail page can render the full document (summary, steps,
+     * risks, open questions, delegations) without chasing the
+     * source issue. Edits after transfer snapshot the prior value
+     * into backlog_plan_revisions. Shape enforced by the shared
+     * PlanOutput Zod schema. */
+    planOutputJson: jsonb("plan_output_json").$type<unknown>(),
+    /* Approval gate status (migration 0043_plan_depth).
+     *
+     *   'none'     — approval not required (default)
+     *   'pending'  — awaiting approval; items not seeded yet
+     *   'approved' — ready; items seeded, plan live
+     *   'rejected' — rejected; plan archived
+     *
+     * Wiring lives in the Approvals service; the column here is the
+     * source of truth for the plan-side state. */
+    approvalStatus: text("approval_status").notNull().default("none"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -53,6 +72,7 @@ export const backlogPlans = pgTable(
     companyStatusIdx: index("backlog_plans_company_status_idx").on(table.companyId, table.status),
     companyTitleUq: unique("backlog_plans_company_title_uq").on(table.companyId, table.title),
     sourceIssueIdx: index("backlog_plans_source_issue_idx").on(table.sourceIssueId),
+    approvalStatusIdx: index("backlog_plans_approval_status_idx").on(table.companyId, table.approvalStatus),
   }),
 );
 

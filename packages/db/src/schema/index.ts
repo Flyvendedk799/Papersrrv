@@ -69,6 +69,21 @@ export {
   type BacklogItemCommentRow,
   type NewBacklogItemCommentRow,
 } from "./backlog_item_comments.js";
+export {
+  backlogPlanComments,
+  type BacklogPlanCommentRow,
+  type NewBacklogPlanCommentRow,
+} from "./backlog_plan_comments.js";
+export {
+  backlogPlanRevisions,
+  type BacklogPlanRevisionRow,
+  type NewBacklogPlanRevisionRow,
+} from "./backlog_plan_revisions.js";
+export {
+  planTemplates,
+  type PlanTemplateRow,
+  type NewPlanTemplateRow,
+} from "./plan_templates.js";
 export { papeeMemory, type PapeeMemoryRow, type NewPapeeMemoryRow } from "./papee_memory.js";
 export { issueLinks, type IssueLinkRow, type NewIssueLinkRow } from "./issue_links.js";
 export {

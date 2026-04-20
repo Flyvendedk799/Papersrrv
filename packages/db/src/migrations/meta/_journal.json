@@ -302,6 +302,20 @@
       "when": 1777200000000,
       "tag": "0042_project_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1777286400000,
+      "tag": "0043_plan_depth",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1777286500000,
+      "tag": "0044_plan_templates",
+      "breakpoints": true
     }
   ]
 }
