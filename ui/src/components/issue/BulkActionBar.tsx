@@ -4,7 +4,7 @@
  * issuesApi.bulkUpdate and invalidates the issue list on success.
  */
 
-import { useState } from "react";
+import { forwardRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -162,7 +162,7 @@ export function BulkActionBar({ companyId, selectedIds, onClear }: Props) {
   );
 }
 
-const BulkButton = React.forwardRef<
+const BulkButton = forwardRef<
   HTMLButtonElement,
   {
     icon: typeof X;
@@ -186,5 +186,3 @@ const BulkButton = React.forwardRef<
     </button>
   );
 });
-
-import React from "react";
