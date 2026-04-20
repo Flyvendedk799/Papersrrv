@@ -23,6 +23,7 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { KeyboardHelp } from "./boared/KeyboardHelp";
+import { RouteErrorBoundary } from "./boared/RouteErrorBoundary";
 import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
@@ -229,15 +230,20 @@ export function Layout() {
           )}
           onScroll={handleMainScroll}
         >
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center h-full font-mono text-[0.7rem] uppercase tracking-[0.12em] text-muted-foreground">
-                Loading.
-              </div>
-            }
-          >
-            <Outlet />
-          </Suspense>
+          {/* Error boundary catches any render-time crash inside a
+           * route so the app shell stays up. Suspense handles the
+           * lazy chunk load. */}
+          <RouteErrorBoundary routeName="page">
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center h-full font-mono text-[0.7rem] uppercase tracking-[0.12em] text-muted-foreground">
+                  Loading.
+                </div>
+              }
+            >
+              <Outlet />
+            </Suspense>
+          </RouteErrorBoundary>
         </main>
         <PropertiesPanel />
       </div>

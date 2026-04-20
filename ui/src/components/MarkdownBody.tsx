@@ -8,6 +8,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useCompany } from "../context/CompanyContext";
 import { extractCompanyPrefixFromPath, normalizeCompanyPrefix } from "../lib/company-routes";
 import { FileText } from "lucide-react";
+import { IssueLinkPreview } from "./boared/IssueLinkPreview";
 
 interface MarkdownBodyProps {
   children: string;
@@ -78,6 +79,17 @@ function isLikelyFilePath(text: string): boolean {
   // Has path separators and a file extension
   if (/\/[\w@.-]+\.\w{1,10}$/.test(trimmed)) return true;
   return false;
+}
+
+/**
+ * Extract issue ref (identifier like "PCP-42" or uuid) from an
+ * internal `/issues/:id` or `/{PREFIX}/issues/:id` href.
+ */
+function parseIssueHref(href: string): string | null {
+  if (!href) return null;
+  if (/^https?:\/\//i.test(href)) return null;
+  const m = href.match(/^\/?(?:[A-Z0-9]{2,10}\/)?issues\/([A-Za-z0-9_-]+)(?:[/?#]|$)/i);
+  return m ? m[1]! : null;
 }
 
 function MermaidDiagramBlock({ source, darkMode }: { source: string; darkMode: boolean }) {
@@ -192,6 +204,14 @@ function MarkdownBodyImpl({ children, className }: MarkdownBodyProps) {
             return <code className={codeCn} {...codeProps}>{codeChildren}</code>;
           },
           a: ({ href, children: linkChildren }) => {
+            const issueRef = href ? parseIssueHref(href) : null;
+            if (issueRef) {
+              return (
+                <IssueLinkPreview to={href!} issueRef={issueRef}>
+                  {linkChildren}
+                </IssueLinkPreview>
+              );
+            }
             const parsed = href ? parseProjectMentionHref(href) : null;
             if (parsed) {
               const label = linkChildren;

@@ -26,6 +26,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Identity } from "../components/Identity";
 import { MarkdownBody } from "../components/MarkdownBody";
+import { EmptyState as BoaredEmptyState } from "../components/boared/EmptyState";
+import { SkeletonLine, SkeletonBlock } from "../components/boared/Skeleton";
 
 function Chip({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -170,8 +172,12 @@ export function BacklogItemDetail() {
   }
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-3xl p-6 text-sm text-muted-foreground">
-        Loading…
+      <div className="mx-auto max-w-3xl p-6 space-y-4">
+        <SkeletonLine width="30%" />
+        <SkeletonLine width="70%" className="h-6" />
+        <SkeletonBlock height="140px" />
+        <SkeletonLine width="50%" />
+        <SkeletonLine width="35%" />
       </div>
     );
   }
@@ -327,7 +333,11 @@ function CommentSection({
         Comments
       </h2>
       {ordered.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No comments yet.</p>
+        <BoaredEmptyState
+          kicker="Thread"
+          title="No comments yet."
+          description="Jot a note here while the item is still a scratchpad. Anything written before promotion follows the issue forward."
+        />
       ) : (
         <ul className="space-y-3">
           {ordered.map((c) => (

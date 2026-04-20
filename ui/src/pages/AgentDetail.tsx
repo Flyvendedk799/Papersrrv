@@ -24,6 +24,7 @@ import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
 import { Identity } from "../components/Identity";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { EmptyState as BoaredEmptyState } from "../components/boared/EmptyState";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -1771,7 +1772,13 @@ function RunsTab({
   const { isMobile } = useSidebar();
 
   if (runs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No runs yet.</p>;
+    return (
+      <BoaredEmptyState
+        kicker="Heartbeat"
+        title="No runs on record yet."
+        description="When this agent is dispatched on an issue, every turn lands here — stream, logs, cost, timing."
+      />
+    );
   }
 
   // Sort by created descending

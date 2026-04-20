@@ -36,6 +36,7 @@ import { useToast } from "../context/ToastContext";
 import { isFeatureEnabled } from "../lib/featureFlags";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/boared/PageHeader";
+import { SkeletonList } from "../components/boared/Skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -218,9 +219,7 @@ export function GitHubPage() {
       <section className="mb-10">
         <h2 className="boared-label mb-3 text-foreground">Connections</h2>
         {connectionsQuery.isLoading ? (
-          <div className="border border-border px-4 py-8 text-center text-sm text-muted-foreground">
-            Loading connections…
-          </div>
+          <SkeletonList rows={3} />
         ) : liveConnections.length === 0 ? (
           <EmptyState
             icon={Github}

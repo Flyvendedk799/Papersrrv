@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SlidersHorizontal } from "lucide-react";
-import { SubPageHeader } from "../components/boared/PageHeader";
+import { PageHeader } from "../components/boared/PageHeader";
 
 /* ── Top-level tab types ── */
 
@@ -300,7 +300,7 @@ export function ProjectDetail() {
 
   return (
     <div className="boared-reveal max-w-[1400px] mx-auto">
-      <SubPageHeader
+      <PageHeader
         kicker={
           <div className="flex items-center gap-2">
             <ColorPicker

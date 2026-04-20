@@ -231,8 +231,9 @@ function InlineFilePreview({
             Open in files
           </Link>
           <button
+            type="button"
             onClick={onClose}
-            className="p-0.5 hover:bg-foreground/[0.05] transition-colors text-muted-foreground hover:text-foreground"
+            className="p-0.5 hover:bg-foreground/[0.05] transition-colors text-muted-foreground hover:text-foreground focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
             aria-label="Close preview"
           >
             <X className="h-3.5 w-3.5" />
@@ -1538,6 +1539,7 @@ export function IssueDetail() {
                 <PopoverContent className="w-56 p-1" align="end">
                   {backlogEnabled && (
                     <button
+                      type="button"
                       className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
                       onClick={() => {
                         const title = issue.title?.slice(0, 120) || "Captured from issue";
@@ -1560,6 +1562,7 @@ export function IssueDetail() {
                   )}
                   {backlogEnabled && issue.status !== "backlog" && (
                     <button
+                      type="button"
                       className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
                       disabled={moveToBacklog.isPending}
                       onClick={() => {
@@ -1576,6 +1579,7 @@ export function IssueDetail() {
                     linkedBacklog &&
                     linkedBacklog.length > 0 && (
                       <button
+                        type="button"
                         className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-foreground/[0.03]"
                         disabled={restoreFromBacklog.isPending}
                         onClick={() => {
@@ -1590,6 +1594,7 @@ export function IssueDetail() {
                       </button>
                     )}
                   <button
+                    type="button"
                     className="flex items-center gap-2 w-full px-2 py-1.5 text-xs hover:bg-foreground/[0.03] text-destructive"
                     onClick={() => {
                       updateIssue.mutate(

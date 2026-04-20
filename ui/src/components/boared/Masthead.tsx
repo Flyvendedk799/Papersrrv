@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Search, Sun, Moon, Menu, X } from "lucide-react";
+import { ChevronDown, Search, Sun, Moon, Menu, X, Rows3, Rows2 } from "lucide-react";
 import { NotificationBell } from "./NotificationBell";
 import { QuickAccessStrip } from "./QuickAccessStrip";
 import { useDensity } from "../../hooks/useDensity";
@@ -86,7 +86,7 @@ export function Masthead() {
   const { selectedCompany, selectedCompanyId, companies, setSelectedCompanyId } = useCompany();
   const { theme, toggleTheme } = useTheme();
   // Apply density class to <html> so CSS variables propagate.
-  useDensity();
+  const { density, toggle: toggleDensity } = useDensity();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [archiveMenuOpen, setArchiveMenuOpen] = useState(false);
@@ -121,6 +121,8 @@ export function Masthead() {
       setSelectedCompanyId={setSelectedCompanyId}
       theme={theme}
       toggleTheme={toggleTheme}
+      density={density}
+      toggleDensity={toggleDensity}
     />;
   }
 
@@ -259,6 +261,19 @@ export function Masthead() {
           </div>
           <button
             type="button"
+            onClick={toggleDensity}
+            className="flex items-center justify-center w-11 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)] focus-visible:outline-offset-[-2px]"
+            aria-label={`Switch to ${density === "compact" ? "comfortable" : "compact"} density`}
+            title={density === "compact" ? "Compact · click for comfortable" : "Comfortable · click for compact"}
+          >
+            {density === "compact" ? (
+              <Rows2 className="size-3.5" strokeWidth={1.75} />
+            ) : (
+              <Rows3 className="size-3.5" strokeWidth={1.75} />
+            )}
+          </button>
+          <button
+            type="button"
             onClick={toggleTheme}
             className="flex items-center justify-center w-11 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)] focus-visible:outline-offset-[-2px]"
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
@@ -336,6 +351,8 @@ interface MastheadMobileProps {
   setSelectedCompanyId: ReturnType<typeof useCompany>["setSelectedCompanyId"];
   theme: ReturnType<typeof useTheme>["theme"];
   toggleTheme: ReturnType<typeof useTheme>["toggleTheme"];
+  density: ReturnType<typeof useDensity>["density"];
+  toggleDensity: ReturnType<typeof useDensity>["toggle"];
 }
 
 function MastheadMobile({
@@ -347,6 +364,8 @@ function MastheadMobile({
   setSelectedCompanyId,
   theme,
   toggleTheme,
+  density,
+  toggleDensity,
 }: MastheadMobileProps) {
   return (
     <>
@@ -466,12 +485,25 @@ function MastheadMobile({
               onClick={() => {
                 toggleTheme();
               }}
-              className="flex items-center justify-between w-full py-3 border-y border-[var(--boared-rule)] font-mono uppercase tracking-[0.12em] text-[0.78rem] text-muted-foreground"
+              className="flex items-center justify-between w-full py-3 border-t border-[var(--boared-rule)] font-mono uppercase tracking-[0.12em] text-[0.78rem] text-muted-foreground"
             >
               <span>Theme</span>
               <span className="flex items-center gap-2">
                 {theme === "dark" ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
                 <span>{theme === "dark" ? "Light" : "Dark"}</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                toggleDensity();
+              }}
+              className="flex items-center justify-between w-full py-3 border-y border-[var(--boared-rule)] font-mono uppercase tracking-[0.12em] text-[0.78rem] text-muted-foreground"
+            >
+              <span>Density</span>
+              <span className="flex items-center gap-2">
+                {density === "compact" ? <Rows2 className="size-3.5" /> : <Rows3 className="size-3.5" />}
+                <span>{density === "compact" ? "Comfortable" : "Compact"}</span>
               </span>
             </button>
           </nav>

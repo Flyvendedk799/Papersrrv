@@ -20,6 +20,7 @@ import { PageHeader } from "../components/boared/PageHeader";
 import { SectionRule } from "../components/boared/Kicker";
 import { Wire, WireList } from "../components/boared/Wire";
 import { Clipping } from "../components/boared/Clipping";
+import { EmptyState as BoaredEmptyState } from "../components/boared/EmptyState";
 import {
   Play,
   Pause,
@@ -308,25 +309,23 @@ export function WorkflowDetail() {
           ) : (
             <>
               {!runs || runs.length === 0 ? (
-                <div className="text-center py-12 border-t border-b border-[var(--boared-rule)]">
-                  <p className="font-mono text-[0.72rem] text-muted-foreground mb-4">
-                    No runs yet.
-                  </p>
-                  {workflow.status === "active" && (
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        const inputs = (workflow.triggerConfig as Record<string, unknown>)?.inputs;
-                        if (Array.isArray(inputs) && inputs.length > 0) setShowRunForm(true);
-                        else startRun.mutate();
-                      }}
-                      disabled={startRun.isPending}
-                    >
-                      <Play className="h-3.5 w-3.5 mr-1.5" />
-                      Start first run
-                    </Button>
-                  )}
-                </div>
+                <BoaredEmptyState
+                  kicker="Workflow"
+                  title="No runs on record yet."
+                  description="Dispatch the first run to see steps, approvals, and outputs materialise here."
+                  primaryAction={
+                    workflow.status === "active"
+                      ? {
+                          label: startRun.isPending ? "Starting…" : "Start first run",
+                          onClick: () => {
+                            const inputs = (workflow.triggerConfig as Record<string, unknown>)?.inputs;
+                            if (Array.isArray(inputs) && inputs.length > 0) setShowRunForm(true);
+                            else startRun.mutate();
+                          },
+                        }
+                      : undefined
+                  }
+                />
               ) : (
                 <>
                   <SectionRule label="Run history" meta={`${runs.length} total`} />
