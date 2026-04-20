@@ -20,7 +20,9 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { useGlobalShortcuts } from "../hooks/useGlobalShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
+import { KeyboardHelp } from "./boared/KeyboardHelp";
 import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
@@ -40,6 +42,10 @@ import { cn } from "../lib/utils";
  *   - Papee overlay + 4 quick-create dialogs + toasts + properties panel — kept
  */
 export function Layout() {
+  // Global keyboard shortcuts — g+d/i/b/a/p/f navigate, c opens
+  // new-issue dialog. See useGlobalShortcuts for details.
+  useGlobalShortcuts();
+
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
   const { togglePanelVisible } = usePanel();
@@ -246,6 +252,9 @@ export function Layout() {
       <PapeeHighlightOverlay />
       <PapeeUndoToastMount />
       <ToastViewport />
+      {/* Global `?` cheat-sheet overlay. Self-listening; mounted
+       * here so it's available from any page. */}
+      <KeyboardHelp />
     </div>
   );
 }

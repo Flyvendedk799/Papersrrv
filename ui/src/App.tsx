@@ -43,6 +43,9 @@ const Backlog = lazy(() => import("./pages/Backlog").then(m => ({ default: m.Bac
 const BacklogItemDetail = lazy(() =>
   import("./pages/BacklogItemDetail").then((m) => ({ default: m.BacklogItemDetail })),
 );
+const BacklogPlanDetail = lazy(() =>
+  import("./pages/BacklogPlanDetail").then((m) => ({ default: m.BacklogPlanDetail })),
+);
 const GitHubPage = lazy(() =>
   import("./pages/GitHub").then((m) => ({ default: m.GitHubPage })),
 );
@@ -168,6 +171,7 @@ function boardRoutes() {
         <>
           <Route path="backlog" element={<Backlog />} />
           <Route path="backlog/items/:itemId" element={<BacklogItemDetail />} />
+          <Route path="backlog/plans/:planId" element={<BacklogPlanDetail />} />
         </>
       ) : null}
       {isFeatureEnabled("github_tab_enabled") ? (

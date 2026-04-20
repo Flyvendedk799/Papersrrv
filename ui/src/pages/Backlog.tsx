@@ -839,6 +839,44 @@ export function Backlog() {
         />
       )}
 
+      {/* From planning — plans transferred from planning-kind issues.
+       * Migration 0041 gave backlog_plans a sourceIssueId; we
+       * highlight those here so the provenance is visible. */}
+      {(() => {
+        const fromPlanning = (plans ?? []).filter((p) => p.sourceIssueId);
+        if (fromPlanning.length === 0) return null;
+        return (
+          <section className="border border-[var(--boared-acid)]/30 bg-[var(--boared-acid)]/[0.03] p-3 space-y-2">
+            <div className="flex items-baseline gap-2">
+              <h3 className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-[var(--boared-acid)]">
+                ✦ From planning
+              </h3>
+              <span className="font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)]">
+                · {fromPlanning.length} {fromPlanning.length === 1 ? "plan" : "plans"} converged from planning cases
+              </span>
+            </div>
+            <ul className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              {fromPlanning.slice(0, 9).map((plan) => (
+                <li key={plan.id}>
+                  <button
+                    type="button"
+                    onClick={() => updateView({ viewMode: "plans" })}
+                    className="w-full text-left p-2 border border-[var(--boared-rule)] bg-[var(--boared-paper)] hover:border-[var(--boared-ink-soft)] transition-colors"
+                  >
+                    <div className="font-serif italic text-[0.9rem] leading-snug text-[var(--boared-ink)] truncate">
+                      {plan.title}
+                    </div>
+                    <div className="mt-0.5 font-mono text-[0.52rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)]">
+                      from planning · {plan.sourceIssueId?.slice(0, 8)}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
+
       <section>
         {isLoading ? (
           <div className="py-12 text-center text-sm text-muted-foreground">

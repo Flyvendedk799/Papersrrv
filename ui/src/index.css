@@ -1918,3 +1918,22 @@ a.paperclip-project-mention-chip {
   .gazette-ledger-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .gazette-ledger-cell:nth-child(4) { border-left: 0; }
 }
+
+
+/* ──────────────────── Density preference ────────────────────
+ * Applied to <html> by the useDensity hook. Consumers can opt
+ * into density-aware styles via the CSS variables below or by
+ * writing `.density-compact &` nested selectors. */
+:root {
+  --density-row-y: 0.5rem;
+  --density-card-p: 0.75rem;
+}
+html.density-compact {
+  --density-row-y: 0.3125rem;
+  --density-card-p: 0.5rem;
+}
+html.density-compact .density-aware {
+  padding-top: var(--density-row-y);
+  padding-bottom: var(--density-row-y);
+}
+

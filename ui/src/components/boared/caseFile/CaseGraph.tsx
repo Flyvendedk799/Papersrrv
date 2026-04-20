@@ -1141,17 +1141,57 @@ function EdgePath({
     d = `M ${fromX} ${fromY} C ${fromX} ${c1y}, ${toX} ${c2y}, ${toX} ${toY}`;
   }
 
+  /* Tiny label at the midpoint describing the causal relation.
+   * Only shown when focused or on a sub-issue spawn so the graph
+   * doesn't get noisy in the normal case. */
+  const midLabelText =
+    kind === "resolved-into" ? "resolved"
+      : toNode.kind === "sub-issue" ? "spawned"
+        : focused ? kind.replace(/-/g, " ")
+          : null;
+  const midX = (fromX + toX) / 2;
+  const midY = (fromY + toY) / 2;
+
   return (
-    <path
-      d={d}
-      fill="none"
-      stroke={stroke}
-      strokeWidth={strokeWidth}
-      strokeDasharray={dash}
-      opacity={opacity}
-      markerEnd={marker}
-      style={{ transition: "opacity 180ms ease-out, stroke 180ms ease-out" }}
-    />
+    <g style={{ transition: "opacity 180ms ease-out" }} opacity={opacity}>
+      <path
+        d={d}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeDasharray={dash}
+        markerEnd={marker}
+        style={{ transition: "stroke 180ms ease-out" }}
+      />
+      {midLabelText && (toNode.kind === "sub-issue" || focused || kind === "resolved-into") && (
+        <g transform={`translate(${midX}, ${midY})`}>
+          <rect
+            x={-26}
+            y={-7}
+            width={52}
+            height={14}
+            fill="var(--boared-paper)"
+            stroke={stroke}
+            strokeOpacity={0.4}
+            strokeWidth={0.7}
+          />
+          <text
+            x={0}
+            y={3}
+            textAnchor="middle"
+            fontSize={8}
+            fill={stroke}
+            style={{
+              fontFamily: "ui-monospace, Menlo, monospace",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}
+          >
+            {midLabelText}
+          </text>
+        </g>
+      )}
+    </g>
   );
 }
 

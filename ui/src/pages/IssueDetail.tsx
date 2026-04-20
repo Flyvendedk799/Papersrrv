@@ -42,6 +42,9 @@ import { CaseGraph } from "../components/boared/caseFile/CaseGraph";
 import { CaseAtAGlance } from "../components/boared/caseFile/CaseAtAGlance";
 import { CaseParticipants } from "../components/boared/caseFile/CaseParticipants";
 import { CaseRecentActivity } from "../components/boared/caseFile/CaseRecentActivity";
+import { CasePlanDocument } from "../components/boared/caseFile/CasePlanDocument";
+import { useRecentlyViewed } from "../hooks/useRecentlyViewed";
+import { usePinned } from "../hooks/usePinned";
 import { CaseChapterNav } from "../components/boared/caseFile/CaseChapterNav";
 import { CaseStickyBar } from "../components/boared/caseFile/CaseStickyBar";
 import { useCaseKeyboardNav } from "../components/boared/caseFile/useCaseKeyboardNav";
@@ -265,6 +268,10 @@ export function IssueDetail() {
   const { selectedCompanyId } = useCompany();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
+  // Track visits so the sidebar's "Recent" list reflects where the
+  // user's been. Fires once per mount when we have issue data.
+  const { record: recordRecentView } = useRecentlyViewed(selectedCompanyId);
+  const { isPinned, toggle: togglePin } = usePinned(selectedCompanyId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { enact: enactPapeeTool } = usePapeeEnact();
@@ -861,6 +868,13 @@ export function IssueDetail() {
     if (lastMarkedReadIssueIdRef.current === issue.id) return;
     lastMarkedReadIssueIdRef.current = issue.id;
     markIssueRead.mutate(issue.id);
+    // Record for "Recently viewed" sidebar / command palette.
+    recordRecentView({
+      id: issue.id,
+      kind: "issue",
+      label: issue.title,
+      href: `/issues/${issue.identifier ?? issue.id}`,
+    });
   }, [issue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1127,6 +1141,15 @@ export function IssueDetail() {
                   </button>
                 }
               />
+              {/* Planning-kind issues: render the final plan
+               * document as the PRIMARY artifact. Other artifacts
+               * (run outputs, sub-cases) fall below. */}
+              {issue.kind === "planning" && issue.planOutputJson && (
+                <CasePlanDocument
+                  plan={issue.planOutputJson as unknown as import("@paperclipai/shared").PlanOutput}
+                  animateIn
+                />
+              )}
               <CaseArtifacts
                 artifacts={synthesis?.artifacts ?? []}
                 loading={synthesisQuery.isLoading}
@@ -1440,6 +1463,23 @@ export function IssueDetail() {
             onOpenProperties={() => setMobilePropsOpen(true)}
             primaryActions={
               <>
+                {/* Pin / unpin toggle — keeps this case one click
+                 * away in the sidebar quick-access strip. */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    togglePin({
+                      id: issue.id,
+                      kind: "issue",
+                      label: issue.title,
+                      href: `/issues/${issue.identifier ?? issue.id}`,
+                    })
+                  }
+                  className="w-full justify-start font-mono text-[0.66rem] uppercase tracking-[0.1em]"
+                >
+                  {isPinned(issue.id) ? "★ Pinned" : "☆ Pin this case"}
+                </Button>
                 {/* Planning-kind primary action: prominent CTA to
                  * finalise the plan into the backlog. Only shown
                  * when the plan hasn't already been transferred. */}

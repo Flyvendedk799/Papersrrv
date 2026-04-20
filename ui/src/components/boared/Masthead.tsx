@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Search, Sun, Moon, Menu, X } from "lucide-react";
+import { NotificationBell } from "./NotificationBell";
+import { QuickAccessStrip } from "./QuickAccessStrip";
+import { useDensity } from "../../hooks/useDensity";
 import { NavLink, useLocation } from "@/lib/router";
 import { useDialog } from "../../context/DialogContext";
 import { useCompany } from "../../context/CompanyContext";
@@ -82,6 +85,8 @@ export function Masthead() {
   const { isMobile } = useSidebar();
   const { selectedCompany, selectedCompanyId, companies, setSelectedCompanyId } = useCompany();
   const { theme, toggleTheme } = useTheme();
+  // Apply density class to <html> so CSS variables propagate.
+  useDensity();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
   const [archiveMenuOpen, setArchiveMenuOpen] = useState(false);
@@ -247,6 +252,11 @@ export function Masthead() {
             <Search className="size-3.5" strokeWidth={1.75} />
             <span className="font-mono text-[0.62rem] tracking-tight">⌘K</span>
           </button>
+          {/* Activity bell — unread indicator + popover with recent
+           * events across the org. */}
+          <div className="flex items-center px-2">
+            <NotificationBell />
+          </div>
           <button
             type="button"
             onClick={toggleTheme}
@@ -442,6 +452,13 @@ function MastheadMobile({
                   </NavLink>
                 );
               })}
+            </div>
+
+            {/* Mobile quick-access — pinned cases + recents live
+             * in the drawer so mobile users get one-tap navigation
+             * to where they've been. */}
+            <div className="py-3 border-y border-[var(--boared-rule)]">
+              <QuickAccessStrip />
             </div>
 
             <button

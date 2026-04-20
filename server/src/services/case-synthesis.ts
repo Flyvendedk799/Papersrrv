@@ -737,6 +737,30 @@ function buildAbstract(d: {
     .map((id) => agentMap.get(id))
     .filter(Boolean)[0];
 
+  /* Planning-kind issues get a dedicated branch — the narrative is
+   * about convergence on a plan, not about delivery. */
+  if (issue.kind === "planning") {
+    const plan = issue.planOutputJson as { summary?: string; proposedSteps?: unknown[] } | null;
+    const stepCount = plan && Array.isArray(plan.proposedSteps) ? plan.proposedSteps.length : 0;
+    const agentCount = new Set(runs.map((r) => r.agentId)).size;
+    const investigators = agentCount > 0
+      ? `${agentCount} ${agentCount === 1 ? "agent" : "agents"}`
+      : "The team";
+    if (issue.transferredToBacklogAt) {
+      return `The AI team converged on a plan and saved it to the backlog. ${plan?.summary ?? ""}`.trim();
+    }
+    if (plan?.summary && stepCount > 0) {
+      return `${investigators} converged on a plan. ${plan.summary} ${stepCount} ${stepCount === 1 ? "step" : "steps"} proposed.`;
+    }
+    if (liveRunCount > 0) {
+      return `${investigators} still investigating. Plan not yet finalised.`;
+    }
+    if (totalEvents > 0) {
+      return `${investigators} investigated. Plan draft in progress.`;
+    }
+    return "Planning case — no investigation has started yet.";
+  }
+
   if (issue.status === "done") {
     const who = primaryAgent ? `${primaryAgent}'s work is in` : "The case is done";
     const summary = lastRunSummary ? ` — ${lastRunSummary}` : "";
