@@ -42,9 +42,15 @@ export interface PapeeChatService {
     callbacks: ChatStreamCallbacks,
   ): Promise<void>;
   healthCheck(companyId: string): Promise<{
-    ok: boolean;
-    checks: Array<{ name: string; ok: boolean; detail?: string }>;
-    at: string;
+    healthy: boolean;
+    mood: string;
+    issues: Array<{
+      type: string;
+      severity: "info" | "warn" | "critical";
+      message: string;
+      agentId?: string;
+      issueId?: string;
+    }>;
   }>;
   readLogs(opts: { limit: number; level?: string; since?: string }): Promise<PapeeChatLogEntry[]>;
 }
@@ -72,11 +78,9 @@ export function papeeChatService(_db: Db): PapeeChatService {
     },
     async healthCheck() {
       return {
-        ok: true,
-        checks: [
-          { name: "papee-chat.stub", ok: true, detail: "stub service active" },
-        ],
-        at: new Date().toISOString(),
+        healthy: true,
+        mood: "neutral",
+        issues: [],
       };
     },
     async readLogs() {
