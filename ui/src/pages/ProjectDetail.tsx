@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useLocation, Navigate } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { PROJECT_COLORS, isUuidLike } from "@paperclipai/shared";
+import { PROJECT_COLORS, isUuidLike, type Project } from "@paperclipai/shared";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -22,10 +22,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SlidersHorizontal } from "lucide-react";
 import { PageHeader } from "../components/boared/PageHeader";
+import { ProjectSourceCard } from "../components/boared/ProjectSourceCard";
+import { ProjectCodeTab } from "../components/boared/ProjectCodeTab";
 
 /* ── Top-level tab types ── */
 
-type ProjectTab = "overview" | "list";
+type ProjectTab = "overview" | "list" | "code";
 
 function resolveProjectTab(pathname: string, projectId: string): ProjectTab | null {
   const segments = pathname.split("/").filter(Boolean);
@@ -34,6 +36,7 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   const tab = segments[projectsIdx + 2];
   if (tab === "overview") return "overview";
   if (tab === "issues") return "list";
+  if (tab === "code" || tab === "pulls") return "code";
   return null;
 }
 
@@ -44,12 +47,14 @@ function OverviewContent({
   onUpdate,
   imageUploadHandler,
 }: {
-  project: { description: string | null; status: string; targetDate: string | null };
+  project: Project;
   onUpdate: (data: Record<string, unknown>) => void;
   imageUploadHandler?: (file: File) => Promise<string>;
 }) {
   return (
     <div className="space-y-8">
+      <ProjectSourceCard project={project} />
+
       <InlineEditor
         value={project.description ?? ""}
         onSave={(description) => onUpdate({ description })}
@@ -293,8 +298,10 @@ export function ProjectDetail() {
   const handleTabChange = (tab: ProjectTab) => {
     if (tab === "overview") {
       navigate(`/projects/${canonicalProjectRef}/overview`);
-    } else {
+    } else if (tab === "list") {
       navigate(`/projects/${canonicalProjectRef}/issues`);
+    } else if (tab === "code") {
+      navigate(`/projects/${canonicalProjectRef}/code`);
     }
   };
 
@@ -370,6 +377,19 @@ export function ProjectDetail() {
         >
           Issues
         </button>
+        {project.source.kind !== "none" && (
+          <button
+            className={cn(
+              "relative py-2 font-mono text-[0.7rem] uppercase tracking-[0.08em] transition-colors",
+              activeTab === "code"
+                ? "text-foreground after:content-[''] after:absolute after:left-0 after:right-0 after:-bottom-px after:h-px after:bg-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => handleTabChange("code")}
+          >
+            Code
+          </button>
+        )}
       </div>
 
       {/* Tab content */}
@@ -386,6 +406,10 @@ export function ProjectDetail() {
 
       {activeTab === "list" && project?.id && resolvedCompanyId && (
         <ProjectIssuesList projectId={project.id} companyId={resolvedCompanyId} />
+      )}
+
+      {activeTab === "code" && project?.id && (
+        <ProjectCodeTab project={project} />
       )}
 
       {/* Mobile properties drawer */}

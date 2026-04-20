@@ -1,4 +1,5 @@
 import type { ProjectStatus } from "../constants.js";
+import type { ProjectSource } from "../validators/project.js";
 
 export interface ProjectGoalRef {
   id: string;
@@ -35,6 +36,12 @@ export interface Project {
   color: string | null;
   workspaces: ProjectWorkspace[];
   primaryWorkspace: ProjectWorkspace | null;
+  /**
+   * Codebase source linked to this project, if any. `source.kind` is
+   * always present; when `none`, `github` and `archive` are absent.
+   * Populated by GET /projects/:id and GET /projects/:id/source.
+   */
+  source: ProjectSource;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

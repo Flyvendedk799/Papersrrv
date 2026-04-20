@@ -141,6 +141,9 @@ function boardRoutes() {
       <Route path="projects/:projectId/overview" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues" element={<ProjectDetail />} />
       <Route path="projects/:projectId/issues/:filter" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/code" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/pulls" element={<ProjectDetail />} />
+      <Route path="projects/:projectId/pulls/:number" element={<ProjectDetail />} />
       <Route path="files" element={<Files />} />
       <Route path="secrets" element={<Secrets />} />
       <Route path="skills" element={<Skills />} />
@@ -174,23 +177,17 @@ function boardRoutes() {
           <Route path="backlog/plans/:planId" element={<BacklogPlanDetail />} />
         </>
       ) : null}
-      {isFeatureEnabled("github_tab_enabled") ? (
-        <>
-          <Route path="github" element={<GitHubPage />} />
-          <Route
-            path="github/repos/:owner/:repo"
-            element={<GitHubRepoDashboard />}
-          />
-          <Route
-            path="github/repos/:owner/:repo/pulls"
-            element={<GitHubPullList />}
-          />
-          <Route
-            path="github/repos/:owner/:repo/pulls/:number"
-            element={<GitHubPullDetail />}
-          />
-        </>
-      ) : null}
+      {/* GitHub is now owned by Projects; the standalone page is
+        * retained as a connection-management surface under Settings.
+        * Old /github URLs redirect to /projects to preserve bookmarks. */}
+      <Route path="github" element={<Navigate to="../projects" replace />} />
+      <Route path="github/repos/:owner/:repo" element={<Navigate to="../../projects" replace />} />
+      <Route path="github/repos/:owner/:repo/pulls" element={<Navigate to="../../projects" replace />} />
+      <Route path="github/repos/:owner/:repo/pulls/:number" element={<Navigate to="../../projects" replace />} />
+      <Route path="settings/integrations/github" element={<GitHubPage />} />
+      <Route path="settings/integrations/github/repos/:owner/:repo" element={<GitHubRepoDashboard />} />
+      <Route path="settings/integrations/github/repos/:owner/:repo/pulls" element={<GitHubPullList />} />
+      <Route path="settings/integrations/github/repos/:owner/:repo/pulls/:number" element={<GitHubPullDetail />} />
       {/* /papee — the mobile Boared companion page. Flag-gated so
        * it only shows up in the nav once an operator opts in; the
        * route itself is always reachable by direct URL. */}
@@ -310,23 +307,8 @@ export function App() {
           {isFeatureEnabled("backlog_tab_enabled") ? (
             <Route path="backlog" element={<UnprefixedBoardRedirect />} />
           ) : null}
-          {isFeatureEnabled("github_tab_enabled") ? (
-            <>
-              <Route path="github" element={<UnprefixedBoardRedirect />} />
-              <Route
-                path="github/repos/:owner/:repo"
-                element={<UnprefixedBoardRedirect />}
-              />
-              <Route
-                path="github/repos/:owner/:repo/pulls"
-                element={<UnprefixedBoardRedirect />}
-              />
-              <Route
-                path="github/repos/:owner/:repo/pulls/:number"
-                element={<UnprefixedBoardRedirect />}
-              />
-            </>
-          ) : null}
+          {/* GitHub retired — connection management lives under
+            * /settings/integrations/github; code context under /projects. */}
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>

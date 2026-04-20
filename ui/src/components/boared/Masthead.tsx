@@ -60,11 +60,9 @@ function buildPrimaryNav(): Array<{ to: string; label: string; key: string }> {
     const idx = nav.findIndex((n) => n.key === "issues");
     nav.splice(idx + 1, 0, { to: "/backlog", label: "Backlog", key: "backlog" });
   }
-  if (isFeatureEnabled("github_tab_enabled")) {
-    // GitHub slots after Projects so engineering context lives together.
-    const idx = nav.findIndex((n) => n.key === "projects");
-    nav.splice(idx + 1, 0, { to: "/github", label: "GitHub", key: "github" });
-  }
+  // GitHub no longer has a top-level tab — code context lives inside
+  // each Project (Overview → Codebase card and Code tab). Connection
+  // management moved under Settings → Integrations.
   return nav;
 }
 
@@ -79,6 +77,7 @@ const ARCHIVE_NAV: Array<{ to: string; label: string }> = [
   { to: "/costs", label: "Costs" },
   { to: "/activity", label: "Activity" },
   { to: "/approvals/pending", label: "Approvals" },
+  { to: "/settings/integrations/github", label: "Integrations" },
   { to: "/company/settings", label: "Settings" },
   { to: "/docs", label: "Docs" },
 ];

@@ -1,4 +1,9 @@
-import type { Project, ProjectWorkspace } from "@paperclipai/shared";
+import type {
+  LinkGithubSource,
+  Project,
+  ProjectArchiveEntry,
+  ProjectWorkspace,
+} from "@paperclipai/shared";
 import { api } from "./client";
 
 function withCompanyScope(path: string, companyId?: string) {
@@ -30,4 +35,23 @@ export const projectsApi = {
   removeWorkspace: (projectId: string, workspaceId: string, companyId?: string) =>
     api.delete<ProjectWorkspace>(projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`)),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
+
+  /** Source (codebase) operations */
+  linkGithubSource: (projectId: string, data: LinkGithubSource, companyId?: string) =>
+    api.post<Project>(projectPath(projectId, companyId, "/source/github"), data),
+  uploadArchive: (projectId: string, file: File, companyId?: string) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.postForm<Project>(projectPath(projectId, companyId, "/source/archive"), fd);
+  },
+  unlinkSource: (projectId: string, companyId?: string) =>
+    api.delete<Project>(projectPath(projectId, companyId, "/source")),
+  listArchiveFiles: (projectId: string, prefix?: string, companyId?: string) => {
+    const suffix = prefix ? `/source/files?prefix=${encodeURIComponent(prefix)}` : "/source/files";
+    return api.get<ProjectArchiveEntry[]>(projectPath(projectId, companyId, suffix));
+  },
+  listPullRequests: (projectId: string, state: "open" | "closed" | "all" = "open", companyId?: string) =>
+    api.get<unknown>(projectPath(projectId, companyId, `/source/pulls?state=${state}`)),
+  getPullRequest: (projectId: string, number: number, companyId?: string) =>
+    api.get<unknown>(projectPath(projectId, companyId, `/source/pulls/${number}`)),
 };

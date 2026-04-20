@@ -49,10 +49,18 @@ export {
   updateProjectSchema,
   createProjectWorkspaceSchema,
   updateProjectWorkspaceSchema,
+  projectSourceKindSchema,
+  linkGithubSourceSchema,
+  projectSourceShape,
+  projectArchiveEntrySchema,
   type CreateProject,
   type UpdateProject,
   type CreateProjectWorkspace,
   type UpdateProjectWorkspace,
+  type ProjectSourceKind,
+  type LinkGithubSource,
+  type ProjectSource,
+  type ProjectArchiveEntry,
 } from "./project.js";
 
 export {

@@ -1,12 +1,13 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { projects, projectGoals, goals, projectWorkspaces } from "@paperclipai/db";
+import { projects, projectGoals, goals, projectWorkspaces, projectArchiveEntries } from "@paperclipai/db";
 import {
   PROJECT_COLORS,
   deriveProjectUrlKey,
   isUuidLike,
   normalizeProjectUrlKey,
   type ProjectGoalRef,
+  type ProjectSource,
   type ProjectWorkspace,
 } from "@paperclipai/shared";
 
@@ -29,6 +30,49 @@ interface ProjectWithGoals extends ProjectRow {
   goals: ProjectGoalRef[];
   workspaces: ProjectWorkspace[];
   primaryWorkspace: ProjectWorkspace | null;
+  source: ProjectSource;
+}
+
+/**
+ * Build the normalized `source` envelope from the raw project row.
+ * Responsible for hiding source-kind branch details behind a single
+ * predictable shape so the UI doesn't have to read five columns.
+ */
+function buildSource(row: ProjectRow): ProjectSource {
+  const kind = (row.sourceKind ?? "none") as ProjectSource["kind"];
+  if (kind === "github") {
+    return {
+      kind: "github",
+      github:
+        row.githubConnectionId && row.githubRepoOwner && row.githubRepoName
+          ? {
+              connectionId: row.githubConnectionId,
+              owner: row.githubRepoOwner,
+              repo: row.githubRepoName,
+              defaultBranch: row.githubDefaultBranch ?? null,
+            }
+          : null,
+      archive: null,
+      ingestedAt: row.sourceIngestedAt ? row.sourceIngestedAt.toISOString() : null,
+    };
+  }
+  if (kind === "local_archive") {
+    return {
+      kind: "local_archive",
+      github: null,
+      archive:
+        row.localArchiveAssetId && row.localArchiveFilename
+          ? {
+              assetId: row.localArchiveAssetId,
+              filename: row.localArchiveFilename,
+              sizeBytes: row.localArchiveSizeBytes ?? 0,
+              entryCount: row.localArchiveEntryCount ?? 0,
+            }
+          : null,
+      ingestedAt: row.sourceIngestedAt ? row.sourceIngestedAt.toISOString() : null,
+    };
+  }
+  return { kind: "none", github: null, archive: null, ingestedAt: null };
 }
 
 interface ProjectShortnameRow {
@@ -74,6 +118,7 @@ async function attachGoals(db: Db, rows: ProjectRow[]): Promise<ProjectWithGoals
       urlKey: deriveProjectUrlKey(r.name, r.id),
       goalIds: g.map((x) => x.id),
       goals: g,
+      source: buildSource(r),
     } as ProjectWithGoals;
   });
 }
@@ -634,6 +679,155 @@ export function projectService(db: Db) {
       });
 
       return removed ? toWorkspace(removed) : null;
+    },
+
+    /* -------------------- source (codebase) operations -------------------- */
+
+    /** Link a GitHub repo as the source for this project. */
+    linkGithubSource: async (
+      projectId: string,
+      input: { connectionId: string; owner: string; repo: string; defaultBranch?: string | null },
+    ): Promise<ProjectWithGoals | null> => {
+      const now = new Date();
+      const row = await db
+        .update(projects)
+        .set({
+          sourceKind: "github",
+          githubConnectionId: input.connectionId,
+          githubRepoOwner: input.owner,
+          githubRepoName: input.repo,
+          githubDefaultBranch: input.defaultBranch ?? null,
+          localArchiveAssetId: null,
+          localArchiveFilename: null,
+          localArchiveSizeBytes: null,
+          localArchiveEntryCount: null,
+          sourceIngestedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(projects.id, projectId))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      const [withGoals] = await attachGoals(db, [row]);
+      const [enriched] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+      return enriched ?? null;
+    },
+
+    /** Link an uploaded archive as the source for this project. */
+    linkArchiveSource: async (
+      projectId: string,
+      input: {
+        assetId: string;
+        filename: string;
+        sizeBytes: number;
+        entryCount: number;
+      },
+    ): Promise<ProjectWithGoals | null> => {
+      const now = new Date();
+      const row = await db
+        .update(projects)
+        .set({
+          sourceKind: "local_archive",
+          githubConnectionId: null,
+          githubRepoOwner: null,
+          githubRepoName: null,
+          githubDefaultBranch: null,
+          localArchiveAssetId: input.assetId,
+          localArchiveFilename: input.filename,
+          localArchiveSizeBytes: input.sizeBytes,
+          localArchiveEntryCount: input.entryCount,
+          sourceIngestedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(projects.id, projectId))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      const [withGoals] = await attachGoals(db, [row]);
+      const [enriched] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+      return enriched ?? null;
+    },
+
+    /** Remove any source link. Also clears archive entries. */
+    unlinkSource: async (projectId: string): Promise<ProjectWithGoals | null> => {
+      await db.delete(projectArchiveEntries).where(eq(projectArchiveEntries.projectId, projectId));
+      const now = new Date();
+      const row = await db
+        .update(projects)
+        .set({
+          sourceKind: "none",
+          githubConnectionId: null,
+          githubRepoOwner: null,
+          githubRepoName: null,
+          githubDefaultBranch: null,
+          localArchiveAssetId: null,
+          localArchiveFilename: null,
+          localArchiveSizeBytes: null,
+          localArchiveEntryCount: null,
+          sourceIngestedAt: null,
+          sourceMetadataJson: null,
+          updatedAt: now,
+        })
+        .where(eq(projects.id, projectId))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      const [withGoals] = await attachGoals(db, [row]);
+      const [enriched] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+      return enriched ?? null;
+    },
+
+    /** List archive entries for a project (paginated). */
+    listArchiveEntries: async (
+      projectId: string,
+      options: { offset?: number; limit?: number; pathPrefix?: string } = {},
+    ) => {
+      const { offset = 0, limit = 500, pathPrefix } = options;
+      const whereClauses = [eq(projectArchiveEntries.projectId, projectId)];
+      const rows = await db
+        .select()
+        .from(projectArchiveEntries)
+        .where(and(...whereClauses))
+        .orderBy(asc(projectArchiveEntries.path))
+        .offset(offset)
+        .limit(limit);
+      return pathPrefix
+        ? rows.filter((row) => row.path.startsWith(pathPrefix))
+        : rows;
+    },
+
+    /** Replace the archive entry index for a project (called by ingest). */
+    replaceArchiveEntries: async (
+      projectId: string,
+      entries: Array<{
+        path: string;
+        sizeBytes: number;
+        sha1: string | null;
+        contentType: string | null;
+        assetId: string | null;
+        isDirectory: boolean;
+      }>,
+    ) => {
+      await db.transaction(async (tx) => {
+        await tx.delete(projectArchiveEntries).where(eq(projectArchiveEntries.projectId, projectId));
+        if (entries.length > 0) {
+          const chunkSize = 500;
+          for (let i = 0; i < entries.length; i += chunkSize) {
+            const chunk = entries.slice(i, i + chunkSize);
+            await tx.insert(projectArchiveEntries).values(
+              chunk.map((e) => ({
+                projectId,
+                path: e.path,
+                sizeBytes: e.sizeBytes,
+                sha1: e.sha1,
+                contentType: e.contentType,
+                assetId: e.assetId,
+                isDirectory: e.isDirectory,
+              })),
+            );
+          }
+        }
+      });
     },
 
     resolveByReference: async (companyId: string, reference: string) => {
