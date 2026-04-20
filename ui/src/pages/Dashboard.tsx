@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { runnerApi } from "../api/runner";
+import { RecentPlansCard } from "../components/boared/dashboard/RecentPlansCard";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
@@ -392,6 +393,13 @@ export function Dashboard() {
           {error.message}
         </div>
       )}
+
+      {/* Recent planning activity — investigations in flight and
+       * recently-transferred plans, keeps the planning loop
+       * visible from the dashboard. */}
+      <div className="mb-6">
+        <RecentPlansCard />
+      </div>
 
       {hasNoAgents && (
         <div className="mb-10 flex items-center justify-between gap-3 px-4 py-3 border border-foreground bg-[var(--boared-paper-2)]">
