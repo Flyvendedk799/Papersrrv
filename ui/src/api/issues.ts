@@ -36,19 +36,39 @@ export interface CaseSynthesisGraphNode {
     | "approval"
     | "sub-issue"
     | "ancestor"
-    | "delegation";
+    | "delegation"
+    | "resolution";
   label: string;
   sublabel?: string;
   ts?: number;
   status?: string;
   authorName?: string;
   lane?: string;
+  /** On the critical path from root to resolution / latest work. */
+  isCritical?: boolean;
+  /** Has no outgoing edges — an abandoned branch. */
+  isDeadEnd?: boolean;
+  /** The single terminal resolution node for a closed case. */
+  isTerminal?: boolean;
+  /** Productive (non-heartbeat) run count for delegation nodes. */
+  productiveCount?: number;
+  /** Ambient/timer heartbeat run count for delegation nodes. */
+  ambientCount?: number;
 }
 
 export interface CaseSynthesisGraphEdge {
   source: string;
   target: string;
-  kind: "spawned" | "replied-to" | "produced" | "approved" | "parent" | "resolved-into";
+  kind:
+    | "spawned"
+    | "replied-to"
+    | "produced"
+    | "approved"
+    | "parent"
+    | "resolved-into"
+    | "abandoned";
+  /** Edge lies on the critical path — UI strokes it in acid. */
+  isCritical?: boolean;
 }
 
 export interface CaseSynthesisPayload {

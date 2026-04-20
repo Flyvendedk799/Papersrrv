@@ -233,5 +233,7 @@ function prettyKind(kind: CaseSynthesisGraphNode["kind"]): string {
       return "Related case";
     case "ancestor":
       return "Parent case";
+    case "resolution":
+      return "Resolution";
   }
 }

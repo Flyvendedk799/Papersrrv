@@ -69,7 +69,12 @@ export type GraphNodeKind =
   // from an org-level "hire" (that's a separate product concept —
   // hiring an agent into the company). Every distinct agent working
   // on an issue gets exactly one delegation node.
-  | "delegation";
+  | "delegation"
+  // "resolution" = terminal node for a closed case. Every branch
+  // that ended meaningfully (done sub-issue, approved approval,
+  // succeeded delegation) converges here so the graph reads as a
+  // start → work → end story rather than a fan-out that peters out.
+  | "resolution";
 
 export interface SynthesisGraphNode {
   id: string;
@@ -82,6 +87,19 @@ export interface SynthesisGraphNode {
   /** Bucket the UI can use to group nodes into rails: "root",
    * "attempt", "human", "delegation", "artifact", "resolve". */
   lane?: string;
+  /** True when this node sits on the critical path from root to
+   * the resolution node (or the deepest live branch when open). */
+  isCritical?: boolean;
+  /** True when this node has no outgoing edges AND the case is
+   * still open (branch abandoned without resolution). */
+  isDeadEnd?: boolean;
+  /** True for the single terminal "resolution" node. */
+  isTerminal?: boolean;
+  /** Number of productive (non-heartbeat) runs represented by this
+   * node (delegations only). */
+  productiveCount?: number;
+  /** Number of ambient/heartbeat runs (delegations only). */
+  ambientCount?: number;
 }
 
 export type GraphEdgeKind =
@@ -90,12 +108,18 @@ export type GraphEdgeKind =
   | "produced"
   | "approved"
   | "parent"
-  | "resolved-into";
+  | "resolved-into"
+  // "abandoned" = branch that went nowhere; rendered as a short
+  // dashed stub into a dead-end marker rather than a mystery.
+  | "abandoned";
 
 export interface SynthesisGraphEdge {
   source: string;
   target: string;
   kind: GraphEdgeKind;
+  /** True for edges that form the critical path. UI stroke-highlights
+   * these in acid so the reader can follow the story at a glance. */
+  isCritical?: boolean;
 }
 
 export interface SynthesisPayload {
@@ -140,6 +164,7 @@ export function caseSynthesisService(db: Db) {
         resultJson: heartbeatRuns.resultJson,
         stdoutExcerpt: heartbeatRuns.stdoutExcerpt,
         triggeredByCommentId: heartbeatRuns.triggeredByCommentId,
+        invocationSource: heartbeatRuns.invocationSource,
       })
       .from(heartbeatRuns)
       .where(
@@ -314,6 +339,7 @@ interface TemplateInputs {
     resultJson: Record<string, unknown> | null;
     stdoutExcerpt: string | null;
     triggeredByCommentId: string | null;
+    invocationSource: string;
   }>;
   activity: Array<{ id: string; action: string; createdAt: Date }>;
   subIssues: Array<{
@@ -560,6 +586,12 @@ function buildTemplateSynthesis(d: TemplateInputs): SynthesisPayload {
   }
 
   /* ── graph ─────────────────────────────────────────────────── */
+  // The graph reads as a narrative: the root is the question, the
+  // middle is the work, the resolution node (when present) is the
+  // ending. Every branch reaches *somewhere* — resolution for
+  // closed work, a dead-end marker for abandoned work. This replaces
+  // the prior fan-out-that-peters-out layout that left 50 branches
+  // dangling.
   const nodes: SynthesisGraphNode[] = [];
   const edges: SynthesisGraphEdge[] = [];
 
@@ -574,23 +606,54 @@ function buildTemplateSynthesis(d: TemplateInputs): SynthesisPayload {
     lane: "root",
   });
 
-  // One delegation node per distinct agent that worked on this case.
-  // "Delegation" ≠ hiring — the agent already exists at the org
-  // level; this is the case handing work to them. The sublabel
-  // summarises how it went (resolved / working / stuck / failed)
-  // so the graph reads as a story without needing each attempt.
+  const caseClosed = DONE_STATUS.has(issue.status);
+
+  // Terminal resolution node — emitted for every closed case. Every
+  // productive branch that contributed to resolution converges into
+  // this node (not the root) so the graph has a clear endpoint.
+  const resolutionId = caseClosed ? `resolution:${issue.id}` : null;
+  if (resolutionId) {
+    nodes.push({
+      id: resolutionId,
+      kind: "resolution",
+      label: issue.status === "cancelled" ? "Cancelled" : "Resolved",
+      sublabel: issue.completedAt
+        ? `Closed ${issue.completedAt.toISOString().slice(0, 10)}`
+        : undefined,
+      ts: (issue.completedAt ?? issue.updatedAt ?? new Date()).getTime(),
+      status: issue.status,
+      lane: "resolve",
+      isTerminal: true,
+    });
+  }
+
+  // Partition runs into productive (user-triggered / assigned /
+  // automation) vs ambient (timer heartbeats). Ambient runs inflate
+  // the attempt count without telling you anything about the work.
+  // Keep both counts so the delegation sublabel can be honest.
+  const productiveRuns = runs.filter((r) => r.invocationSource !== "timer");
+  const ambientRuns = runs.filter((r) => r.invocationSource === "timer");
+
+  // One delegation node per distinct agent with PRODUCTIVE runs.
+  // Agents whose only involvement was timer heartbeats don't get
+  // a delegation node — they're ambient, not causal.
   const seenAgents = new Set<string>();
-  for (const r of runs) {
+  const delegationsByAgent = new Map<
+    string,
+    { id: string; anySucceeded: boolean; lastTs: number }
+  >();
+  for (const r of productiveRuns) {
     if (seenAgents.has(r.agentId)) continue;
     seenAgents.add(r.agentId);
     const delegationId = `delegation:${r.agentId}`;
-    const agentRuns = runs.filter((x) => x.agentId === r.agentId);
-    const attemptCount = agentRuns.length;
-    const live = agentRuns.some((x) => LIVE_RUN.has(x.status));
-    const anySucceeded = agentRuns.some(
+    const agentProductive = productiveRuns.filter((x) => x.agentId === r.agentId);
+    const agentAmbient = ambientRuns.filter((x) => x.agentId === r.agentId);
+    const attemptCount = agentProductive.length;
+    const live = agentProductive.some((x) => LIVE_RUN.has(x.status));
+    const anySucceeded = agentProductive.some(
       (x) => x.status === "succeeded" || x.status === "done",
     );
-    const anyFailed = agentRuns.some(
+    const anyFailed = agentProductive.some(
       (x) => x.status === "failed" || x.status === "timed_out",
     );
     const countPhrase =
@@ -602,6 +665,9 @@ function buildTemplateSynthesis(d: TemplateInputs): SynthesisPayload {
         : anyFailed
           ? "stuck"
           : "done";
+    const lastTs = Math.max(
+      ...agentProductive.map((x) => (x.finishedAt ?? x.createdAt).getTime()),
+    );
     nodes.push({
       id: delegationId,
       kind: "delegation",
@@ -611,27 +677,27 @@ function buildTemplateSynthesis(d: TemplateInputs): SynthesisPayload {
       status: live ? "live" : anySucceeded ? "done" : anyFailed ? "blocked" : undefined,
       authorName: agentMap.get(r.agentId) ?? undefined,
       lane: "delegation",
+      productiveCount: attemptCount,
+      ambientCount: agentAmbient.length,
     });
     edges.push({ source: rootId, target: delegationId, kind: "spawned" });
+    delegationsByAgent.set(r.agentId, {
+      id: delegationId,
+      anySucceeded,
+      lastTs,
+    });
     // When the delegation resolved and the case is closed, draw the
-    // convergence arrow back to the root.
-    if (anySucceeded && DONE_STATUS.has(issue.status)) {
-      edges.push({ source: delegationId, target: rootId, kind: "resolved-into" });
+    // convergence arrow to the resolution node (not the root).
+    if (anySucceeded && resolutionId) {
+      edges.push({ source: delegationId, target: resolutionId, kind: "resolved-into" });
     }
   }
 
   // We intentionally do NOT emit individual run nodes or
-  // conversational-comment nodes at the graph level — for a case
-  // with 50 runs and 200 comments, that would produce an unreadable
-  // cloud of 250 pills. The graph is the *shape of the work*, not
-  // an event log. Attempts are summarised on the delegation node's
-  // sublabel; the full thread lives in the drawer below.
-  //
-  // One structural exception: the opening comment IS a graph node,
-  // because it's often the problem statement the case was filed
-  // against and anchors the story.
-  const openerId = comments[0]?.id ?? null;
-  if (openerId) {
+  // conversational-comment nodes — the graph is the shape of work,
+  // not an event log. The opener comment IS a node because it's the
+  // problem statement that anchors the story.
+  if (comments[0]) {
     const c = comments[0];
     const name = c.authorAgentId
       ? agentMap.get(c.authorAgentId) ?? "Agent"
@@ -648,9 +714,14 @@ function buildTemplateSynthesis(d: TemplateInputs): SynthesisPayload {
     edges.push({ source: rootId, target: `comment:${c.id}`, kind: "spawned" });
   }
 
-  // Sub-issues — show each as its own branch off the root. Edge
-  // "resolved-into" points back from a resolved sub into the root
-  // to visualise convergence.
+  // Sub-issues — each as a branch. Origin resolution is the key
+  // causal fix: a sub-issue spawned from a run maps to the run's
+  // *delegation* (since runs aren't emitted as nodes). Prior
+  // behaviour produced dangling edges into non-existent run nodes,
+  // which the layout then quarantined at the bottom of the graph
+  // as visual orphans.
+  const runIdToAgent = new Map<string, string>();
+  for (const r of runs) runIdToAgent.set(r.id, r.agentId);
   for (const s of subIssues) {
     const nodeId = `sub-issue:${s.id}`;
     nodes.push({
@@ -662,21 +733,25 @@ function buildTemplateSynthesis(d: TemplateInputs): SynthesisPayload {
       status: s.status,
       lane: "delegation",
     });
-    const originId = s.createdFromRunId
-      ? `run:${s.createdFromRunId}`
-      : s.createdFromCommentId
-        ? `comment:${s.createdFromCommentId}`
-        : rootId;
+    // Pick an origin node that actually exists.
+    let originId: string = rootId;
+    if (s.createdFromRunId) {
+      const agentId = runIdToAgent.get(s.createdFromRunId);
+      if (agentId && delegationsByAgent.has(agentId)) {
+        originId = delegationsByAgent.get(agentId)!.id;
+      }
+    } else if (s.createdFromCommentId && comments[0]?.id === s.createdFromCommentId) {
+      originId = `comment:${s.createdFromCommentId}`;
+    }
     edges.push({ source: originId, target: nodeId, kind: "spawned" });
-    if (DONE_STATUS.has(s.status)) {
-      edges.push({ source: nodeId, target: rootId, kind: "resolved-into" });
+    if (DONE_STATUS.has(s.status) && resolutionId) {
+      edges.push({ source: nodeId, target: resolutionId, kind: "resolved-into" });
     }
   }
 
-  // Approvals — each as a node off the delegation that was most
-  // likely to have triggered it (the agent whose most recent run
-  // preceded the approval request). Falls back to the root when we
-  // can't pin a specific delegation.
+  // Approvals — pick the delegation whose most recent productive
+  // run preceded the approval request. Falls back to root only if
+  // nothing matches.
   for (const ap of approvals) {
     const nodeId = `approval:${ap.id}`;
     nodes.push({
@@ -688,13 +763,89 @@ function buildTemplateSynthesis(d: TemplateInputs): SynthesisPayload {
       lane: "human",
     });
     const reqTs = ap.requestedAt?.getTime() ?? 0;
-    const originRun = [...runs]
+    const originRun = [...productiveRuns]
       .reverse()
       .find((r) => (r.startedAt ?? r.createdAt).getTime() <= reqTs);
-    const src = originRun ? `delegation:${originRun.agentId}` : rootId;
+    const src = originRun && delegationsByAgent.has(originRun.agentId)
+      ? delegationsByAgent.get(originRun.agentId)!.id
+      : rootId;
     edges.push({ source: src, target: nodeId, kind: "approved" });
-    if (ap.status === "approved") {
-      edges.push({ source: nodeId, target: rootId, kind: "resolved-into" });
+    if (ap.status === "approved" && resolutionId) {
+      edges.push({ source: nodeId, target: resolutionId, kind: "resolved-into" });
+    }
+  }
+
+  // ── Dead-end detection & critical path ─────────────────────────
+  // A node is a dead-end when it's not the root or resolution and
+  // has no outgoing edge. For open cases these are abandoned
+  // branches; for closed cases they likely represent attempts that
+  // didn't contribute to resolution. Mark them so the UI can render
+  // a small terminal dot rather than leaving the reader wondering.
+  const outgoing = new Map<string, number>();
+  for (const e of edges) {
+    outgoing.set(e.source, (outgoing.get(e.source) ?? 0) + 1);
+  }
+  for (const n of nodes) {
+    if (n.id === rootId) continue;
+    if (n.isTerminal) continue;
+    if ((outgoing.get(n.id) ?? 0) === 0) {
+      n.isDeadEnd = true;
+    }
+  }
+
+  // Critical path — from root to resolution (closed case) or to the
+  // most-recent live delegation (open case). Uses BFS to find the
+  // shortest path via "spawned" / "resolved-into" edges, then marks
+  // the nodes and edges on that path. When there are multiple
+  // resolution paths, we pick the one with the latest-touched
+  // delegation so the UI surfaces "what actually fixed it".
+  const adj = new Map<string, Array<{ target: string; edge: SynthesisGraphEdge }>>();
+  for (const e of edges) {
+    const arr = adj.get(e.source) ?? [];
+    arr.push({ target: e.target, edge: e });
+    adj.set(e.source, arr);
+  }
+  let criticalEndId: string | null = null;
+  if (resolutionId) {
+    criticalEndId = resolutionId;
+  } else {
+    // Pick the most-recently-touched delegation; if none, any leaf.
+    let latest: { id: string; ts: number } | null = null;
+    for (const [agentId, info] of delegationsByAgent) {
+      if (!latest || info.lastTs > latest.ts) {
+        latest = { id: info.id, ts: info.lastTs };
+      }
+    }
+    criticalEndId = latest?.id ?? null;
+  }
+  if (criticalEndId) {
+    // BFS from root.
+    const parent = new Map<string, { id: string; edge: SynthesisGraphEdge }>();
+    const queue = [rootId];
+    const visited = new Set<string>([rootId]);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      if (cur === criticalEndId) break;
+      const next = adj.get(cur) ?? [];
+      for (const { target, edge } of next) {
+        if (visited.has(target)) continue;
+        visited.add(target);
+        parent.set(target, { id: cur, edge });
+        queue.push(target);
+      }
+    }
+    if (parent.has(criticalEndId) || criticalEndId === rootId) {
+      const pathEdges = new Set<SynthesisGraphEdge>();
+      const pathNodes = new Set<string>([rootId, criticalEndId]);
+      let cursor = criticalEndId;
+      while (cursor !== rootId && parent.has(cursor)) {
+        const p = parent.get(cursor)!;
+        pathEdges.add(p.edge);
+        pathNodes.add(p.id);
+        cursor = p.id;
+      }
+      for (const e of edges) if (pathEdges.has(e)) e.isCritical = true;
+      for (const n of nodes) if (pathNodes.has(n.id)) n.isCritical = true;
     }
   }
 

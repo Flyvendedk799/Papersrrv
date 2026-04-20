@@ -74,6 +74,7 @@ const NODE: Record<CaseSynthesisGraphNode["kind"], { w: number; h: number }> = {
   comment: { w: 250, h: 70 },
   run: { w: 180, h: 60 },
   ancestor: { w: 180, h: 60 },
+  resolution: { w: 220, h: 76 },
 };
 const GAP_X = 24;
 const RANK_GAP_Y = 52;
@@ -106,6 +107,44 @@ export function CaseGraph({ graph, synthesis, loading, className }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  /* ── Visibility filter (F-graph-1). Click a legend chip to
+   * toggle visibility of a node kind. Root, resolution, and the
+   * critical path are always visible. */
+  const [hiddenKinds, setHiddenKinds] = useState<Set<CaseSynthesisGraphNode["kind"]>>(
+    () => new Set(),
+  );
+  const toggleKindVisible = (kind: CaseSynthesisGraphNode["kind"]) => {
+    setHiddenKinds((prev) => {
+      const next = new Set(prev);
+      if (next.has(kind)) next.delete(kind);
+      else next.add(kind);
+      return next;
+    });
+  };
+
+  /* ── Critical-path-only mode. When on, everything off the
+   * critical path is dimmed to 20% opacity. */
+  const [criticalOnly, setCriticalOnly] = useState(false);
+
+  /* ── Search / highlight. Type to match node labels; matching
+   * nodes get an acid outline. */
+  const [searchTerm, setSearchTerm] = useState("");
+  const searchMatches = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return new Set<string>();
+    const matches = new Set<string>();
+    for (const n of graph.nodes) {
+      if (
+        n.label.toLowerCase().includes(q) ||
+        (n.sublabel ?? "").toLowerCase().includes(q) ||
+        (n.authorName ?? "").toLowerCase().includes(q)
+      ) {
+        matches.add(n.id);
+      }
+    }
+    return matches;
+  }, [graph.nodes, searchTerm]);
 
   const layout = useMemo(() => layoutGraph(graph.nodes, graph.edges), [graph]);
   const isEmpty = !loading && graph.nodes.length <= 1;
@@ -430,8 +469,28 @@ export function CaseGraph({ graph, synthesis, loading, className }: Props) {
             const sourceVisible = visible.nodeIds.has(e.source);
             const targetVisible = visible.nodeIds.has(e.target);
             if (!sourceVisible || !targetVisible) return null;
+            // Hide edges whose endpoints are filtered out by the
+            // kind-filter (mirrors the node render logic).
+            const fromProtected =
+              fromNode.kind === "issue" ||
+              fromNode.kind === "resolution" ||
+              fromNode.isCritical ||
+              fromNode.isTerminal;
+            const toProtected =
+              toNode.kind === "issue" ||
+              toNode.kind === "resolution" ||
+              toNode.isCritical ||
+              toNode.isTerminal;
+            if (
+              (!fromProtected && hiddenKinds.has(fromNode.kind)) ||
+              (!toProtected && hiddenKinds.has(toNode.kind))
+            ) {
+              return null;
+            }
             const focused = focusChain ? focusChain.edgeIds.has(i) : true;
-            const dimmed = focusChain !== null && !focused;
+            const criticalDim =
+              criticalOnly && !e.isCritical && e.kind !== "resolved-into";
+            const dimmed = (focusChain !== null && !focused) || criticalDim;
             return (
               <EdgePath
                 key={`edge-${i}`}
@@ -440,6 +499,7 @@ export function CaseGraph({ graph, synthesis, loading, className }: Props) {
                 kind={e.kind}
                 focused={focused}
                 dimmed={dimmed}
+                isCritical={e.isCritical}
               />
             );
           })}
@@ -447,9 +507,23 @@ export function CaseGraph({ graph, synthesis, loading, className }: Props) {
           {/* Nodes */}
           {layout.nodes.map((n) => {
             if (!visible.nodeIds.has(n.id)) return null;
+            // Honour the kind-filter, but never hide root, resolution,
+            // or nodes on the critical path (those are load-bearing
+            // for the narrative).
+            const protected_ =
+              n.kind === "issue" ||
+              n.kind === "resolution" ||
+              n.isCritical ||
+              n.isTerminal;
+            if (!protected_ && hiddenKinds.has(n.kind)) return null;
             const isSelected = selectedId === n.id;
             const inFocus = focusChain ? focusChain.nodeIds.has(n.id) : true;
-            const isDimmed = focusChain !== null && !inFocus;
+            // Critical-only mode dims non-critical nodes; normal focus
+            // chain wins when the user has clicked a specific node.
+            const criticalDim =
+              criticalOnly && !n.isCritical && !n.isTerminal && n.kind !== "issue";
+            const searchMiss = searchTerm.trim().length > 0 && !searchMatches.has(n.id);
+            const isDimmed = (focusChain !== null && !inFocus) || criticalDim || searchMiss;
             const isHovered = hoverId === n.id;
             return (
               <NodeMark
@@ -459,6 +533,7 @@ export function CaseGraph({ graph, synthesis, loading, className }: Props) {
                 isDimmed={isDimmed}
                 isHovered={isHovered}
                 isHot={hotPathId === n.id}
+                isSearchHit={searchMatches.has(n.id)}
                 mountDelay={n.rank * MOUNT_STAGGER_MS}
                 onEnter={() => setHoverId(n.id)}
                 onLeave={() => setHoverId(null)}
@@ -591,23 +666,65 @@ export function CaseGraph({ graph, synthesis, loading, className }: Props) {
         </div>
       )}
 
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-3 font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)]">
-        <LegendDot tint="var(--boared-feature)" label="Case" />
-        <LegendDot tint="var(--boared-review)" label="Delegation" />
-        <LegendDot tint="var(--boared-success)" label="Resolved" />
-        <LegendDot tint="var(--boared-info)" label="Comment" />
-        <LegendDot tint="var(--boared-mute)" label="Approval" />
+      {/* Toolbar — interactive legend (kind filter), critical-only
+       * toggle, search. Replaces the static legend. */}
+      <div className="flex flex-wrap items-center gap-2 font-mono text-[0.54rem] uppercase tracking-[0.14em]">
+        <FilterChip
+          tint="var(--boared-review)"
+          label="Delegation"
+          active={!hiddenKinds.has("delegation")}
+          onClick={() => toggleKindVisible("delegation")}
+        />
+        <FilterChip
+          tint="var(--boared-success)"
+          label="Sub-issue"
+          active={!hiddenKinds.has("sub-issue")}
+          onClick={() => toggleKindVisible("sub-issue")}
+        />
+        <FilterChip
+          tint="var(--boared-info)"
+          label="Comment"
+          active={!hiddenKinds.has("comment")}
+          onClick={() => toggleKindVisible("comment")}
+        />
+        <FilterChip
+          tint="var(--boared-mute)"
+          label="Approval"
+          active={!hiddenKinds.has("approval")}
+          onClick={() => toggleKindVisible("approval")}
+        />
         <span aria-hidden="true" className="opacity-50">│</span>
-        <span className="inline-flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setCriticalOnly((v) => !v)}
+          className={
+            "inline-flex items-center gap-1 px-1.5 py-0.5 border transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)] " +
+            (criticalOnly
+              ? "border-[var(--boared-acid)] text-[var(--boared-acid)]"
+              : "border-[var(--boared-rule)] text-[var(--boared-ink-faint)] hover:border-[var(--boared-ink)] hover:text-[var(--boared-ink)]")
+          }
+          title="Dim everything except the path from start to resolution"
+        >
+          Critical path
+        </button>
+        <span aria-hidden="true" className="opacity-50">│</span>
+        <input
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search…"
+          className="bg-transparent border-b border-[var(--boared-rule)] focus:border-[var(--boared-acid)] outline-none text-[0.6rem] tracking-normal normal-case py-0.5 w-24"
+          aria-label="Search graph"
+        />
+        <span aria-hidden="true" className="opacity-50">│</span>
+        <span className="inline-flex items-center gap-1.5 text-[var(--boared-ink-faint)]">
           <span
             aria-hidden="true"
             className="inline-block w-5 h-px"
-            style={{ background: "var(--boared-ink-soft)" }}
+            style={{ background: "var(--boared-acid)" }}
           />
-          caused
+          critical
         </span>
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1.5 text-[var(--boared-ink-faint)]">
           <span
             aria-hidden="true"
             className="inline-block w-5 h-px"
@@ -616,10 +733,49 @@ export function CaseGraph({ graph, synthesis, loading, className }: Props) {
                 "repeating-linear-gradient(to right, var(--boared-success) 0 3px, transparent 3px 6px)",
             }}
           />
-          resolved back
+          resolved
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-[var(--boared-ink-faint)]">
+          <span aria-hidden="true" className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--boared-warn)]" />
+          abandoned
         </span>
       </div>
     </div>
+  );
+}
+
+/** Interactive filter chip. Click to toggle visibility of a kind
+ * in the graph. Active state = kind is visible. */
+function FilterChip({
+  tint,
+  label,
+  active,
+  onClick,
+}: {
+  tint: string;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        "inline-flex items-center gap-1.5 px-1.5 py-0.5 border transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)] " +
+        (active
+          ? "border-[var(--boared-rule)] text-[var(--boared-ink)]"
+          : "border-[var(--boared-rule)]/40 text-[var(--boared-ink-faint)] opacity-60 hover:opacity-100")
+      }
+    >
+      <span
+        aria-hidden="true"
+        className="inline-block w-1.5 h-1.5 rounded-full"
+        style={{ background: tint }}
+      />
+      {label}
+    </button>
   );
 }
 
@@ -631,6 +787,7 @@ function NodeMark({
   isDimmed,
   isHovered,
   isHot,
+  isSearchHit,
   mountDelay,
   onEnter,
   onLeave,
@@ -641,6 +798,7 @@ function NodeMark({
   isDimmed: boolean;
   isHovered: boolean;
   isHot: boolean;
+  isSearchHit?: boolean;
   mountDelay: number;
   onEnter: () => void;
   onLeave: () => void;
@@ -655,6 +813,10 @@ function NodeMark({
     animationDelay: `${mountDelay}ms`,
   } as React.CSSProperties;
 
+  // Width/height of this node kind for the outline / marker geometry.
+  const w = NODE[node.kind].w;
+  const h = NODE[node.kind].h;
+
   return (
     <g
       data-graph-node="true"
@@ -668,7 +830,39 @@ function NodeMark({
       className="cursor-pointer cg-mount"
       style={wrapperStyle}
     >
-      {node.kind === "issue"
+      {/* Critical-path halo — subtle acid glow around any node on
+       * the critical path so the story-beat reads as one line. */}
+      {node.isCritical && !node.isTerminal && node.kind !== "issue" && (
+        <rect
+          x={-4}
+          y={-4}
+          width={w + 8}
+          height={h + 8}
+          rx={8}
+          fill="none"
+          stroke="var(--boared-acid)"
+          strokeOpacity={0.35}
+          strokeWidth={1.5}
+          pointerEvents="none"
+        />
+      )}
+      {/* Search-match outline. */}
+      {isSearchHit && (
+        <rect
+          x={-2}
+          y={-2}
+          width={w + 4}
+          height={h + 4}
+          rx={6}
+          fill="none"
+          stroke="var(--boared-acid)"
+          strokeWidth={2}
+          pointerEvents="none"
+        />
+      )}
+      {node.kind === "resolution"
+        ? renderResolution(node, tint, isSelected, isHovered)
+        : node.kind === "issue"
         ? renderIssue(node, tint, isSelected, isHovered)
         : node.kind === "delegation"
           ? renderDelegation(node, tint, isSelected, isHovered, live, isHot)
@@ -679,7 +873,76 @@ function NodeMark({
               : node.kind === "comment"
                 ? renderComment(node, tint, isSelected, isHovered)
                 : renderGeneric(node, tint, isSelected, isHovered)}
+      {/* Dead-end corner marker — a small red dot at the top-right
+       * of abandoned leaf nodes so the reader can see at a glance
+       * which branches didn't lead anywhere. */}
+      {node.isDeadEnd && (
+        <g transform={`translate(${w - 6}, 6)`} pointerEvents="none">
+          <circle r={4} fill="var(--boared-warn)" />
+          <title>Abandoned — branch had no follow-up</title>
+        </g>
+      )}
     </g>
+  );
+}
+
+/** Distinct terminal node render — bold acid outline, ✓ glyph,
+ * tighter corners. Marks the end of the case visually. */
+function renderResolution(
+  node: PlacedNode,
+  tint: string,
+  isSelected: boolean,
+  isHovered: boolean,
+) {
+  const w = NODE.resolution.w;
+  const h = NODE.resolution.h;
+  const isCancelled = node.status === "cancelled";
+  return (
+    <>
+      <rect
+        width={w}
+        height={h}
+        rx={10}
+        fill="var(--boared-paper)"
+        stroke={isCancelled ? "var(--boared-warn)" : tint}
+        strokeWidth={isSelected || isHovered ? 2.5 : 2}
+      />
+      <g transform="translate(14, 14)">
+        <circle r={9} fill={isCancelled ? "var(--boared-warn)" : tint} />
+        <text
+          x={0}
+          y={4}
+          textAnchor="middle"
+          fill="var(--boared-paper)"
+          fontSize={12}
+          fontWeight={700}
+        >
+          {isCancelled ? "×" : "✓"}
+        </text>
+      </g>
+      <text
+        x={38}
+        y={20}
+        fontFamily="var(--boared-serif)"
+        fontStyle="italic"
+        fontSize={16}
+        fill="var(--boared-ink)"
+      >
+        {node.label}
+      </text>
+      {node.sublabel && (
+        <text
+          x={38}
+          y={40}
+          fontFamily="var(--boared-mono)"
+          fontSize={9}
+          letterSpacing={1.4}
+          fill="var(--boared-ink-faint)"
+        >
+          {node.sublabel.toUpperCase()}
+        </text>
+      )}
+    </>
   );
 }
 
@@ -1099,12 +1362,14 @@ function EdgePath({
   kind,
   focused,
   dimmed,
+  isCritical,
 }: {
   fromNode: PlacedNode;
   toNode: PlacedNode;
   kind: CaseSynthesisGraphEdge["kind"];
   focused: boolean;
   dimmed: boolean;
+  isCritical?: boolean;
 }) {
   const isConverge = kind === "resolved-into";
   const fromX = fromNode.x + fromNode.w / 2;
@@ -1112,19 +1377,23 @@ function EdgePath({
   const toX = toNode.x + toNode.w / 2;
   const toY = toNode.y;
 
-  const stroke = isConverge
-    ? "var(--boared-success)"
-    : focused
-      ? "var(--boared-acid)"
-      : "var(--boared-ink-soft)";
+  // Critical-path edges get the acid stroke regardless of focus;
+  // the goal is to let the reader follow the story at a glance.
+  const stroke = isCritical
+    ? "var(--boared-acid)"
+    : isConverge
+      ? "var(--boared-success)"
+      : focused
+        ? "var(--boared-acid)"
+        : "var(--boared-ink-soft)";
   const marker = isConverge
     ? "url(#case-graph-arrow-converge)"
-    : focused
+    : focused || isCritical
       ? "url(#case-graph-arrow-focus)"
       : "url(#case-graph-arrow)";
   const dash = isConverge ? "5 5" : undefined;
   const opacity = dimmed ? 0.2 : 1;
-  const strokeWidth = isConverge ? 1.3 : focused ? 1.6 : 1.1;
+  const strokeWidth = isCritical ? 2.2 : isConverge ? 1.3 : focused ? 1.6 : 1.1;
 
   let d: string;
   if (isConverge) {
@@ -1528,6 +1797,8 @@ function prettyKind(kind: CaseSynthesisGraphNode["kind"]): string {
       return "Related case";
     case "ancestor":
       return "Parent case";
+    case "resolution":
+      return "Resolution";
   }
 }
 
@@ -1580,5 +1851,8 @@ function tintForKind(kind: CaseSynthesisGraphNode["kind"]): string {
       return "var(--boared-success)";
     case "ancestor":
       return "var(--boared-ink-soft)";
+    case "resolution":
+      return "var(--boared-acid)";
   }
 }
+
