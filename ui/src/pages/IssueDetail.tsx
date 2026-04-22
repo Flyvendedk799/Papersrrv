@@ -1150,9 +1150,7 @@ export function IssueDetail() {
             {/* What was made — CaseArtifacts from synthesis. */}
             <section id="chapter-artifacts" className="scroll-mt-20 space-y-4">
               <ChapterHeading
-                index={2}
                 title="What was made"
-                subtitle="Tangible outputs of the work — files touched, pull requests opened, sub-cases spawned, decisions recorded."
                 meta={
                   synthesis?.artifacts?.length
                     ? `${synthesis.artifacts.length} ${synthesis.artifacts.length === 1 ? "artifact" : "artifacts"}`
@@ -1192,13 +1190,7 @@ export function IssueDetail() {
             {/* How it got here — the fan-out/fan-in graph. */}
             <section id="chapter-graph" className="scroll-mt-20 space-y-4">
               <ChapterHeading
-                index={3}
                 title="How it got here"
-                subtitle={
-                  issue.status === "done" || issue.status === "cancelled"
-                    ? "The path from opening statement to resolution, traced step by step."
-                    : "The work-in-progress — branches, delegations and decisions so far."
-                }
                 meta={
                   synthesis?.graph?.nodes?.length
                     ? `${synthesis.graph.nodes.length} ${synthesis.graph.nodes.length === 1 ? "step" : "steps"}`
@@ -1219,12 +1211,10 @@ export function IssueDetail() {
              * Conversation/Full-log toggle internally. */}
             <section id="chapter-correspondence" className="scroll-mt-20 space-y-4">
               <ChapterHeading
-                index={4}
-                title="The conversation"
-                subtitle="The thread — role-tagged so the reader can follow who decided what, without running down every comment."
+                title="Thread"
                 meta={
                   commentsTotal > 0
-                    ? `${commentsTotal} ${commentsTotal === 1 ? "entry" : "entries"} total`
+                    ? `${commentsTotal} ${commentsTotal === 1 ? "entry" : "entries"}`
                     : undefined
                 }
               />
@@ -1263,11 +1253,8 @@ export function IssueDetail() {
             {(issueFiles ?? []).length > 0 && (
               <section id="chapter-files" className="scroll-mt-20 space-y-4">
                 <ChapterHeading
-                  index={5}
-                  title="Files touched"
-                  subtitle="Every file that was read or written while the case was worked."
-                  meta={`${(issueFiles ?? []).length} ${(issueFiles ?? []).length === 1 ? "file" : "files"}`}
-                  compact
+                  title="Files"
+                  meta={`${(issueFiles ?? []).length}`}
                 />
                 <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
                   {(issueFiles ?? [])
@@ -1324,11 +1311,8 @@ export function IssueDetail() {
             {activity && activity.length > 0 && (
               <section id="chapter-work" className="scroll-mt-20 space-y-4">
                 <ChapterHeading
-                  index={6}
-                  title="Activity log"
-                  subtitle="The raw chronology — every event emitted against the case, for audit and replay."
-                  meta={`${activity.length} ${activity.length === 1 ? "event" : "events"}`}
-                  compact
+                  title="Activity"
+                  meta={`${activity.length}`}
                 />
                 <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
                   {activity
@@ -1369,10 +1353,7 @@ export function IssueDetail() {
             {(attachments && attachments.length > 0) || attachmentError ? (
               <section id="chapter-attachments" className="scroll-mt-20 space-y-4">
                 <ChapterHeading
-                  index={7}
                   title="Attachments"
-                  subtitle="Screenshots, reference images, or any visual material filed against this case."
-                  compact
                   action={
                     <>
                       <input
@@ -1447,11 +1428,8 @@ export function IssueDetail() {
               {linkedApprovals && linkedApprovals.length > 0 && (
                 <section className="space-y-4">
                   <ChapterHeading
-                    index={8}
                     title="Approvals"
-                    subtitle="Decisions that required a human in the loop. Pending approvals block resolution."
-                    meta={`${linkedApprovals.length} ${linkedApprovals.length === 1 ? "decision" : "decisions"}`}
-                    compact
+                    meta={`${linkedApprovals.length}`}
                   />
                   <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
                     {linkedApprovals.map((approval) => {

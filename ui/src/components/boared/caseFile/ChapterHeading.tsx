@@ -1,80 +1,51 @@
 /**
- * ChapterHeading — dramatic chapter opener for the case file.
+ * ChapterHeading — compact, product-grade chapter marker.
  *
- * Replaces the earlier `CaseSectionRule` (a thin mono line) with a
- * treatment that reads like the opening page of a chapter in a
- * periodical:
+ * Earlier version read like a newspaper page opener (Roman numerals,
+ * big italic title, editorial standfirst). This version is tighter:
  *
- *     ┌────────────────────────────────────────────────────────┐
- *     │  CHAPTER III    ·    13 artifacts      ───────  [↻]   │
- *     │                                                         │
- *     │  What was made                                          │
- *     │  ─────────────                                          │
- *     │  ‹three real results produced during this case›         │
- *     └────────────────────────────────────────────────────────┘
+ *     [●] HOW IT GOT HERE · 5 STEPS ────────────────  [↻]
  *
- * Visual devices:
- *   · Roman numeral chapter index (kicker)
- *   · Huge serif italic title (clamp 1.6rem → 2.6rem)
- *   · Subtitle one-liner set as editorial standfirst
- *   · Acid rule underline that extends full-width
- *   · Optional trailing action tucked in top right
+ * One row, kicker-sized. Acid dot anchors the row. Title in mono
+ * caps, lightly tracked. Rule flexes to the right edge. Optional
+ * action tucks in the trailing slot. Section count / meta lives
+ * inline instead of below. All sections are created equal — no
+ * "Chapter III · Chapter IV" scaffolding.
  *
- * Designed to be used once per chapter. IDs drive the sticky
- * chapter nav's scroll-spy.
+ * Still scroll-reveals (opacity + 8px rise, 400 ms) so entering a
+ * chapter has a subtle cinematic cue without the drama.
  */
 
 import { useEffect, useRef } from "react";
 import { cn } from "../../../lib/utils";
 
-const ROMAN = [
-  "I",
-  "II",
-  "III",
-  "IV",
-  "V",
-  "VI",
-  "VII",
-  "VIII",
-  "IX",
-  "X",
-  "XI",
-  "XII",
-];
-
 interface Props {
   id?: string;
-  /** 1-indexed chapter number. Rendered as a Roman numeral. */
-  index?: number;
   title: string;
-  subtitle?: React.ReactNode;
   meta?: React.ReactNode;
   tone?: "ink" | "acid";
   action?: React.ReactNode;
   className?: string;
-  /** When true, the title gets tighter vertical rhythm (for
-   * less-important chapters like Metadata). */
+  /** Legacy prop — deprecated; kept so existing callers don't error.
+   * No longer rendered; the page got too wordy. */
+  index?: number;
+  subtitle?: React.ReactNode;
   compact?: boolean;
 }
 
 export function ChapterHeading({
   id,
-  index,
   title,
-  subtitle,
   meta,
   tone = "ink",
   action,
   className,
-  compact,
 }: Props) {
   const ref = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // First fold is always revealed immediately so the hero + the
-    // first chapter don't feel empty on initial paint.
-    if (el.getBoundingClientRect().top < window.innerHeight * 0.9) {
+    if (el.getBoundingClientRect().top < window.innerHeight * 0.95) {
       el.dataset.revealed = "true";
       return;
     }
@@ -87,7 +58,7 @@ export function ChapterHeading({
           }
         }
       },
-      { rootMargin: "0px 0px -15% 0px", threshold: 0.1 },
+      { rootMargin: "0px 0px -10% 0px", threshold: 0.05 },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -99,65 +70,35 @@ export function ChapterHeading({
       id={id}
       data-chapter-reveal
       className={cn(
-        "scroll-mt-20 relative group/chapter",
-        compact ? "pt-4 pb-2" : "pt-8 pb-4",
+        "scroll-mt-20 flex items-center gap-3",
         className,
       )}
     >
-      {/* Kicker — chapter number + meta */}
-      <div className="flex items-baseline gap-3 mb-1.5">
-        {typeof index === "number" && (
-          <span
-            className="font-mono text-[0.62rem] uppercase tracking-[0.28em] text-[var(--boared-acid)]"
-            aria-hidden="true"
-          >
-            Chapter {ROMAN[Math.max(0, index - 1)] ?? String(index)}
-          </span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "inline-block h-1.5 w-1.5 rounded-full shrink-0",
+          tone === "acid" ? "bg-[var(--boared-acid)]" : "bg-[var(--boared-ink)]",
         )}
-        {meta && (
-          <span className="font-mono text-[0.54rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)] tabular-nums">
-            {meta}
-          </span>
-        )}
-        <span
-          aria-hidden="true"
-          className="flex-1 h-px bg-[var(--boared-rule)]/70"
-        />
-        {action && <span className="shrink-0">{action}</span>}
-      </div>
-
-      {/* Title */}
+      />
       <h2
         className={cn(
-          "font-serif italic leading-[0.98] tracking-tight",
+          "font-mono text-[0.72rem] uppercase tracking-[0.22em] shrink-0",
           tone === "acid" ? "text-[var(--boared-acid)]" : "text-[var(--boared-ink)]",
-          compact
-            ? "text-[clamp(1.3rem,3vw,1.9rem)]"
-            : "text-[clamp(1.65rem,4.2vw,2.65rem)]",
         )}
       >
         {title}
       </h2>
-
-      {/* Standfirst */}
-      {subtitle && (
-        <p
-          className={cn(
-            "mt-2 max-w-[56ch] font-serif italic text-[var(--boared-ink-soft)]",
-            compact ? "text-[0.9rem] leading-snug" : "text-[1rem] leading-[1.5]",
-          )}
-        >
-          {subtitle}
-        </p>
+      {meta && (
+        <span className="font-mono text-[0.56rem] uppercase tracking-[0.16em] text-[var(--boared-ink-faint)] tabular-nums shrink-0">
+          {meta}
+        </span>
       )}
-
-      {/* Acid underline — draws in on hover for a subtle editorial
-       * cue that the chapter is interactive (we'll use this for the
-       * sticky chapter nav jump). */}
       <span
         aria-hidden="true"
-        className="block mt-3 h-[2px] w-12 bg-[var(--boared-acid)]/70 transition-all duration-500 ease-out group-hover/chapter:w-24"
+        className="flex-1 h-px bg-[var(--boared-rule)]"
       />
+      {action && <span className="shrink-0">{action}</span>}
     </header>
   );
 }
