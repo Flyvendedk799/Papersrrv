@@ -50,17 +50,44 @@ export function ImmersiveGraphFrame({
       <div
         className={cn(
           "relative border border-[var(--boared-rule)] bg-[var(--boared-paper)] overflow-hidden",
-          "before:content-[''] before:absolute before:top-0 before:left-0 before:w-8 before:h-8 before:border-t-2 before:border-l-2 before:border-[var(--boared-acid)]/70 before:pointer-events-none",
-          "after:content-[''] after:absolute after:bottom-0 after:right-0 after:w-8 after:h-8 after:border-b-2 after:border-r-2 after:border-[var(--boared-acid)]/70 after:pointer-events-none",
+          // Ambient glow so the graph feels lit from within rather
+          // than flat on paper.
+          "before:content-[''] before:absolute before:inset-0 before:pointer-events-none",
+          "before:bg-[radial-gradient(ellipse_at_center,rgba(226,50,50,0.05)_0%,transparent_60%)]",
+          // Top-left acid bracket — framed artwork cue.
+          "after:content-[''] after:absolute after:top-0 after:left-0 after:w-10 after:h-10 after:border-t-2 after:border-l-2 after:border-[var(--boared-acid)]/80 after:pointer-events-none",
           className,
         )}
       >
+        {/* Bottom-right bracket */}
+        <span
+          aria-hidden="true"
+          className="absolute bottom-0 right-0 w-10 h-10 border-b-2 border-r-2 border-[var(--boared-acid)]/80 pointer-events-none z-[1]"
+        />
+        {/* Edge fades so the graph feels like it continues
+         * off-frame instead of getting clipped at a hard border. */}
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0 w-16 z-[1] pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(to right, var(--boared-paper), transparent)",
+          }}
+        />
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 right-0 w-16 z-[1] pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(to left, var(--boared-paper), transparent)",
+          }}
+        />
         <button
           type="button"
           onClick={() => setImmersive(true)}
           title="Open immersive view"
           aria-label="Open immersive graph view"
-          className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-2 py-1 bg-[var(--boared-paper)] border border-[var(--boared-rule)] font-mono text-[0.56rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-acid)] hover:border-[var(--boared-acid)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
+          className="absolute top-3 right-3 z-[2] inline-flex items-center gap-1.5 px-2 py-1 bg-[var(--boared-paper)] border border-[var(--boared-rule)] font-mono text-[0.56rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-acid)] hover:border-[var(--boared-acid)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
         >
           <Maximize2 className="h-3 w-3" aria-hidden="true" />
           Immersive
@@ -69,7 +96,7 @@ export function ImmersiveGraphFrame({
           graph={graph}
           synthesis={synthesis}
           loading={loading}
-          className="px-4 pt-4 pb-3 min-h-[560px]"
+          className="px-6 pt-5 pb-4 min-h-[640px]"
         />
       </div>
 

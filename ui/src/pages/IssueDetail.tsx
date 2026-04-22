@@ -43,6 +43,9 @@ import { ChapterNav } from "../components/boared/caseFile/ChapterNav";
 import { ScrollProgressRail } from "../components/boared/caseFile/ScrollProgressRail";
 import { ImmersiveGraphFrame } from "../components/boared/caseFile/ImmersiveGraphFrame";
 import { CaseArcRibbon } from "../components/boared/caseFile/CaseArcRibbon";
+import { CaseBrief } from "../components/boared/caseFile/CaseBrief";
+import { CaseArchive } from "../components/boared/caseFile/CaseArchive";
+import { CaseQuickProps } from "../components/boared/caseFile/CaseQuickProps";
 import { CaseSidebar } from "../components/boared/caseFile/CaseSidebar";
 import { CaseArtifacts } from "../components/boared/caseFile/CaseArtifacts";
 import { CaseGraph } from "../components/boared/caseFile/CaseGraph";
@@ -1070,19 +1073,30 @@ export function IssueDetail() {
           ) : null
         }
         hero={
-          <div id="chapter-overview" className="scroll-mt-8 space-y-4">
-            {/* Narrative arc — opens to closes / in-flight. Sits
-             * above the hero so the reader has a compass before
-             * they read the title. */}
+          <div id="chapter-overview" className="scroll-mt-8 space-y-3">
+            {/* Narrative arc — opens to closes / in-flight. */}
             <CaseArcRibbon issue={issue} hasLiveRuns={hasLiveRuns} />
             <CaseHero
               issue={issue}
               hasLiveRuns={hasLiveRuns}
               onUpdate={(patch) => updateIssue.mutate(patch)}
             />
-            <CaseAtAGlance
-              synthesis={synthesis}
-              commentsTotal={commentsTotal}
+            {/* Inline properties strip — replaces the sidebar-only
+             * read path for the core fields. The sidebar still has
+             * the full editors; this is a glanceable overview. */}
+            <CaseQuickProps
+              issue={issue}
+              onOpenProperties={() => setMobilePropsOpen(true)}
+            />
+            {/* Description inline — no chapter heading. */}
+            <CaseBrief
+              description={issue.description}
+              onSave={(description) => updateIssue.mutate({ description })}
+              mentions={mentionOptions}
+              onAttachImage={async (file) => {
+                const attachment = await uploadAttachment.mutateAsync(file);
+                return attachment.contentPath;
+              }}
             />
             {issue.hiddenAt && (
               <div className="flex items-center gap-2 border border-destructive/60 bg-destructive/[0.04] px-3 py-2 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-destructive">
@@ -1135,25 +1149,14 @@ export function IssueDetail() {
         }
         main={
           <>
-            {/* The problem — description as primary reading. */}
-            <CaseProblem
-              issueId={issue.id}
-              description={issue.description}
-              onSave={(description) => updateIssue.mutate({ description })}
-              mentions={mentionOptions}
-              onAttachImage={async (file) => {
-                const attachment = await uploadAttachment.mutateAsync(file);
-                return attachment.contentPath;
-              }}
-            />
-
-            {/* What was made — CaseArtifacts from synthesis. */}
-            <section id="chapter-artifacts" className="scroll-mt-20 space-y-4">
+            {/* Chapter 1 — How it got here. The graph is the star
+             * and deserves the first spot after the hero. */}
+            <section id="chapter-graph" className="scroll-mt-20 space-y-4">
               <ChapterHeading
-                title="What was made"
+                title="How it got here"
                 meta={
-                  synthesis?.artifacts?.length
-                    ? `${synthesis.artifacts.length} ${synthesis.artifacts.length === 1 ? "artifact" : "artifacts"}`
+                  synthesis?.graph?.nodes?.length
+                    ? `${synthesis.graph.nodes.length} ${synthesis.graph.nodes.length === 1 ? "step" : "steps"}`
                     : undefined
                 }
                 action={
@@ -1163,38 +1166,10 @@ export function IssueDetail() {
                       queryClient.invalidateQueries({ queryKey: queryKeys.issues.synthesis(issue.id) })
                     }
                     className="font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
-                    title="Re-synthesise this case"
+                    title="Re-synthesise"
                   >
-                    ↻ refresh
+                    ↻
                   </button>
-                }
-              />
-              {/* Planning-kind issues: render the final plan
-               * document as the PRIMARY artifact. Other artifacts
-               * (run outputs, sub-cases) fall below. */}
-              {issue.kind === "planning" && issue.planOutputJson && (
-                <CasePlanDocument
-                  plan={issue.planOutputJson as unknown as import("@paperclipai/shared").PlanOutput}
-                  animateIn
-                />
-              )}
-              <CaseArtifacts
-                artifacts={synthesis?.artifacts ?? []}
-                loading={synthesisQuery.isLoading}
-                onRefresh={() =>
-                  queryClient.invalidateQueries({ queryKey: queryKeys.issues.synthesis(issue.id) })
-                }
-              />
-            </section>
-
-            {/* How it got here — the fan-out/fan-in graph. */}
-            <section id="chapter-graph" className="scroll-mt-20 space-y-4">
-              <ChapterHeading
-                title="How it got here"
-                meta={
-                  synthesis?.graph?.nodes?.length
-                    ? `${synthesis.graph.nodes.length} ${synthesis.graph.nodes.length === 1 ? "step" : "steps"}`
-                    : undefined
                 }
               />
               <ImmersiveGraphFrame
@@ -1202,6 +1177,16 @@ export function IssueDetail() {
                 synthesis={synthesis}
                 loading={synthesisQuery.isLoading}
               />
+              {/* Planning plan document — ONLY surface the plan
+               * document for planning-kind issues, inline under the
+               * graph. Artifacts are reachable via the Archive tabs
+               * below, so no dedicated "What was made" chapter. */}
+              {issue.kind === "planning" && issue.planOutputJson && (
+                <CasePlanDocument
+                  plan={issue.planOutputJson as unknown as import("@paperclipai/shared").PlanOutput}
+                  animateIn
+                />
+              )}
             </section>
 
             {/* The conversation — filters out automated heartbeat
@@ -1249,112 +1234,169 @@ export function IssueDetail() {
               />
             </section>
 
-            {/* Files touched — only rendered when runs actually produced files. */}
-            {(issueFiles ?? []).length > 0 && (
-              <section id="chapter-files" className="scroll-mt-20 space-y-4">
-                <ChapterHeading
-                  title="Files"
-                  meta={`${(issueFiles ?? []).length}`}
-                />
-                <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
-                  {(issueFiles ?? [])
-                    .slice(0, showAllFiles ? undefined : FILES_COMPACT_LIMIT)
-                    .map((snap) => {
-                      const isActive = viewingFile?.path === snap.filePath;
-                      return (
-                        <FileRow
-                          key={snap.id}
-                          snap={snap}
-                          isActive={isActive}
-                          runNode={rowLookups.runByRunId.get(snap.runId)}
-                          onClick={() =>
-                            setViewingFile(
-                              isActive
-                                ? null
-                                : { path: snap.filePath, hash: snap.contentHash },
-                            )
-                          }
+            {/* Archive — Files / Activity / Attachments / Approvals
+             * consolidated into a single tab panel at the bottom.
+             * Replaces four separate chapters that all read as
+             * supplementary reference material anyway. */}
+            <CaseArchive
+              tabs={[
+                {
+                  id: "files",
+                  label: "Files",
+                  count: (issueFiles ?? []).length,
+                  show: (issueFiles ?? []).length > 0,
+                  render: () => (
+                    <div className="space-y-3">
+                      <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+                        {(issueFiles ?? [])
+                          .slice(0, showAllFiles ? undefined : FILES_COMPACT_LIMIT)
+                          .map((snap) => {
+                            const isActive = viewingFile?.path === snap.filePath;
+                            return (
+                              <FileRow
+                                key={snap.id}
+                                snap={snap}
+                                isActive={isActive}
+                                runNode={rowLookups.runByRunId.get(snap.runId)}
+                                onClick={() =>
+                                  setViewingFile(
+                                    isActive
+                                      ? null
+                                      : { path: snap.filePath, hash: snap.contentHash },
+                                  )
+                                }
+                              />
+                            );
+                          })}
+                      </div>
+                      {!showAllFiles && (issueFiles ?? []).length > FILES_COMPACT_LIMIT && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllFiles(true)}
+                          className="w-full py-2 border border-dashed border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] hover:border-[var(--boared-ink-soft)] hover:bg-[var(--boared-paper-2)] transition-colors"
+                        >
+                          Show all {(issueFiles ?? []).length}
+                        </button>
+                      )}
+                      {showAllFiles && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllFiles(false)}
+                          className="w-full py-2 font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
+                        >
+                          Collapse
+                        </button>
+                      )}
+                      {viewingFile && selectedCompanyId && (
+                        <InlineFilePreview
+                          companyId={selectedCompanyId}
+                          filePath={viewingFile.path}
+                          contentHash={viewingFile.hash}
+                          onClose={() => setViewingFile(null)}
                         />
-                      );
-                    })}
-                </div>
-                {!showAllFiles && (issueFiles ?? []).length > FILES_COMPACT_LIMIT && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllFiles(true)}
-                    className="w-full py-2 border border-dashed border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] hover:border-[var(--boared-ink-soft)] hover:bg-[var(--boared-paper-2)] transition-colors"
-                  >
-                    Show all {(issueFiles ?? []).length} · {(issueFiles ?? []).length - FILES_COMPACT_LIMIT} more files
-                  </button>
-                )}
-                {showAllFiles && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllFiles(false)}
-                    className="w-full py-2 font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
-                  >
-                    Collapse
-                  </button>
-                )}
-                {viewingFile && selectedCompanyId && (
-                  <InlineFilePreview
-                    companyId={selectedCompanyId}
-                    filePath={viewingFile.path}
-                    contentHash={viewingFile.hash}
-                    onClose={() => setViewingFile(null)}
-                  />
-                )}
-              </section>
-            )}
-
-            {/* Activity log — supplementary; readable only on request. */}
-            {activity && activity.length > 0 && (
-              <section id="chapter-work" className="scroll-mt-20 space-y-4">
-                <ChapterHeading
-                  title="Activity"
-                  meta={`${activity.length}`}
-                />
-                <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
-                  {activity
-                    .slice(0, showAllActivity ? 200 : ACTIVITY_COMPACT_LIMIT)
-                    .map((evt) => (
-                      <ActivityRow
-                        key={evt.id}
-                        event={evt}
-                        eventNode={rowLookups.eventByEventId.get(evt.id)}
-                        agentMap={agentMap}
-                        actorLabel={<ActorIdentity evt={evt} agentMap={agentMap} />}
-                        verbLabel={formatAction(evt.action, evt.details)}
-                      />
-                    ))}
-                </div>
-                {!showAllActivity && activity.length > ACTIVITY_COMPACT_LIMIT && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllActivity(true)}
-                    className="w-full py-2 border border-dashed border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] hover:border-[var(--boared-ink-soft)] hover:bg-[var(--boared-paper-2)] transition-colors"
-                  >
-                    Show all {Math.min(activity.length, 200)} · {Math.min(activity.length, 200) - ACTIVITY_COMPACT_LIMIT} more events
-                  </button>
-                )}
-                {showAllActivity && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllActivity(false)}
-                    className="w-full py-2 font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
-                  >
-                    Collapse
-                  </button>
-                )}
-              </section>
-            )}
-
-            {/* Attachments — image uploads. */}
-            {(attachments && attachments.length > 0) || attachmentError ? (
-              <section id="chapter-attachments" className="scroll-mt-20 space-y-4">
-                <ChapterHeading
-                  title="Attachments"
-                  action={
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  id: "activity",
+                  label: "Activity",
+                  count: activity?.length ?? 0,
+                  show: Boolean(activity && activity.length > 0),
+                  render: () => (
+                    <div className="space-y-3">
+                      <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+                        {(activity ?? [])
+                          .slice(0, showAllActivity ? 200 : ACTIVITY_COMPACT_LIMIT)
+                          .map((evt) => (
+                            <ActivityRow
+                              key={evt.id}
+                              event={evt}
+                              eventNode={rowLookups.eventByEventId.get(evt.id)}
+                              agentMap={agentMap}
+                              actorLabel={<ActorIdentity evt={evt} agentMap={agentMap} />}
+                              verbLabel={formatAction(evt.action, evt.details)}
+                            />
+                          ))}
+                      </div>
+                      {!showAllActivity && (activity?.length ?? 0) > ACTIVITY_COMPACT_LIMIT && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllActivity(true)}
+                          className="w-full py-2 border border-dashed border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] hover:border-[var(--boared-ink-soft)] hover:bg-[var(--boared-paper-2)] transition-colors"
+                        >
+                          Show all {Math.min(activity?.length ?? 0, 200)}
+                        </button>
+                      )}
+                      {showAllActivity && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllActivity(false)}
+                          className="w-full py-2 font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
+                        >
+                          Collapse
+                        </button>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  id: "approvals",
+                  label: "Approvals",
+                  count: linkedApprovals?.length ?? 0,
+                  show: Boolean(linkedApprovals && linkedApprovals.length > 0),
+                  render: () => (
+                    <div id="chapter-verdict" className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
+                      {(linkedApprovals ?? []).map((approval) => {
+                        const node = rowLookups.approvalByApprovalId.get(approval.id);
+                        const body = (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={approval.status} />
+                              <span className="text-[0.84rem] text-[var(--boared-ink)]">
+                                {approval.type
+                                  .replace(/_/g, " ")
+                                  .replace(/^./, (c) => c.toUpperCase())}
+                              </span>
+                              <span className="font-mono text-[0.6rem] tabular-nums text-[var(--boared-ink-faint)]">
+                                {approval.id.slice(0, 8)}
+                              </span>
+                            </div>
+                            <span className="font-mono text-[0.58rem] uppercase tracking-[0.14em] tabular-nums text-[var(--boared-ink-faint)]">
+                              {relativeTime(approval.createdAt)}
+                            </span>
+                          </>
+                        );
+                        if (!node) {
+                          return (
+                            <Link
+                              key={approval.id}
+                              to={`/approvals/${approval.id}`}
+                              className="flex items-center justify-between px-3 py-2 hover:bg-[var(--boared-paper-2)] transition-colors no-underline text-inherit"
+                            >
+                              {body}
+                            </Link>
+                          );
+                        }
+                        return (
+                          <ApprovalRow
+                            key={approval.id}
+                            approval={node}
+                            href={`/approvals/${approval.id}`}
+                          >
+                            {body}
+                          </ApprovalRow>
+                        );
+                      })}
+                    </div>
+                  ),
+                },
+                {
+                  id: "attachments",
+                  label: "Attachments",
+                  count: attachments?.length ?? 0,
+                  show: Boolean((attachments && attachments.length > 0) || attachmentError),
+                  action: (
                     <>
                       <input
                         ref={fileInputRef}
@@ -1370,113 +1412,60 @@ export function IssueDetail() {
                         className="inline-flex items-center gap-1 font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
                       >
                         <Paperclip className="h-3 w-3" aria-hidden="true" />
-                        {uploadAttachment.isPending ? "Uploading…" : "Upload image"}
+                        {uploadAttachment.isPending ? "Uploading…" : "Upload"}
                       </button>
                     </>
-                  }
-                />
-                {attachmentError && (
-                  <p className="font-mono text-[0.7rem] text-destructive">{attachmentError}</p>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {(attachments ?? []).map((attachment) => (
-                    <div key={attachment.id} className="border border-[var(--boared-rule)] p-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <a
-                          href={attachment.contentPath}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[0.78rem] text-[var(--boared-ink)] hover:underline truncate"
-                          title={attachment.originalFilename ?? attachment.id}
-                        >
-                          {attachment.originalFilename ?? attachment.id}
-                        </a>
-                        <button
-                          type="button"
-                          className="text-[var(--boared-ink-faint)] hover:text-destructive transition-colors"
-                          onClick={() => deleteAttachment.mutate(attachment.id)}
-                          disabled={deleteAttachment.isPending}
-                          title="Delete attachment"
-                          aria-label="Delete attachment"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      <p className="font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] mt-1">
-                        {attachment.contentType} · {(attachment.byteSize / 1024).toFixed(1)} KB
-                      </p>
-                      {isImageAttachment(attachment) && (
-                        <a href={attachment.contentPath} target="_blank" rel="noreferrer">
-                          <img
-                            src={attachment.contentPath}
-                            alt={attachment.originalFilename ?? "attachment"}
-                            className="mt-2 max-h-56 border border-[var(--boared-rule)] object-contain bg-[var(--boared-paper-2)] w-full"
-                            loading="lazy"
-                          />
-                        </a>
+                  ),
+                  render: () => (
+                    <div className="space-y-3">
+                      {attachmentError && (
+                        <p className="font-mono text-[0.7rem] text-destructive">{attachmentError}</p>
                       )}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {/* Approvals (verdict anchor) — shown inline when any
-             * exist, with the acid-red banner already promoted
-             * above when pending. */}
-            <div id="chapter-verdict" className="scroll-mt-20" aria-hidden={!(linkedApprovals && linkedApprovals.length > 0)}>
-              {linkedApprovals && linkedApprovals.length > 0 && (
-                <section className="space-y-4">
-                  <ChapterHeading
-                    title="Approvals"
-                    meta={`${linkedApprovals.length}`}
-                  />
-                  <div className="border border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)]">
-                    {linkedApprovals.map((approval) => {
-                      const node = rowLookups.approvalByApprovalId.get(approval.id);
-                      const body = (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <StatusBadge status={approval.status} />
-                            <span className="text-[0.84rem] text-[var(--boared-ink)]">
-                              {approval.type
-                                .replace(/_/g, " ")
-                                .replace(/^./, (c) => c.toUpperCase())}
-                            </span>
-                            <span className="font-mono text-[0.6rem] tabular-nums text-[var(--boared-ink-faint)]">
-                              {approval.id.slice(0, 8)}
-                            </span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {(attachments ?? []).map((attachment) => (
+                          <div key={attachment.id} className="border border-[var(--boared-rule)] p-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <a
+                                href={attachment.contentPath}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[0.78rem] text-[var(--boared-ink)] hover:underline truncate"
+                                title={attachment.originalFilename ?? attachment.id}
+                              >
+                                {attachment.originalFilename ?? attachment.id}
+                              </a>
+                              <button
+                                type="button"
+                                className="text-[var(--boared-ink-faint)] hover:text-destructive transition-colors"
+                                onClick={() => deleteAttachment.mutate(attachment.id)}
+                                disabled={deleteAttachment.isPending}
+                                title="Delete attachment"
+                                aria-label="Delete attachment"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            <p className="font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] mt-1">
+                              {attachment.contentType} · {(attachment.byteSize / 1024).toFixed(1)} KB
+                            </p>
+                            {isImageAttachment(attachment) && (
+                              <a href={attachment.contentPath} target="_blank" rel="noreferrer">
+                                <img
+                                  src={attachment.contentPath}
+                                  alt={attachment.originalFilename ?? "attachment"}
+                                  className="mt-2 max-h-56 border border-[var(--boared-rule)] object-contain bg-[var(--boared-paper-2)] w-full"
+                                  loading="lazy"
+                                />
+                              </a>
+                            )}
                           </div>
-                          <span className="font-mono text-[0.58rem] uppercase tracking-[0.14em] tabular-nums text-[var(--boared-ink-faint)]">
-                            {relativeTime(approval.createdAt)}
-                          </span>
-                        </>
-                      );
-                      if (!node) {
-                        return (
-                          <Link
-                            key={approval.id}
-                            to={`/approvals/${approval.id}`}
-                            className="flex items-center justify-between px-3 py-2 hover:bg-[var(--boared-paper-2)] transition-colors no-underline text-inherit"
-                          >
-                            {body}
-                          </Link>
-                        );
-                      }
-                      return (
-                        <ApprovalRow
-                          key={approval.id}
-                          approval={node}
-                          href={`/approvals/${approval.id}`}
-                        >
-                          {body}
-                        </ApprovalRow>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
-            </div>
+                        ))}
+                      </div>
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </>
         }
         sidebar={
