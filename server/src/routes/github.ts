@@ -25,7 +25,7 @@ import {
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { assertCompanyAccess } from "./authz.js";
-import { logActivity } from "../services/index.js";
+import { logActivity, issueService, projectService } from "../services/index.js";
 import { githubConnectionsService } from "../services/github-connections.js";
 import { createGithubClient, GithubClientError, clearGithubCache } from "../services/github.js";
 import { isServerFeatureEnabled } from "../lib/feature-flags.js";
@@ -452,7 +452,130 @@ export function githubRoutes(db: Db) {
     },
   );
 
+  // --- Open draft PR for an issue (S5 — Boared 2.0 pipeline) -----------
+  // Creates a branch from the project repo's default branch and opens a
+  // draft PR pre-filled from the issue's title + description. The
+  // synthesised body links back to the case so reviewers can trace
+  // intent. Branch naming is deterministic per issue so re-running the
+  // action re-uses the same branch.
+
+  router.post(
+    "/companies/:companyId/issues/:issueId/open-pr",
+    async (req, res) => {
+      assertGithubTabEnabled();
+      assertPrActionsEnabled();
+      const companyId = req.params.companyId as string;
+      const issueId = req.params.issueId as string;
+      assertCompanyAccess(req, companyId);
+
+      const issues = issueService(db);
+      const projects = projectService(db);
+      const issue = await issues.getById(issueId);
+      if (!issue) throw notFound("Issue not found");
+      if (issue.companyId !== companyId) {
+        throw forbidden("Issue not in this company");
+      }
+      if (!issue.projectId) {
+        throw unprocessable("Issue is not attached to a project");
+      }
+      const project = await projects.getById(issue.projectId);
+      if (!project) throw notFound("Project not found");
+      const repoUrl =
+        project.workspaces.find((w) => w.repoUrl)?.repoUrl ?? null;
+      if (!repoUrl) {
+        throw unprocessable(
+          "Project workspace has no repoUrl. Set one before opening a PR.",
+        );
+      }
+      const parsed = parseRepoUrl(repoUrl);
+      if (!parsed) throw unprocessable(`Invalid repoUrl: ${repoUrl}`);
+
+      const conn = await resolveConnection(db, companyId, req, req.body?.connectionId);
+      const { client } = await clientForConnection(db, companyId, conn.id);
+
+      // Build a stable branch name from identifier + slug.
+      const slug = (issue.title || "draft")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40) || "draft";
+      const idPart = (issue.identifier ?? issueId.slice(0, 8))
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-");
+      const branch = `paperclip/${idPart}-${slug}`;
+
+      try {
+        // Try to create the branch; if it exists already, GitHub
+        // returns 422 — fall through to the PR create which will
+        // also surface a clear "already exists" if the PR is open.
+        try {
+          await client.createBranchFromDefault(parsed.owner, parsed.repo, branch);
+        } catch (err) {
+          if (!(err instanceof GithubClientError) || err.status !== 422) throw err;
+        }
+
+        const body = composePrBody(issue, repoUrl);
+        const pr = await client.createPullRequest(parsed.owner, parsed.repo, {
+          title: issue.title || `Issue ${issue.identifier ?? issueId}`,
+          head: branch,
+          body,
+          draft: true,
+        });
+
+        const actor = getActorForLog(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          action: "github.pull.opened_for_issue",
+          entityType: "issue",
+          entityId: issueId,
+          details: {
+            owner: parsed.owner,
+            repo: parsed.repo,
+            number: pr.number,
+            htmlUrl: pr.htmlUrl,
+            head: branch,
+            base: pr.baseRef,
+          },
+        });
+        res.status(201).json({
+          pullRequest: pr,
+          branch,
+          repo: { owner: parsed.owner, repo: parsed.repo },
+        });
+      } catch (err) {
+        handleGithubError(res, err);
+      }
+    },
+  );
+
   return router;
+}
+
+function composePrBody(
+  issue: { identifier: string | null; title: string; description: string | null },
+  repoUrl: string,
+): string {
+  const id = issue.identifier ?? "case";
+  const lines: string[] = [
+    `> Drafted from Boared case **${id}** — ${issue.title}.`,
+    "",
+  ];
+  if (issue.description) {
+    lines.push("## Context");
+    lines.push("");
+    lines.push(issue.description.trim());
+    lines.push("");
+  }
+  lines.push("## Plan");
+  lines.push("");
+  lines.push("- [ ] Implement the change");
+  lines.push("- [ ] Add tests / update docs");
+  lines.push("- [ ] Mark this PR ready for review");
+  lines.push("");
+  lines.push(`<sub>Repo: ${repoUrl}</sub>`);
+  return lines.join("\n");
 }
 
 async function resolveConnection(

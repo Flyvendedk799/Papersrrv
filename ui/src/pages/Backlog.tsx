@@ -909,6 +909,7 @@ export function Backlog() {
             }
             onPromote={(id) => promoteItem.mutate(id)}
             promotingId={promoteItem.isPending ? (promoteItem.variables as string) : null}
+            companyId={selectedCompanyId ?? undefined}
             selection={selection}
             onToggleSelect={toggleSelect}
             emptyAction="New item"
@@ -930,6 +931,7 @@ export function Backlog() {
             }
             onPromote={(id) => promoteItem.mutate(id)}
             promotingId={promoteItem.isPending ? (promoteItem.variables as string) : null}
+            companyId={selectedCompanyId ?? undefined}
             selection={selection}
             onToggleSelect={toggleSelect}
             emptyAction="New item"

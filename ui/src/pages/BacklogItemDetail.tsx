@@ -28,6 +28,7 @@ import { Identity } from "../components/Identity";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { EmptyState as BoaredEmptyState } from "../components/boared/EmptyState";
 import { SkeletonLine, SkeletonBlock } from "../components/boared/Skeleton";
+import { BacklogKickOffButton } from "../components/backlog/BacklogKickOffButton";
 
 function Chip({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -234,6 +235,13 @@ export function BacklogItemDetail() {
               <Rocket className="size-3" />
               {promoteItem.isPending ? "Promoting…" : "Promote to Issue"}
             </Button>
+          )}
+          {canPromote && selectedCompanyId && itemId && (
+            <BacklogKickOffButton
+              companyId={selectedCompanyId}
+              backlogItemId={itemId}
+              variant="button"
+            />
           )}
           {canPromote && (
             <Button

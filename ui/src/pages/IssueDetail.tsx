@@ -48,7 +48,7 @@ import { CaseArchive } from "../components/boared/caseFile/CaseArchive";
 import { CaseQuickProps } from "../components/boared/caseFile/CaseQuickProps";
 import { CaseSidebar } from "../components/boared/caseFile/CaseSidebar";
 import { CaseArtifacts } from "../components/boared/caseFile/CaseArtifacts";
-import { CaseGraph } from "../components/boared/caseFile/CaseGraph";
+import { IssueOpenPrAction } from "../components/issue/IssueOpenPrAction";
 import { CaseAtAGlance } from "../components/boared/caseFile/CaseAtAGlance";
 import { CaseParticipants } from "../components/boared/caseFile/CaseParticipants";
 import { CaseRecentActivity } from "../components/boared/caseFile/CaseRecentActivity";
@@ -453,6 +453,22 @@ export function IssueDetail() {
   });
 
   const hasLiveRuns = (liveRuns ?? []).length > 0 || !!activeRun;
+
+  // S4 — live delegation graph. Whenever the in-flight run set
+  // changes (new run started, run finished, status flipped) bust
+  // the synthesis cache so the case graph re-renders with the new
+  // fan-out/fan-in shape. The synthesis service hashes its inputs,
+  // so this only causes a real re-compute when state actually moved.
+  const liveSignature = useMemo(() => {
+    const ids: string[] = [];
+    for (const r of liveRuns ?? []) ids.push(`${r.id}:${r.status}`);
+    if (activeRun) ids.push(`${activeRun.id}:${activeRun.status}`);
+    return ids.sort().join(",");
+  }, [liveRuns, activeRun]);
+  useEffect(() => {
+    if (!issueId) return;
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.synthesis(issueId) });
+  }, [liveSignature, issueId, queryClient]);
 
   // Filter out runs already shown by the live widget to avoid duplication
   const timelineRuns = useMemo(() => {
@@ -1088,7 +1104,9 @@ export function IssueDetail() {
               issue={issue}
               onOpenProperties={() => setMobilePropsOpen(true)}
             />
-            {/* Description inline — no chapter heading. */}
+            {/* Description inline — no chapter heading, but we scope
+             * an anchor so the chapter nav has a real scroll target. */}
+            <div id="chapter-description" className="scroll-mt-8">
             <CaseBrief
               description={issue.description}
               onSave={(description) => updateIssue.mutate({ description })}
@@ -1098,6 +1116,7 @@ export function IssueDetail() {
                 return attachment.contentPath;
               }}
             />
+            </div>
             {issue.hiddenAt && (
               <div className="flex items-center gap-2 border border-destructive/60 bg-destructive/[0.04] px-3 py-2 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-destructive">
                 <EyeOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -1122,6 +1141,15 @@ export function IssueDetail() {
                 }}
               />
             )}
+            {/* S5 — kick off a draft PR straight from the case. Only
+             * visible if the issue is attached to a project; the
+             * server validates that the project's workspace has a
+             * repoUrl and a github connection is configured. */}
+            <IssueOpenPrAction
+              companyId={selectedCompanyId!}
+              issueId={issue.id}
+              hasProject={!!issue.projectId}
+            />
             {backlogEnabled && linkedBacklog && linkedBacklog.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 font-mono text-[0.62rem] uppercase tracking-[0.12em] text-[var(--boared-ink-faint)]">
                 <Inbox className="h-3 w-3" aria-hidden="true" />
@@ -1149,15 +1177,47 @@ export function IssueDetail() {
         }
         main={
           <>
-            {/* Chapter 1 — How it got here. The graph is the star
-             * and deserves the first spot after the hero. */}
+            {/* Chapter 1 — What was made. Outcome leads. Artifacts
+             * are produced by the work (PRs, run summaries, sub-cases,
+             * approvals); they answer the user's first question — what
+             * actually exists now? — before we narrate how we got here. */}
+            <section id="chapter-artifacts" className="scroll-mt-20 space-y-4">
+              <ChapterHeading
+                title="What was made"
+                meta={
+                  synthesis?.artifacts?.length
+                    ? `${synthesis.artifacts.length} ${synthesis.artifacts.length === 1 ? "artifact" : "artifacts"}`
+                    : undefined
+                }
+                action={
+                  <button
+                    type="button"
+                    onClick={() =>
+                      queryClient.invalidateQueries({ queryKey: queryKeys.issues.synthesis(issue.id) })
+                    }
+                    className="font-mono text-[0.54rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] transition-colors"
+                    title="Re-synthesise"
+                  >
+                    ↻
+                  </button>
+                }
+              />
+              <CaseArtifacts
+                artifacts={synthesis?.artifacts ?? []}
+                loading={synthesisQuery.isLoading}
+              />
+            </section>
+
+            {/* Chapter 2 — How it got here. The fan-out/fan-in flow
+             * graph follows the outcome so the reader can trace
+             * causality once they know what shipped. */}
             <section id="chapter-graph" className="scroll-mt-20 space-y-4">
               <ChapterHeading
                 title="How it got here"
                 meta={
                   synthesis?.graph?.nodes?.length
-                    ? `${synthesis.graph.nodes.length} ${synthesis.graph.nodes.length === 1 ? "step" : "steps"}`
-                    : undefined
+                    ? `${synthesis.graph.nodes.length} ${synthesis.graph.nodes.length === 1 ? "step" : "steps"}${hasLiveRuns ? " · live" : ""}`
+                    : hasLiveRuns ? "live" : undefined
                 }
                 action={
                   <button
@@ -1176,6 +1236,7 @@ export function IssueDetail() {
                 graph={synthesis?.graph ?? { nodes: [], edges: [] }}
                 synthesis={synthesis}
                 loading={synthesisQuery.isLoading}
+                live={hasLiveRuns}
               />
               {/* Planning plan document — ONLY surface the plan
                * document for planning-kind issues, inline under the

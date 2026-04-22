@@ -20,6 +20,7 @@ import { EmptyState } from "../EmptyState";
 import { Inbox as InboxIcon, ChevronRight } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { BacklogItemRow } from "./BacklogItemRow";
+import { BacklogKickOffButton } from "./BacklogKickOffButton";
 
 export type BacklogGroupBy = "none" | "status" | "source" | "plan";
 
@@ -47,6 +48,10 @@ interface Props {
   emptyAction?: string;
   onEmptyAction?: () => void;
   onReorder?: (args: ReorderMoveArgs) => void;
+  /** When provided, shows the inline "Kick off" chip on each row.
+   * The chip lets the user pick an agent and immediately start work
+   * (promote → assign → invoke). Pass null to suppress. */
+  companyId?: string;
 }
 
 const STATUS_ORDER = ["idea", "draft", "ready", "promoted", "archived"];
@@ -68,6 +73,7 @@ export function BacklogListView({
   emptyAction,
   onEmptyAction,
   onReorder,
+  companyId,
 }: Props) {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const rowRefs = useRef(new Map<string, HTMLLIElement | null>());
@@ -224,6 +230,15 @@ export function BacklogListView({
       isArchiving={archivingId === item.id}
       onPromote={onPromote ? () => onPromote(item.id) : undefined}
       isPromoting={promotingId === item.id}
+      trailing={
+        companyId && item.status !== "promoted" && item.status !== "archived" ? (
+          <BacklogKickOffButton
+            companyId={companyId}
+            backlogItemId={item.id}
+            variant="chip"
+          />
+        ) : undefined
+      }
       selected={selection?.has(item.id)}
       onToggleSelect={
         onToggleSelect ? () => onToggleSelect(item.id) : undefined

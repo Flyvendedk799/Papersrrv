@@ -3,6 +3,8 @@ import { Link } from "@/lib/router";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { runnerApi } from "../api/runner";
 import { RecentPlansCard } from "../components/boared/dashboard/RecentPlansCard";
+import { DashboardNeedsYou } from "../components/boared/dashboard/DashboardNeedsYou";
+import { DashboardRunningNow } from "../components/boared/dashboard/DashboardRunningNow";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
@@ -394,6 +396,12 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* ── Control tower — operational surfaces lead. ─────────── */}
+      <div className="space-y-4 mb-8">
+        <DashboardNeedsYou companyId={selectedCompanyId!} />
+        <DashboardRunningNow companyId={selectedCompanyId!} />
+      </div>
+
       {/* Recent planning activity — investigations in flight and
        * recently-transferred plans, keeps the planning loop
        * visible from the dashboard. */}
@@ -449,29 +457,8 @@ export function Dashboard() {
               </span>
             </div>
 
-            {/* Live runs ride at the very top */}
-            {liveRuns && liveRuns.length > 0 && (
-              <div className="border-b border-[var(--boared-rule)] divide-y divide-[var(--boared-rule)] bg-foreground/[0.025]">
-                {liveRuns.map((run) => (
-                  <Link
-                    key={run.id}
-                    to={run.issueId ? `/issues/${run.issueId}` : `/agents/${run.agentId}/runs/${run.id}`}
-                    className="flex items-center gap-3 px-3 py-3 text-[0.82rem] no-underline text-foreground hover:bg-foreground/[0.04] transition-colors"
-                  >
-                    <span className="size-1.5 bg-[var(--boared-acid)] animate-pulse shrink-0" aria-hidden />
-                    <span className="font-mono text-[0.62rem] uppercase tracking-[0.08em] text-foreground shrink-0">
-                      Live
-                    </span>
-                    <span className="truncate">
-                      <span className="font-medium">{run.agentName}</span>
-                      <span className="text-muted-foreground"> is running{run.issueId ? "" : " a task"}.</span>
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            )}
-
-            {/* Historical wire feed */}
+            {/* Historical wire feed (live runs now hoisted to the
+             * Running-now strip in the control tower above). */}
             {recentActivity.length === 0 ? (
               <p className="boared-display italic text-[1.4rem] text-muted-foreground py-8">
                 Nothing on the wire yet.

@@ -607,6 +607,94 @@ export function createGithubClient(opts: GithubClientOptions) {
       return data;
     },
 
+    async createBranchFromDefault(
+      owner: string,
+      repo: string,
+      branchName: string,
+    ): Promise<{ ref: string; sha: string }> {
+      // 1) Resolve the repo's default branch.
+      const { data: repoMeta } = await requestWithEtag<{ defaultBranch: string }>(
+        "GET /repos/{owner}/{repo}",
+        { owner, repo },
+        (raw) => {
+          const r = (raw as Record<string, unknown>) ?? {};
+          return { defaultBranch: String(r.default_branch ?? "main") };
+        },
+      );
+      // 2) Resolve the head sha of that branch.
+      const { data: headRef } = await requestWithEtag<{ sha: string }>(
+        "GET /repos/{owner}/{repo}/git/ref/{ref}",
+        { owner, repo, ref: `heads/${repoMeta.defaultBranch}` },
+        (raw) => {
+          const r = (raw as Record<string, unknown>) ?? {};
+          const obj = (r.object as Record<string, unknown>) ?? {};
+          return { sha: String(obj.sha ?? "") };
+        },
+      );
+      if (!headRef.sha) {
+        throw new GithubClientError({
+          status: 422,
+          code: "unprocessable",
+          message: `Default branch ${repoMeta.defaultBranch} has no head sha`,
+        });
+      }
+      // 3) Create the new branch ref pointing at that sha. If it
+      // already exists, GitHub returns 422 — caller handles by
+      // re-using the existing branch.
+      const { data } = await requestMutation(
+        "POST",
+        "/repos/{owner}/{repo}/git/refs",
+        { owner, repo, ref: `refs/heads/${branchName}`, sha: headRef.sha },
+        (raw) => {
+          const r = (raw as Record<string, unknown>) ?? {};
+          const obj = (r.object as Record<string, unknown>) ?? {};
+          return { ref: String(r.ref ?? ""), sha: String(obj.sha ?? headRef.sha) };
+        },
+      );
+      return data;
+    },
+
+    async createPullRequest(
+      owner: string,
+      repo: string,
+      params: {
+        title: string;
+        head: string;
+        base?: string;
+        body?: string;
+        draft?: boolean;
+      },
+    ): Promise<GithubPullRequestView> {
+      // If base is omitted, look it up from the repo metadata.
+      let base = params.base;
+      if (!base) {
+        const { data: repoMeta } = await requestWithEtag<{ defaultBranch: string }>(
+          "GET /repos/{owner}/{repo}",
+          { owner, repo },
+          (raw) => {
+            const r = (raw as Record<string, unknown>) ?? {};
+            return { defaultBranch: String(r.default_branch ?? "main") };
+          },
+        );
+        base = repoMeta.defaultBranch;
+      }
+      const { data } = await requestMutation(
+        "POST",
+        "/repos/{owner}/{repo}/pulls",
+        {
+          owner,
+          repo,
+          title: params.title,
+          head: params.head,
+          base,
+          body: params.body,
+          draft: params.draft ?? true,
+        },
+        (raw) => mapPullRequest(raw as Record<string, unknown>),
+      );
+      return data;
+    },
+
     async markPullReady(
       owner: string,
       repo: string,

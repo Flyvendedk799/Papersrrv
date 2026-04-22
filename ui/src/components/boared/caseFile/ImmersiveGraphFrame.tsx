@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import type { CaseSynthesisPayload } from "../../../api/issues";
-import { CaseGraph } from "./CaseGraph";
+import { CaseFlowGraph } from "./CaseFlowGraph";
 import { cn } from "../../../lib/utils";
 
 interface Props {
@@ -20,6 +20,9 @@ interface Props {
   synthesis?: CaseSynthesisPayload | null;
   loading?: boolean;
   className?: string;
+  /** Forwarded to CaseFlowGraph; toggles the live badge + pulses
+   * freshly-arrived nodes when the issue has in-flight runs. */
+  live?: boolean;
 }
 
 export function ImmersiveGraphFrame({
@@ -27,6 +30,7 @@ export function ImmersiveGraphFrame({
   synthesis,
   loading,
   className,
+  live,
 }: Props) {
   const [immersive, setImmersive] = useState(false);
 
@@ -92,11 +96,13 @@ export function ImmersiveGraphFrame({
           <Maximize2 className="h-3 w-3" aria-hidden="true" />
           Immersive
         </button>
-        <CaseGraph
+        <CaseFlowGraph
           graph={graph}
           synthesis={synthesis}
           loading={loading}
-          className="px-6 pt-5 pb-4 min-h-[640px]"
+          className="px-6 pt-5 pb-4"
+          minHeight={640}
+          live={live}
         />
       </div>
 
@@ -128,11 +134,13 @@ export function ImmersiveGraphFrame({
             </button>
           </header>
           <div className="flex-1 min-h-0 overflow-hidden">
-            <CaseGraph
+            <CaseFlowGraph
               graph={graph}
               synthesis={synthesis}
               loading={loading}
               className="h-full px-6 py-4"
+              minHeight={400}
+              live={live}
             />
           </div>
         </div>

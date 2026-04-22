@@ -15,6 +15,7 @@ import { secretService } from "./secrets.js";
 import { logActivity } from "./activity-log.js";
 import { recall } from "./papee-memory.js";
 import { backlogService } from "./backlog.js";
+import { fileService } from "./files.js";
 
 /**
  * PAPEE_TOOLS_PLAN.md — central tools dispatcher.
@@ -26,9 +27,10 @@ import { backlogService } from "./backlog.js";
  *   4. Writes an activityLog entry tagged actorType=system + papee.
  *   5. Returns a PapeeToolResult envelope.
  *
- * Tier 0 (read) handlers are wired in this initial drop. Tier 1 and
- * Tier 2 handlers are stubbed and throw — they'll be wired in the
- * next phases of PAPEE_TOOLS_PLAN.md.
+ * All three tiers (read / safe-write / destructive) are wired here.
+ * Tier-2 handlers also hand back an `undo` envelope when the inverse
+ * is well-defined; the UI's `usePapeeEnact` shows an undo toast for
+ * tier-1 results and a confirm modal before tier-2 invocations.
  */
 
 export interface PapeeToolActor {
@@ -46,6 +48,7 @@ export function papeeToolsService(db: Db) {
   const workflows = workflowEngine(db);
   const secrets = secretService(db);
   const backlog = backlogService(db);
+  const files = fileService(db);
 
   function actorFor(actor: PapeeToolActor): { agentId?: string; userId?: string } {
     if (actor.type === "agent") return { agentId: actor.id };
@@ -199,6 +202,48 @@ export function papeeToolsService(db: Db) {
                 body: typeof c.body === "string" ? c.body.slice(0, 600) : "",
               })),
             },
+          };
+        }
+
+        case "listIssueRelevantFiles": {
+          const limit = tool.limit ?? 25;
+          const rows = await files.getIssueSummaryFiles(tool.issueId);
+          const trimmed = rows.slice(0, limit);
+          await audit(companyId, actor, "listIssueRelevantFiles", { type: "issue", id: tool.issueId }, { limit });
+          return {
+            ok: true,
+            summary:
+              rows.length === 0
+                ? "No relevant files yet"
+                : `${rows.length} file${rows.length === 1 ? "" : "s"} touched on this case`,
+            entity: { type: "issue", id: tool.issueId },
+            data: trimmed.map((r) => ({
+              filePath: r.filePath,
+              snapshotId: r.snapshotId,
+              agentName: r.agentName,
+              contentHash: r.contentHash,
+              createdAt: r.createdAt,
+            })),
+          };
+        }
+
+        case "searchFiles": {
+          const limit = tool.limit ?? 25;
+          const rows = await files.listFiles(companyId, { search: tool.query, limit });
+          await audit(companyId, actor, "searchFiles", { type: "search", id: tool.query }, { limit });
+          return {
+            ok: true,
+            summary:
+              rows.length === 0
+                ? `No files matched "${tool.query}"`
+                : `${rows.length} file${rows.length === 1 ? "" : "s"} match "${tool.query}"`,
+            data: rows.slice(0, limit).map((r) => ({
+              filePath: r.filePath,
+              latestAgent: r.latestSnapshot.agentName,
+              snapshots: r.latestSnapshot.id,
+              capturedAt: r.latestSnapshot.capturedAt,
+              operation: r.latestSnapshot.operation,
+            })),
           };
         }
 
@@ -513,7 +558,10 @@ export function papeeToolsService(db: Db) {
           };
         }
 
-        /* ─────── Boared recovery stubs (full impl pending) ─────── */
+        /* ─────── Unknown tool fallback ─────── */
+        // Reachable only when the shared PapeeTool union grows but
+        // this dispatcher hasn't been updated. Returns a structured
+        // error the chat layer can show without crashing.
         default: {
           const kind = (tool as { kind: string }).kind ?? "unknown";
           return {

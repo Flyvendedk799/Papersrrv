@@ -79,8 +79,11 @@ export function rateLimit(name: string, opts: RateLimitOptions): RequestHandler 
 
 // Pre-configured rate limiters for different endpoint classes
 export const rateLimiters: Record<string, RequestHandler> = {
-  /** General API: 1000 requests per minute */
-  general: rateLimit("general", { windowMs: 60_000, maxRequests: 1000 }),
+  /** General API: 1000 requests per minute (override via PAPERCLIP_RATE_LIMIT_GENERAL for smoke tests) */
+  general: rateLimit("general", {
+    windowMs: 60_000,
+    maxRequests: Number(process.env.PAPERCLIP_RATE_LIMIT_GENERAL ?? 1000),
+  }),
 
   /** Auth endpoints: 20 requests per minute */
   auth: rateLimit("auth", { windowMs: 60_000, maxRequests: 20, message: "Too many auth attempts" }),

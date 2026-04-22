@@ -4,11 +4,18 @@ import type {
   GithubPullRequestDetailView,
   GithubPullRequestFileView,
   GithubPullRequestListResult,
+  GithubPullRequestView,
   GithubRateLimitMeta,
   GithubRepoView,
   GithubReviewView,
 } from "@paperclipai/shared";
 import { api } from "./client";
+
+export interface OpenPrForIssueResult {
+  pullRequest: GithubPullRequestView;
+  branch: string;
+  repo: { owner: string; repo: string };
+}
 
 export interface GithubRepoResponse {
   data: GithubRepoView;
@@ -127,5 +134,15 @@ export const githubApi = {
     api.post<{ draft: boolean }>(
       `/companies/${companyId}/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/ready`,
       {},
+    ),
+
+  openPrForIssue: (
+    companyId: string,
+    issueId: string,
+    body: { connectionId?: string } = {},
+  ) =>
+    api.post<OpenPrForIssueResult>(
+      `/companies/${companyId}/issues/${issueId}/open-pr`,
+      body,
     ),
 };
