@@ -1500,3 +1500,30 @@ body.chain-browse #chainBanner { display: flex; }
 }
 /* Lift #hudStats above the new timeline */
 #hudStats { bottom: 124px; }
+
+/* ──────────────────────── Embedded / compact mode ────────────────────────
+ *
+ * When Mindspace is embedded inside a narrow iframe (e.g. the issue page's
+ * "How it got here" chapter at ~700 px wide), the full three-column chrome
+ * crushes the 3D scene. The React wrapper passes `?embed=1` on the iframe
+ * URL; the bridge script adds `body.embed` on boot. Here we hide the heavy
+ * side panels + timeline strip so the scene fills the box. Immersive mode
+ * loads without the flag, so the full chrome returns for the fullscreen
+ * view.
+ */
+body.embed #sidebar,
+body.embed #streamPanel,
+body.embed #hudStats,
+body.embed #timeline,
+body.embed #tweaksPanel,
+body.embed #tweaksBtn,
+body.embed #msHint {
+  display: none !important;
+}
+body.embed #stage,
+body.embed #labels {
+  left: 0 !important;
+  right: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+}

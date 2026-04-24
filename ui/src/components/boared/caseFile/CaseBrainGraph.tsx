@@ -42,9 +42,15 @@ interface Props {
   className?: string;
   minHeight?: number;
   live?: boolean;
+  /** When true, load Mindspace with `?embed=1` — its bridge adds a
+   * `body.embed` class that hides the heavy side panels + timeline so
+   * the 3D scene fills a narrow iframe. Leave false in the fullscreen
+   * overlay, where there's room for the full chrome. */
+  compact?: boolean;
 }
 
 const IFRAME_SRC = "/neurolayer/Mindspace.html";
+const IFRAME_SRC_COMPACT = "/neurolayer/Mindspace.html?embed=1";
 
 export function CaseBrainGraph({
   issue,
@@ -57,6 +63,7 @@ export function CaseBrainGraph({
   className,
   minHeight = 640,
   live,
+  compact,
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const postedForRef = useRef<string | null>(null);
@@ -134,9 +141,9 @@ export function CaseBrainGraph({
         // iframe when the user navigates to a different issue, so the
         // fresh mount does a clean handshake + CASE post for the new
         // scene instead of trying to live-swap into a stale one.
-        key={issue.id}
+        key={`${issue.id}:${compact ? "c" : "f"}`}
         ref={iframeRef}
-        src={IFRAME_SRC}
+        src={compact ? IFRAME_SRC_COMPACT : IFRAME_SRC}
         title="Case thought space"
         className="w-full h-full border-0 block bg-[#1A1815]"
         allow="fullscreen"

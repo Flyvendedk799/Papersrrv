@@ -115,7 +115,7 @@ export function ImmersiveGraphFrame({
           <Maximize2 className="h-3 w-3" aria-hidden="true" />
           Immersive
         </button>
-        <CaseBrainGraph {...brainProps} minHeight={640} />
+        <CaseBrainGraph {...brainProps} minHeight={640} compact />
       </div>
 
       {immersive && typeof document !== "undefined" &&
