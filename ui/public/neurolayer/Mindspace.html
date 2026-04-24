@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IssueThoughtSpace · Boared</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css?v=51" />
+</head>
+<body data-screen-label="Thought Space">
+
+<!-- Vignette: cinematic edge darkening — pure CSS, no perf hit. -->
+<div id="vignette" aria-hidden="true"></div>
+<!-- Film grain: very subtle noise for cinematic depth. -->
+<div id="filmGrain" aria-hidden="true"></div>
+
+<div id="stage" aria-label="Thought Space 3D canvas"></div>
+<div id="labels"></div>
+
+<!-- Opening ceremony overlay (UX 1) -->
+<div id="openingOverlay" aria-hidden="true">
+  <div class="oo-wrap">
+    <div class="oo-eyebrow">Issue received</div>
+    <div class="oo-title"></div>
+    <div class="oo-sub"></div>
+    <div class="oo-tick"><span></span><span></span><span></span></div>
+  </div>
+</div>
+
+<!-- Now-spotlight subtitle (UX 3) -->
+<div id="nowSpotlight" aria-hidden="true">
+  <span class="ns-who"></span>
+  <span class="ns-verb"></span>
+  <span class="ns-what"></span>
+</div>
+
+<!-- Phase chapter title (UX 2) -->
+<div id="phaseTitle" aria-hidden="true">
+  <span class="pt-idx"></span>
+  <span class="pt-name"></span>
+</div>
+
+<!-- Closing climax overlay (UX 5) -->
+<div id="closingOverlay" aria-hidden="true">
+  <div class="co-wrap">
+    <div class="co-check">
+      <svg viewBox="0 0 48 48" width="48" height="48"><circle cx="24" cy="24" r="22" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M14 24 L21 31 L34 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="co-label">Resolved</div>
+    <div class="co-title"></div>
+    <div class="co-stats"></div>
+  </div>
+</div>
+
+<!-- Left: issue header + filters + thought stream -->
+<aside id="sidebar" aria-label="Issue context">
+  <div class="brand">
+    <span class="mark"></span>
+    <span class="name">Boared</span>
+    <span class="slash">/</span>
+    <span>Thought Space</span>
+  </div>
+
+  <div class="issue-header">
+    <div class="meta-line">
+      <span id="caseId"></span>
+      <span class="chip" id="issueStatus"></span>
+      <span class="chip pri" id="issuePriority"></span>
+    </div>
+    <h1 id="caseTitle"></h1>
+    <p id="caseSubtitle"></p>
+  </div>
+
+  <div class="section-label"><span>People</span><span class="hint">click to focus</span></div>
+  <div id="roster"></div>
+
+  <div class="section-label"><span>Show</span><span class="hint">toggle kinds</span></div>
+  <div id="kindFilter"></div>
+
+  <div class="section-label"><span>Legend</span><span class="hint"><span id="critCount">0</span> on critical path</span></div>
+  <div id="legend">
+    <div class="leg-row"><span class="leg-line crit"></span><span>Root → terminal resolution</span></div>
+    <div class="leg-row"><span class="leg-line"></span><span>Causal edge</span></div>
+    <div class="leg-row"><span class="leg-node live"><span class="p"></span></span><span>Live (queued or running)</span></div>
+  </div>
+</aside>
+
+<!-- Right: chronological thought stream -->
+<aside id="streamPanel" aria-label="Thought stream">
+  <div class="section-label"><span>Thought stream</span><span class="hint">chronological</span></div>
+  <div id="thoughtStream"></div>
+</aside>
+
+<!-- Center top stats -->
+<div id="hudStats" aria-label="Counts"></div>
+
+<!-- Bottom timeline scrubber with phase bands -->
+<div id="timeline" aria-label="Playback timeline">
+  <div class="tl-controls">
+    <button id="tlPlay" aria-label="Play / pause">▶</button>
+    <div class="tl-time"><span id="tlCursor">+0h00</span> <span class="tl-sep">/</span> <span id="tlTotal">+0h00</span></div>
+  </div>
+  <div class="tl-track" id="tlTrack">
+    <div class="tl-phases" id="tlPhases"></div>
+    <div class="tl-events" id="tlEvents"></div>
+    <div class="tl-fill" id="tlFill"></div>
+    <div class="tl-head" id="tlHead"></div>
+  </div>
+  <div class="tl-caption" id="tlCaption">Starting…</div>
+</div>
+
+<!-- Hover tooltip -->
+<div id="hoverTip" role="tooltip" aria-hidden="true">
+  <div class="hdr">
+    <span class="k"></span>
+    <span class="au"></span>
+  </div>
+  <div class="bd"></div>
+  <div class="ts"></div>
+</div>
+
+<!-- Thought detail panel -->
+<aside id="detailPanel" aria-label="Thought details">
+  <button id="detailClose" aria-label="Close">×</button>
+  <div class="panel-body"></div>
+</aside>
+
+<!-- Chain-browse banner (UX 6) -->
+<div id="chainBanner" aria-hidden="true">
+  <span class="cb-dot"></span>
+  <span class="cb-text">Following chain</span>
+  <span class="cb-count">—</span>
+  <button class="cb-exit" aria-label="Exit chain view">esc</button>
+</div>
+
+<!-- HUD edges -->
+<div class="hud hud-tl">
+  <span class="dot"></span>
+  <span class="hud-row"><b>drag</b> rotate · <b>scroll</b> zoom · <b>shift-drag</b> pan</span>
+  <span class="hud-row hud-sub"><b>click</b> focus · <b>shift-click</b> follow chain · <b>esc</b> clear</span>
+</div>
+<div class="hud hud-bl">
+  <span class="dot"></span>
+  <span class="hud-row"><b>←→↑↓</b> rotate · <b>+/−</b> zoom · <b>R</b> reset · <b>F</b> focus</span>
+</div>
+
+<!-- First-interaction hint (auto-dismisses) -->
+<div id="ms-hint" aria-hidden="true">
+  <div class="ms-hint-inner">
+    <div class="ms-hint-glyph">
+      <svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="16" cy="16" r="9"/>
+        <path d="M8 16 h16 M16 8 v16 M10.5 10.5 l11 11 M21.5 10.5 l-11 11"/>
+      </svg>
+    </div>
+    <div class="ms-hint-text">
+      <div class="ms-hint-title">Drag to orbit</div>
+      <div class="ms-hint-sub">scroll to zoom · double-click to focus</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tweaks -->
+<div id="tweaksPanel" aria-label="Tweaks">
+  <div class="th">
+    <span>Tweaks</span>
+    <button id="tweaksClose" aria-label="Close">×</button>
+  </div>
+
+  <div class="group">
+    <label>Layout</label>
+    <div class="opts">
+      <button class="opt" data-tweak="layout" data-value="tiered">Tiered</button>
+      <button class="opt" data-tweak="layout" data-value="timeline">Timeline</button>
+      <button class="opt" data-tweak="layout" data-value="radial">Radial</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Edge style</label>
+    <div class="opts">
+      <button class="opt" data-tweak="edges" data-value="filaments">Filaments</button>
+      <button class="opt" data-tweak="edges" data-value="lines">Lines</button>
+      <button class="opt" data-tweak="edges" data-value="glow">Glow</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Labels</label>
+    <div class="opts">
+      <button class="opt" data-tweak="labels" data-value="true">Show</button>
+      <button class="opt" data-tweak="labels" data-value="false">Hide</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Cortex shockwave · <span id="shockwaveLbl"></span></label>
+    <input type="range" min="0" max="2.5" step="0.1" data-slider="shockwave" />
+  </div>
+
+  <div class="group">
+    <label>Local pulse · <span id="pulseLbl"></span></label>
+    <input type="range" min="0" max="2.5" step="0.1" data-slider="pulse" />
+  </div>
+
+  <div class="group">
+    <label>Ring pulse · <span id="ringPulseLbl"></span></label>
+    <input type="range" min="0" max="1.5" step="0.05" data-slider="ringPulse" />
+  </div>
+
+  <div class="group">
+    <label>Spacing · <span id="spacingLbl"></span></label>
+    <input type="range" min="0.6" max="1.6" step="0.05" data-slider="spacing" />
+  </div>
+</div>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script>
+  /*
+   * Case bridge — accept a CASE payload injected by a parent React app
+   * via postMessage, else fall back to the bundled demo CASE.
+   *
+   *   parent → iframe:  { type: "NEUROLAYER_CASE", case: { ... } }
+   *   iframe → parent:  { type: "NEUROLAYER_READY" }          (on load)
+   *   iframe → parent:  { type: "NEUROLAYER_BOOTED" }         (after mount)
+   *
+   * Scripts that read window.CASE (mindspace.js, ui.js) are deferred
+   * until after the payload is set. Embedded and standalone modes share
+   * one code path; no changes to mindspace.js or ui.js are needed.
+   */
+  (function () {
+    const VER = "53";
+    const WAIT_FOR_INJECTION_MS = 1800;
+    const embedded = window.parent && window.parent !== window;
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error("Failed to load " + src));
+        document.body.appendChild(s);
+      });
+    }
+
+    async function boot() {
+      try {
+        await loadScript("mindspace.js?v=" + VER);
+        await loadScript("ui.js?v=" + VER);
+        if (embedded) window.parent.postMessage({ type: "NEUROLAYER_BOOTED" }, "*");
+      } catch (err) {
+        console.error("[neurolayer]", err);
+      }
+    }
+
+    // If the parent pre-assigned window.CASE before navigating, boot now.
+    if (window.CASE) { boot(); return; }
+
+    let booted = false;
+    const onMessage = (event) => {
+      const data = event.data;
+      if (!data || data.type !== "NEUROLAYER_CASE" || !data.case) return;
+      if (booted) return;
+      booted = true;
+      window.CASE = data.case;
+      window.removeEventListener("message", onMessage);
+      boot();
+    };
+    window.addEventListener("message", onMessage);
+
+    if (embedded) window.parent.postMessage({ type: "NEUROLAYER_READY" }, "*");
+
+    // Standalone / no-injection fallback → demo payload.
+    setTimeout(async () => {
+      if (booted) return;
+      booted = true;
+      window.removeEventListener("message", onMessage);
+      try { await loadScript("case-data.js?v=" + VER); }
+      catch (err) { console.error("[neurolayer] demo case load failed", err); }
+      boot();
+    }, WAIT_FOR_INJECTION_MS);
+  })();
+</script>
+</body>
+</html>

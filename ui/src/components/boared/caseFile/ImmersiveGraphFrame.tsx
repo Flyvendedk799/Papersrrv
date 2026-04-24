@@ -1,33 +1,47 @@
 /**
- * ImmersiveGraphFrame — wraps <CaseGraph/> with:
- *   · acid corner accents that treat the graph like a framed artwork
- *   · an "Enter immersive" button that takes the graph full-viewport
- *     (fixed, covers the page until Escape / close)
- *   · a taller default min-height so the graph isn't cramped
+ * ImmersiveGraphFrame — hosts the Neurolayer thought-space for an
+ * issue's "How it got here" chapter, with:
+ *   · acid corner accents that treat the scene like a framed artwork
+ *   · an "Immersive" button that takes the scene full-viewport
+ *   · a taller default min-height so the 3D scene has room to breathe
  *
- * Keeps the underlying CaseGraph unchanged; this is a presentational
- * skin + a portal-less fullscreen overlay.
+ * The actual renderer is <CaseBrainGraph/>, which iframes the vanilla
+ * Three.js app under ui/public/neurolayer/ and posts it a normalized
+ * CASE built from the issue's comments/runs/activity/children.
  */
 
 import { useEffect, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
-import type { CaseSynthesisPayload } from "../../../api/issues";
-import { CaseFlowGraph } from "./CaseFlowGraph";
+import type {
+  ActivityEvent,
+  Agent,
+  Issue,
+  IssueComment,
+} from "@paperclipai/shared";
+import type { RunForIssue } from "../../../api/activity";
+import { CaseBrainGraph } from "./CaseBrainGraph";
 import { cn } from "../../../lib/utils";
 
 interface Props {
-  graph: CaseSynthesisPayload["graph"];
-  synthesis?: CaseSynthesisPayload | null;
+  issue: Issue;
+  comments?: IssueComment[];
+  activity?: ActivityEvent[];
+  childIssues?: Issue[];
+  linkedRuns?: RunForIssue[];
+  agentMap: Map<string, Agent>;
   loading?: boolean;
   className?: string;
-  /** Forwarded to CaseFlowGraph; toggles the live badge + pulses
-   * freshly-arrived nodes when the issue has in-flight runs. */
+  /** Toggles the "Live" badge when the issue has in-flight runs. */
   live?: boolean;
 }
 
 export function ImmersiveGraphFrame({
-  graph,
-  synthesis,
+  issue,
+  comments,
+  activity,
+  childIssues,
+  linkedRuns,
+  agentMap,
   loading,
   className,
   live,
@@ -40,7 +54,6 @@ export function ImmersiveGraphFrame({
       if (e.key === "Escape") setImmersive(false);
     };
     window.addEventListener("keydown", onKey);
-    // Prevent background scrolling while immersive.
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -49,15 +62,24 @@ export function ImmersiveGraphFrame({
     };
   }, [immersive]);
 
+  /* Shared bundle we thread into both mount points. Same object
+   * identity is fine — buildNeurolayerCase memoizes downstream. */
+  const brainProps = {
+    issue,
+    comments,
+    activity,
+    childIssues,
+    linkedRuns,
+    agentMap,
+    loading,
+    live,
+  };
+
   return (
     <>
       <div
         className={cn(
-          "relative border border-[var(--boared-rule)] bg-[var(--boared-paper)] overflow-hidden",
-          // Ambient glow so the graph feels lit from within rather
-          // than flat on paper.
-          "before:content-[''] before:absolute before:inset-0 before:pointer-events-none",
-          "before:bg-[radial-gradient(ellipse_at_center,rgba(226,50,50,0.05)_0%,transparent_60%)]",
+          "relative border border-[var(--boared-rule)] bg-[#1A1815] overflow-hidden",
           // Top-left acid bracket — framed artwork cue.
           "after:content-[''] after:absolute after:top-0 after:left-0 after:w-10 after:h-10 after:border-t-2 after:border-l-2 after:border-[var(--boared-acid)]/80 after:pointer-events-none",
           className,
@@ -68,58 +90,33 @@ export function ImmersiveGraphFrame({
           aria-hidden="true"
           className="absolute bottom-0 right-0 w-10 h-10 border-b-2 border-r-2 border-[var(--boared-acid)]/80 pointer-events-none z-[1]"
         />
-        {/* Edge fades so the graph feels like it continues
-         * off-frame instead of getting clipped at a hard border. */}
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 w-16 z-[1] pointer-events-none"
-          style={{
-            background:
-              "linear-gradient(to right, var(--boared-paper), transparent)",
-          }}
-        />
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-0 right-0 w-16 z-[1] pointer-events-none"
-          style={{
-            background:
-              "linear-gradient(to left, var(--boared-paper), transparent)",
-          }}
-        />
         <button
           type="button"
           onClick={() => setImmersive(true)}
           title="Open immersive view"
           aria-label="Open immersive graph view"
-          className="absolute top-3 right-3 z-[2] inline-flex items-center gap-1.5 px-2 py-1 bg-[var(--boared-paper)] border border-[var(--boared-rule)] font-mono text-[0.56rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-acid)] hover:border-[var(--boared-acid)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
+          className="absolute top-3 right-3 z-[2] inline-flex items-center gap-1.5 px-2 py-1 bg-[#1A1815]/85 border border-[#F2E6C4]/25 font-mono text-[0.56rem] uppercase tracking-[0.14em] text-[#F2E6C4]/70 hover:text-[var(--boared-acid)] hover:border-[var(--boared-acid)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
         >
           <Maximize2 className="h-3 w-3" aria-hidden="true" />
           Immersive
         </button>
-        <CaseFlowGraph
-          graph={graph}
-          synthesis={synthesis}
-          loading={loading}
-          className="px-6 pt-5 pb-4"
-          minHeight={640}
-          live={live}
-        />
+        <CaseBrainGraph {...brainProps} minHeight={640} />
       </div>
 
       {immersive && (
         <div
-          className="fixed inset-0 z-[90] bg-[var(--boared-paper)] flex flex-col"
+          className="fixed inset-0 z-[90] bg-[#1A1815] flex flex-col"
           role="dialog"
           aria-modal="true"
-          aria-label="Immersive case graph"
+          aria-label="Immersive case thought-space"
         >
-          <header className="flex items-center justify-between px-6 py-3 border-b border-[var(--boared-rule)]">
+          <header className="flex items-center justify-between px-6 py-3 border-b border-[#F2E6C4]/15">
             <div className="flex items-center gap-3">
               <span className="font-mono text-[0.62rem] uppercase tracking-[0.28em] text-[var(--boared-acid)]">
                 Chapter · How it got here
               </span>
-              <span className="font-mono text-[0.54rem] uppercase tracking-[0.18em] text-[var(--boared-ink-faint)]">
-                {graph.nodes.length} {graph.nodes.length === 1 ? "step" : "steps"}
+              <span className="font-mono text-[0.54rem] uppercase tracking-[0.18em] text-[#F2E6C4]/55">
+                {issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}
               </span>
             </div>
             <button
@@ -127,20 +124,17 @@ export function ImmersiveGraphFrame({
               onClick={() => setImmersive(false)}
               title="Close (Esc)"
               aria-label="Close immersive graph view"
-              className="inline-flex items-center gap-1.5 px-2 py-1 border border-[var(--boared-rule)] font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[var(--boared-ink-faint)] hover:text-[var(--boared-ink)] hover:border-[var(--boared-ink)] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
+              className="inline-flex items-center gap-1.5 px-2 py-1 border border-[#F2E6C4]/25 font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[#F2E6C4]/70 hover:text-[#F2E6C4] hover:border-[#F2E6C4] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
             >
               <Minimize2 className="h-3 w-3" aria-hidden="true" />
               Close · Esc
             </button>
           </header>
           <div className="flex-1 min-h-0 overflow-hidden">
-            <CaseFlowGraph
-              graph={graph}
-              synthesis={synthesis}
-              loading={loading}
-              className="h-full px-6 py-4"
-              minHeight={400}
-              live={live}
+            <CaseBrainGraph
+              {...brainProps}
+              className="h-full"
+              minHeight={0}
             />
           </div>
         </div>

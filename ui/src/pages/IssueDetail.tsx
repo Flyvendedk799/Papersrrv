@@ -1233,8 +1233,12 @@ export function IssueDetail() {
                 }
               />
               <ImmersiveGraphFrame
-                graph={synthesis?.graph ?? { nodes: [], edges: [] }}
-                synthesis={synthesis}
+                issue={issue}
+                comments={comments ?? []}
+                activity={activity ?? []}
+                childIssues={childIssues}
+                linkedRuns={linkedRuns ?? []}
+                agentMap={agentMap}
                 loading={synthesisQuery.isLoading}
                 live={hasLiveRuns}
               />
