@@ -59,6 +59,7 @@ export function CaseBrainGraph({
   live,
 }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const postedForRef = useRef<string | null>(null);
   const [booted, setBooted] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -93,39 +94,47 @@ export function CaseBrainGraph({
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  /* Push the CASE when the iframe signals ready, and re-push whenever
-   * the payload changes. The bridge replaces window.CASE and boots on
-   * first message; subsequent messages will update window.CASE but the
-   * scene won't re-layout unless we reload — so for mid-session prop
-   * changes the simplest path is a soft src refresh. */
-  const lastCaseRef = useRef<NeurolayerCase | null>(null);
+  /* Reset boot gates when the issue changes — the iframe is keyed on
+   * issue.id and about to remount, so pending state from the previous
+   * scene shouldn't leak into the veil or the posted-ref. */
+  useEffect(() => {
+    setReady(false);
+    setBooted(false);
+    postedForRef.current = null;
+  }, [issue.id]);
+
+  /* Deliver the CASE exactly once per issue. The Neurolayer engine is
+   * snapshot-based — it reads window.CASE once on boot and builds the
+   * scene from it. Previously we reloaded the iframe on every payload
+   * change, which triggered a boot-loop because React Query refetches
+   * produce a new `neurolayerCase` object identity even when the data
+   * is unchanged. Instead: post once per issue.id. If the user opens a
+   * different issue this component is unmounted/remounted by React's
+   * keyed reconciliation, and the new mount boots cleanly. */
   useEffect(() => {
     if (!ready) return;
+    if (postedForRef.current === issue.id) return;
     const cw = iframeRef.current?.contentWindow;
     if (!cw) return;
-    if (lastCaseRef.current === null) {
-      // First delivery — boot with this payload.
-      cw.postMessage({ type: "NEUROLAYER_CASE", case: neurolayerCase }, "*");
-      lastCaseRef.current = neurolayerCase;
-      return;
-    }
-    // Subsequent updates — reload the iframe so the scene rebuilds.
-    // Cheap: mindspace.js + ui.js are cached, only shaders re-link.
-    lastCaseRef.current = neurolayerCase;
-    if (iframeRef.current) {
-      setReady(false);
-      setBooted(false);
-      // Force a reload; bridge will handshake again.
-      iframeRef.current.src = IFRAME_SRC + "?t=" + Date.now();
-    }
-  }, [ready, neurolayerCase]);
+    cw.postMessage({ type: "NEUROLAYER_CASE", case: neurolayerCase }, "*");
+    postedForRef.current = issue.id;
+  }, [ready, issue.id, neurolayerCase]);
 
   return (
     <div
       className={cn("relative w-full", className)}
-      style={{ height: minHeight }}
+      // When a numeric minHeight is given we size inline; when the
+      // caller passes minHeight=0 we defer to the className (e.g.
+      // `h-full` inside the fullscreen overlay). Inline style always
+      // beats class, so setting `height: 0` would blank the overlay.
+      style={minHeight ? { height: minHeight } : undefined}
     >
       <iframe
+        // Keying on the issue id makes React unmount + remount the
+        // iframe when the user navigates to a different issue, so the
+        // fresh mount does a clean handshake + CASE post for the new
+        // scene instead of trying to live-swap into a stale one.
+        key={issue.id}
         ref={iframeRef}
         src={IFRAME_SRC}
         title="Case thought space"

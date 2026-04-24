@@ -10,7 +10,8 @@
  * CASE built from the issue's comments/runs/activity/children.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Maximize2, Minimize2 } from "lucide-react";
 import type {
   ActivityEvent,
@@ -47,6 +48,9 @@ export function ImmersiveGraphFrame({
   live,
 }: Props) {
   const [immersive, setImmersive] = useState(false);
+  const [immersiveH, setImmersiveH] = useState(() =>
+    typeof window !== "undefined" ? window.innerHeight : 900,
+  );
 
   useEffect(() => {
     if (!immersive) return;
@@ -61,6 +65,17 @@ export function ImmersiveGraphFrame({
       document.body.style.overflow = prev;
     };
   }, [immersive]);
+
+  /* Track viewport height so the immersive overlay can size its
+   * iframe by pixel count. We can't rely on `h-full` inside a flex
+   * column because iframes in a `flex-1 min-h-0` parent will expand
+   * to their intrinsic content height (45k+ px) instead of respecting
+   * the parent's box. */
+  useLayoutEffect(() => {
+    const onResize = () => setImmersiveH(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   /* Shared bundle we thread into both mount points. Same object
    * identity is fine — buildNeurolayerCase memoizes downstream. */
@@ -103,42 +118,46 @@ export function ImmersiveGraphFrame({
         <CaseBrainGraph {...brainProps} minHeight={640} />
       </div>
 
-      {immersive && (
-        <div
-          className="fixed inset-0 z-[90] bg-[#1A1815] flex flex-col"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Immersive case thought-space"
-        >
-          <header className="flex items-center justify-between px-6 py-3 border-b border-[#F2E6C4]/15">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-[0.62rem] uppercase tracking-[0.28em] text-[var(--boared-acid)]">
-                Chapter · How it got here
-              </span>
-              <span className="font-mono text-[0.54rem] uppercase tracking-[0.18em] text-[#F2E6C4]/55">
-                {issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}
-              </span>
+      {immersive && typeof document !== "undefined" &&
+        /* Render through a portal to document.body so ancestor
+         * transforms / filters / contain contexts can't pin this
+         * supposedly-fixed overlay inside a smaller box. */
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] bg-[#1A1815] flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Immersive case thought-space"
+          >
+            <header className="flex items-center justify-between px-6 py-3 border-b border-[#F2E6C4]/15">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[0.62rem] uppercase tracking-[0.28em] text-[var(--boared-acid)]">
+                  Chapter · How it got here
+                </span>
+                <span className="font-mono text-[0.54rem] uppercase tracking-[0.18em] text-[#F2E6C4]/55">
+                  {issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImmersive(false)}
+                title="Close (Esc)"
+                aria-label="Close immersive graph view"
+                className="inline-flex items-center gap-1.5 px-2 py-1 border border-[#F2E6C4]/25 font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[#F2E6C4]/70 hover:text-[#F2E6C4] hover:border-[#F2E6C4] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
+              >
+                <Minimize2 className="h-3 w-3" aria-hidden="true" />
+                Close · Esc
+              </button>
+            </header>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <CaseBrainGraph
+                {...brainProps}
+                minHeight={Math.max(400, immersiveH - 49)}
+              />
             </div>
-            <button
-              type="button"
-              onClick={() => setImmersive(false)}
-              title="Close (Esc)"
-              aria-label="Close immersive graph view"
-              className="inline-flex items-center gap-1.5 px-2 py-1 border border-[#F2E6C4]/25 font-mono text-[0.58rem] uppercase tracking-[0.14em] text-[#F2E6C4]/70 hover:text-[#F2E6C4] hover:border-[#F2E6C4] transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--boared-acid)]"
-            >
-              <Minimize2 className="h-3 w-3" aria-hidden="true" />
-              Close · Esc
-            </button>
-          </header>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <CaseBrainGraph
-              {...brainProps}
-              className="h-full"
-              minHeight={0}
-            />
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
