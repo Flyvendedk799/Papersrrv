@@ -107,7 +107,35 @@ persistable, on the same VPS as the backend.
 
 ---
 
-## 4. Where Cursor still fits
+## 4. Why mechanism A is impossible for Cursor — settled
+
+This was investigated directly. **Cursor does not expose a standard inference
+API.** There is no endpoint to point a harvested token at, at any price. It is
+not a harness problem and no wrapper fixes it. The three doors Cursor offers:
+
+| Door | What it is | Why it isn't mechanism A |
+| --- | --- | --- |
+| Agent CLI | local subprocess, `stream-json` on stdout | mechanism B by definition |
+| Background Agent API (`api.cursor.com/v0/agents`) | launch a coding agent against a **GitHub repo** on a cloud VM, get a branch/PR | repo-bound, async, text-only transcript, no usage/cost exposed, no MCP — repo automation, not inference |
+| Cursor SDK (`@cursor/sdk`) | programmatic agent runtime, subagents, hooks, cloud VMs | agent-shaped, **and separately token-billed under the "SDK" tag** — no subscription saving |
+
+Corroborating evidence:
+
+- An open Cursor forum feature request asks for
+  *"OpenAI-compatible /v1/chat/completions for Cloud API"* — i.e. it does not exist.
+- Cursor's own error text: *"Agent and Edit rely on custom models that cannot be
+  billed to an API key."* Those models are metered through subscription plans and
+  are not reachable as an API.
+- `cursor-api-proxy`, the community's best attempt, **wraps the CLI**. If a direct
+  inference endpoint existed, it would call it.
+- `doc/plans/cursor-cloud-adapter.md` in this repo already recorded the V1
+  limitations: no token/cost usage in responses, text-only conversation stream,
+  no MCP/tool-call granularity.
+
+**Conclusion: if you want mechanism A, use Claude Code or Codex. Cursor cannot
+provide it.**
+
+## 4b. Where Cursor still fits
 
 Only via mechanism B, and only under one condition.
 
